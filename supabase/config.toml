@@ -242,7 +242,10 @@ otp_expiry = 3600
 [auth.email.smtp]
 enabled = true
 host = "env(SMTP_HOST)"
-port = "env(SMTP_PORT)"
+# TOML integer fields cannot use env() interpolation in the Supabase CLI. This
+# is Mailpit's internal local port; the deployment workflow generates a
+# temporary hosted config with the validated Resend port.
+port = 1025
 user = "env(SMTP_USER)"
 pass = "env(SMTP_PASS)"
 admin_email = "env(SMTP_FROM_ADDRESS)"

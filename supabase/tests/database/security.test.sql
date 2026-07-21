@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(58);
+select plan(63);
 
 select ok(
   not exists (
@@ -73,6 +73,84 @@ select ok(
 select ok(
   not has_schema_privilege('authenticated', 'app_private', 'USAGE'),
   'browser users cannot access the recipe template schema'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_class as relation
+    join pg_namespace as namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'app_private'
+      and relation.relkind in ('r', 'p')
+      and not relation.relrowsecurity
+  ),
+  'every private recipe template table has row-level security enabled'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_class as relation
+    join pg_namespace as namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'app_private'
+      and relation.relkind in ('r', 'p')
+      and (
+        has_table_privilege('anon', relation.oid, 'SELECT')
+        or has_table_privilege('anon', relation.oid, 'INSERT')
+        or has_table_privilege('anon', relation.oid, 'UPDATE')
+        or has_table_privilege('anon', relation.oid, 'DELETE')
+        or has_table_privilege('authenticated', relation.oid, 'SELECT')
+        or has_table_privilege('authenticated', relation.oid, 'INSERT')
+        or has_table_privilege('authenticated', relation.oid, 'UPDATE')
+        or has_table_privilege('authenticated', relation.oid, 'DELETE')
+      )
+  ),
+  'browser roles have no direct privileges on private recipe templates'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_class as relation
+    join pg_namespace as namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'app_private'
+      and relation.relkind in ('r', 'p')
+      and not exists (
+        select 1
+        from pg_policy as policy
+        where policy.polrelid = relation.oid
+          and not policy.polpermissive
+          and pg_get_expr(policy.polqual, policy.polrelid) = 'false'
+          and pg_get_expr(policy.polwithcheck, policy.polrelid) = 'false'
+      )
+  ),
+  'every private recipe table has an explicit restrictive deny policy'
+);
+select ok(
+  not (
+    select procedure.prosecdef
+    from pg_proc as procedure
+    where procedure.oid = 'public.current_authentication_assurance_level()'::regprocedure
+  ),
+  'the JWT assurance-level helper runs with caller privileges'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_constraint as constraint_row
+    join pg_class as relation on relation.oid = constraint_row.conrelid
+    join pg_namespace as namespace on namespace.oid = relation.relnamespace
+    where constraint_row.contype = 'f'
+      and namespace.nspname in ('public', 'app_private')
+      and not exists (
+        select 1
+        from pg_index as index_row
+        where index_row.indrelid = constraint_row.conrelid
+          and index_row.indisvalid
+          and index_row.indisready
+          and index_row.indpred is null
+          and (index_row.indkey::smallint[])[0:cardinality(constraint_row.conkey)-1]
+            = constraint_row.conkey
+      )
+  ),
+  'every application foreign key has a covering index'
 );
 select ok(
   to_regprocedure('public.accept_organization_invitation(uuid)') is not null,

@@ -1,8 +1,25 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { utils, write } from "xlsx";
 import { enrolLocalAdminMfa, localMessageIds, loginWithLocalMagicLink, waitForLocalAuthLink } from "./localAuth";
 
 test.describe.configure({ mode: "serial" });
+
+function syntheticScoutnetWorkbook() {
+  const workbook = utils.book_new();
+  const sheet = utils.aoa_to_sheet([
+    ["Syntetisk Scoutnet-export för automatiserade tester"],
+    ["Namn", "Anmäld", "Personnummer", "Generellt - Avdelning", "Generellt - Patrull", "Generellt - Dagar"],
+    ["Person 1", "Nej", "20100101-0000", "Spårarna", "Räven", "2026-08-02"]
+  ]);
+  utils.book_append_sheet(workbook, sheet, "A. IMPORT_HERE");
+
+  return {
+    name: "scoutnet-safe.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: write(workbook, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer
+  };
+}
 
 test("desktop app shell exposes all seven main areas", async ({ page, request }, testInfo) => {
   test.skip(!testInfo.project.name.includes("desktop"), "Desktop-only assertion");
@@ -70,7 +87,7 @@ test("delivery page stays tenant-isolated in a mobile viewport", async ({ page, 
   await expect(page.getByText("Aubergine", { exact: true })).toBeHidden();
 });
 
-test("Scoutnet CSV is previewed, minimized and imported locally", async ({ page, request }, testInfo) => {
+test("Scoutnet CSV and synthetic XLSX are previewed, minimized and imported locally", async ({ page, request }, testInfo) => {
   test.skip(!testInfo.project.name.includes("desktop"), "Desktop-only import assertion");
   await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
   await page.goto("/deltagare");
@@ -86,8 +103,8 @@ test("Scoutnet CSV is previewed, minimized and imported locally", async ({ page,
   await expect(page.getByText("Ada Testscout", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Cilla Testledare", { exact: true }).first()).toBeVisible();
 
-  await page.getByLabel("Välj XLSX eller CSV").setInputFiles("Lägermat att dela 2024 - 2.0.xlsx");
-  await expect(page.getByText("Lägermat att dela 2024 - 2.0.xlsx", { exact: true })).toBeVisible();
+  await page.getByLabel("Välj XLSX eller CSV").setInputFiles(syntheticScoutnetWorkbook());
+  await expect(page.getByText("scoutnet-safe.xlsx", { exact: true })).toBeVisible();
   await expect(page.getByText(/bladet A\. IMPORT_HERE/)).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Namn på rad 3", exact: true })).toHaveValue("Person 1");
   await expect(page.getByRole("combobox", { name: "Användning för Anmäld" })).toHaveValue("registered");

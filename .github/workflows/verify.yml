@@ -102,6 +102,7 @@ jobs:
         run: |
           mkdir -p .tmp
           pnpm exec supabase gen types typescript --local --schema public > .tmp/database.generated.ts
+          sed -i '${/^$/d;}' .tmp/database.generated.ts
           diff -u src/types/database.ts .tmp/database.generated.ts
       - name: Build the local PWA used by service-worker integration tests
         run: pnpm build:test

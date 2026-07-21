@@ -20,6 +20,10 @@ No deploy preview is allowed to use either hosted database. Netlify receives onl
 
 Provider setup is intentionally not automated from an untrusted workstation. Follow [provisioning.md](provisioning.md), then use [release.md](release.md) for each release and [operations.md](operations.md) for routine monitoring. Production remains blocked until [privacy-gate.md](privacy-gate.md) and the approvals in [recipe-catalogue.md](recipe-catalogue.md) are signed off. Recovery is described in [restore.md](restore.md).
 
+The reviewed hosted database-adviser baseline is recorded in
+[advisors.md](advisors.md); new security findings or unindexed foreign keys block
+a release.
+
 ## Immutable boundaries
 
 - Never add a service-role/secret key to `VITE_*`, Netlify, browser storage or a generated bundle.

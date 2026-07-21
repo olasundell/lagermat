@@ -63,6 +63,8 @@ jobs:
         run: node scripts/validate-deployment-environment.mjs "$DEPLOYMENT_ENVIRONMENT"
       - name: Verify hosted repository configuration
         run: node scripts/verify-deployment-config.mjs --hosted
+      - name: Stage hosted Supabase configuration
+        run: node scripts/stage-hosted-supabase-config.mjs
       - name: Link the explicit Supabase project
         run: pnpm exec supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
       - name: Dry-run database migrations
@@ -70,7 +72,7 @@ jobs:
       - name: Apply database migrations without seed data
         run: pnpm exec supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --yes
       - name: Push hosted Auth and SMTP configuration
-        run: pnpm exec supabase config push --project-ref "$SUPABASE_PROJECT_REF" --yes
+        run: pnpm exec supabase config push --workdir .tmp/hosted-supabase --project-ref "$SUPABASE_PROJECT_REF" --yes
       - name: Set Edge Function origin
         run: pnpm exec supabase secrets set "APP_ORIGIN=$APP_ORIGIN" --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy all versioned Edge Functions

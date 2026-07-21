@@ -7,6 +7,7 @@ const verifyWorkflow = await readFile(".github/workflows/verify.yml", "utf8");
 const ignore = await readFile(".gitignore", "utf8");
 const invitationFunction = await readFile("supabase/functions/invite-member/index.ts", "utf8");
 const hostedSmoke = await readFile("scripts/smoke-hosted.mjs", "utf8");
+const hostedSupabaseStaging = await readFile("scripts/stage-hosted-supabase-config.mjs", "utf8");
 
 const assertions = [
   [netlify.includes('command = "node scripts/build-netlify.mjs"'), "Netlify måste använda det härdade byggsteget."],
@@ -18,7 +19,9 @@ const assertions = [
   [reusableDeploy.includes("environment: production") === false, "Miljön måste väljas av det anropande flödet."],
   [!reusableDeploy.includes("--include-seed"), "Produktionsflödet får aldrig inkludera seed."],
   [reusableDeploy.includes("netlify-cli@26.2.0"), "Netlify CLI-versionen måste vara låst."],
+  [reusableDeploy.includes("stage-hosted-supabase-config.mjs") && reusableDeploy.includes("--workdir .tmp/hosted-supabase"), "Hosted Supabase-konfiguration måste använda den typkorrekta temporära konfigurationen."],
   [verifyWorkflow.includes("bash scripts/actionlint.sh"), "Verify måste lintkontrollera GitHub Actions-flöden."],
+  [verifyWorkflow.includes("sed -i '${/^$/d;}' .tmp/database.generated.ts"), "Genererad typkontroll måste normalisera Supabase CLI:s avslutande tomrad."],
   [ignore.includes("*.xlsx") && ignore.includes("supabase/seed/demo_recipes.sql") && ignore.includes(".netlify/") && ignore.includes("output/"), "Repositoryhygienen är ofullständig."],
   [invitationFunction.includes('origin !== appOrigin'), "Inbjudningsfunktionen måste neka alla andra origins."],
   [!/(?:localhost|127\.0\.0\.1)/.test(invitationFunction), "Inbjudningsfunktionen får inte innehålla en hosted CORS-genväg för localhost."],
@@ -32,6 +35,8 @@ if (process.argv.includes("--hosted")) {
     [supabase.includes('site_url = "env(APP_ORIGIN)"'), "Hosted Auth site_url måste hämtas från APP_ORIGIN."],
     [supabase.includes("enable_signup = false"), "Publik registrering måste vara avstängd."],
     [supabase.includes("[auth.email.smtp]") && supabase.includes("enabled = true"), "Hosted SMTP måste vara aktiverad."],
+    [supabase.includes("port = 1025") && !supabase.includes('port = "env(SMTP_PORT)"'), "Versionshanterad Supabase-konfiguration måste använda en giltig lokal SMTP-port."],
+    [hostedSupabaseStaging.includes("`port = ${smtpPort}`"), "Hosted Supabase-konfiguration måste skriva SMTP_PORT som ett TOML-heltal."],
     [supabase.includes('pass = "env(SMTP_PASS)"'), "SMTP-lösenordet måste hämtas från miljön."],
     [!supabase.includes("./seed/demo_recipes.sql"), "Genererad utvecklingsseed får inte ingå i databasåterställning."]
   );

@@ -1,0 +1,35 @@
+name: Deploy hosted
+
+on:
+  workflow_run:
+    workflows: [Verify]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-release
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Deploy and verify staging
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment_name: staging
+      release_sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit
+
+  production:
+    name: Approve, deploy and verify production
+    needs: staging
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment_name: production
+      release_sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit

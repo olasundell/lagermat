@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "localWorkbook": {
+      "path": "Lägermat att dela 2024 - 2.0.xlsx",
+      "sha256": "86d95a271a20f7c224563e6bbae8abf06853fd9c50097491bb283b3f52ebc892",
+      "recipeCells": {
+        "aubergine": "0.1 Recept!C87:F87",
+        "bacon": "0.1 Recept!C44:F44",
+        "bregott": "0.1 Recept!C13:J13"
+      }
+    },
+    "acceptanceOracle": {
+      "requirementId": "c3383052-b018-4630-9e54-22328bbb2356",
+      "criterionId": "dcaf97ec-a04f-4999-a901-9f43f01bb2c2",
+      "publicSheetUrl": null,
+      "note": "Istra specifies the public Google Sheet as a second source but does not persist its URL. The exact expected values below are therefore acceptance-oracle values, not an independently downloaded sheet snapshot."
+    }
+  },
+  "calculationScenarios": [
+    {
+      "key": "aubergine",
+      "ingredient": "Aubergine",
+      "unit": "st",
+      "components": [
+        { "mode": "weighted_portion", "amount": "0.25", "multiplier": "22.8" }
+      ],
+      "expected": "5.7"
+    },
+    {
+      "key": "bacon",
+      "ingredient": "Bacon",
+      "unit": "kg",
+      "components": [
+        { "mode": "weighted_portion", "amount": "0.05", "multiplier": "86.5" }
+      ],
+      "expected": "4.325"
+    },
+    {
+      "key": "bregott",
+      "ingredient": "Bregott",
+      "unit": "paket",
+      "components": [
+        { "mode": "weighted_portion", "amount": "0.0025", "multiplier": "344.1" },
+        { "mode": "fixed_once_per_camp", "amount": "10", "multiplier": "1" }
+      ],
+      "expected": "10.86025"
+    }
+  ],
+  "procurementScenario": {
+    "ingredient": "Golden behov/beställt",
+    "unit": "kg",
+    "components": [
+      { "mode": "weighted_portion", "amount": "0.55", "multiplier": "10" }
+    ],
+    "required": "5.5",
+    "ordered": "6"
+  }
+}

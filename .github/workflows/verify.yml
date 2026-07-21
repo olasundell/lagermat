@@ -1,0 +1,128 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  APP_ORIGIN: http://127.0.0.1:5173
+  AUTH_CALLBACK_URL: http://127.0.0.1:5173/auth/callback
+  AUTH_EMAIL_MAX_FREQUENCY: 1s
+  SMTP_FROM_ADDRESS: local@example.invalid
+  SMTP_FROM_NAME: Lägermat local
+  SMTP_HOST: inbucket
+  SMTP_PASS: local-not-a-secret
+  SMTP_PORT: "1025"
+  SMTP_USER: local
+
+jobs:
+  workflow-lint:
+    name: GitHub workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint GitHub Actions workflows
+        run: bash scripts/actionlint.sh
+
+  application:
+    name: Application and hosted bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.9.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check repository hygiene and secrets
+        run: node scripts/check-repository-secrets.mjs
+      - name: Check deployment configuration
+        run: node scripts/verify-deployment-config.mjs
+      - name: Type-check and lint
+        run: pnpm check
+      - name: Run unit tests
+        run: pnpm test
+      - name: Build the hosted PWA and inspect its bundle
+        run: node scripts/build-netlify.mjs
+        env:
+          VITE_SUPABASE_URL: https://abcdefghijklmnopqrst.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+  integration:
+    name: Database and browser integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.9.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Start the isolated local Supabase stack
+        run: pnpm supabase:start
+      - name: Rebuild the database from migrations and development seeds
+        run: pnpm supabase:reset
+      - name: Lint the database
+        run: pnpm supabase:lint
+      - name: Run pgTAP tests
+        run: pnpm supabase:test
+      - name: Check generated database types
+        run: |
+          mkdir -p .tmp
+          pnpm exec supabase gen types typescript --local --schema public > .tmp/database.generated.ts
+          diff -u src/types/database.ts .tmp/database.generated.ts
+      - name: Build the local PWA used by service-worker integration tests
+        run: pnpm build:test
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      - name: Run desktop and mobile browser tests
+        run: pnpm test:e2e
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop the local Supabase stack
+        if: always()
+        run: pnpm exec supabase stop --no-backup

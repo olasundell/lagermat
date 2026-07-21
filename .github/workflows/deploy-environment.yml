@@ -1,0 +1,90 @@
+name: Deploy one hosted environment
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: GitHub environment and provider tier to deploy
+        required: true
+        type: string
+      release_sha:
+        description: Exact verified Git commit to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ vars.APP_ORIGIN }}
+    env:
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      AUTH_CALLBACK_URL: ${{ format('{0}/auth/callback', vars.APP_ORIGIN) }}
+      AUTH_EMAIL_MAX_FREQUENCY: ${{ vars.AUTH_EMAIL_MAX_FREQUENCY }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ vars.NETLIFY_SITE_ID }}
+      SMTP_FROM_ADDRESS: ${{ vars.SMTP_FROM_ADDRESS }}
+      SMTP_FROM_NAME: ${{ vars.SMTP_FROM_NAME }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co
+    steps:
+      - name: Check out the verified revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_sha }}
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.9.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Validate protected environment configuration
+        env:
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: node scripts/validate-deployment-environment.mjs "$DEPLOYMENT_ENVIRONMENT"
+      - name: Verify hosted repository configuration
+        run: node scripts/verify-deployment-config.mjs --hosted
+      - name: Link the explicit Supabase project
+        run: pnpm exec supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Dry-run database migrations
+        run: pnpm exec supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --dry-run
+      - name: Apply database migrations without seed data
+        run: pnpm exec supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --yes
+      - name: Push hosted Auth and SMTP configuration
+        run: pnpm exec supabase config push --project-ref "$SUPABASE_PROJECT_REF" --yes
+      - name: Set Edge Function origin
+        run: pnpm exec supabase secrets set "APP_ORIGIN=$APP_ORIGIN" --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy all versioned Edge Functions
+        run: pnpm exec supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api
+      - name: Build and inspect the hosted PWA
+        run: node scripts/build-netlify.mjs
+      - name: Deploy the fixed Netlify site
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: >-
+          pnpm dlx netlify-cli@26.2.0 deploy
+          --dir=dist
+          --prod
+          --site="$NETLIFY_SITE_ID"
+          --message="Lägermat $RELEASE_SHA"
+      - name: Run non-destructive hosted smoke tests
+        run: node scripts/smoke-hosted.mjs

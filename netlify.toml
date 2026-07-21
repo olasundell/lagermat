@@ -1,0 +1,27 @@
+[build]
+  command = "node scripts/build-netlify.mjs"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+  PNPM_VERSION = "11.9.0"
+  PNPM_FLAGS = "--frozen-lockfile"
+
+# Vite owns bundling and minification. The build script writes environment-specific
+# security and cache headers to dist/_headers after validating VITE_SUPABASE_URL.
+[build.processing]
+  skip_processing = true
+
+# v1 has only two fixed sites. Git-based deploy previews and branch deploys must
+# not acquire hosted Supabase credentials or create unlisted Auth/CORS origins.
+[context.deploy-preview]
+  command = "node scripts/reject-netlify-preview.mjs"
+
+[context.branch-deploy]
+  command = "node scripts/reject-netlify-preview.mjs"
+
+# Real files take precedence; all other paths are handled by the client router.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

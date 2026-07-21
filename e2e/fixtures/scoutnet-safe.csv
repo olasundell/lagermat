@@ -1,0 +1,4 @@
+Namn,Personnummer,E-post,Generellt - Avdelning,Generellt - Patrull,Anmäld,Generellt - Dagar,Specialkost - Har du behov av specialkost?,Specialkost - Typ av specialkost,Hälsodeklaration - Sjukdomar
+Ada Testscout,20100101-0000,ada@example.test,Upptäckarna,Örnen,Ja,"2026-08-02, 2026-08-03",Ja,Gluten,Astma
+Bertil Bortvald,20110101-0000,bertil@example.test,Spårarna,Räven,Nej,2026-08-02,Nej,,Diabetes
+Cilla Testledare,19800101-0000,cilla@example.test,Ledare & Övriga,,Ja,"2026-08-02, 2026-08-03",Nej,,Blodtryck

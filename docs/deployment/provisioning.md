@@ -2,13 +2,13 @@
 
 Provisioning changes external accounts and billing. Perform it with an owner present and record the final identifiers in the password manager, not in Git.
 
-## 1. Private GitHub repository
+## 1. Public GitHub repository
 
-1. Create a private repository and add the local repository as its remote only after explicit Git approval.
+1. Create the public repository and add the local repository as its remote only after explicit Git approval. Treat every committed file and workflow log as public.
 2. Protect `main`: require pull requests, dismiss stale approvals, block force pushes/deletion, and require `Verify / GitHub workflow lint`, `Verify / Application and hosted bundle` and `Verify / Database and browser integration`.
 3. Allow GitHub Actions read-only repository access by default.
-4. Create `staging` and `production` environments. Add a required human reviewer and prevent self-review on `production`; that review confirms the backup, privacy gate and release notes before secrets are released to the job.
-5. Enable GitHub secret scanning and Dependabot alerts for the private repository.
+4. Create `staging` and `production` environments. Add a required human reviewer on `production`; when a second operator is available, require that reviewer and prevent self-review. The review confirms the backup, privacy gate and release notes before secrets are released to the job.
+5. Enable GitHub secret scanning, push protection and Dependabot alerts for the public repository.
 
 Each GitHub environment needs these values:
 

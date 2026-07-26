@@ -41,3 +41,18 @@ Approval:
 - Privacy notice version: ____________________
 - Processor agreement references: ____________________
 - Exceptions and expiry: ____________________
+
+## Engineering evidence matrix
+
+The original checkboxes above remain the launch authority. Repository evidence can prove that a control exists, but it cannot supply the controller, legal, provider or production decision needed to tick a launch checkbox.
+
+| Control | Repository evidence | Still required outside the repository |
+| --- | --- | --- |
+| Private pilot and no behavioural analytics | Public sign-up is disabled in `supabase/config.toml`; `operations.md` prohibits behavioural tracking; CI runs `scripts/verify-privacy-controls.mjs`. | Controller confirmation that the deployed services and provider consoles match the pilot policy. |
+| Data minimisation | Import and manual-entry server validation, database privilege tests and the allow-listed import payload are covered by pgTAP and browser tests. | Controller approval of purposes, fields, lawful basis and sensitive-data condition. |
+| Tenant and administrator protection | RLS/privilege tests cover tenant separation; camp creation and participant export/deletion enforce AAL2 in PostgreSQL. | Named-account and provider/GitHub access review, including recorded MFA evidence. |
+| Participant rights workflow | [Participant data-subject requests](data-subject-requests.md), `privacy_request_controls.test.sql` and browser tests cover access/export, correction, restriction-by-removal and deletion. | Approved identity verification, case system, response deadline, disclosure route and privacy-owner sign-off. |
+| Offline sign-out | User-scoped IndexedDB clearing is implemented and the browser test covers pending-write warning, cancellation, deletion and cross-user preservation. | Production smoke-test sign-off by the named administrator and operations owner. |
+| Retention and backups | Participant deletion is transactional and leaves a bounded non-identifying audit event; [restore.md](restore.md) describes the intended backup tier. | Approved retention periods and triggers, provider backup confirmation, privacy-notice wording and restore-drill owner. |
+| Incident handling | [release.md](release.md), [operations.md](operations.md) and [restore.md](restore.md) define the engineering route. | A recorded drill and the controller's regulatory/data-subject assessment procedure. |
+| Production delivery | Deployment scripts statically constrain origins, redirects and headers, with staged smoke commands. | Live domain/TLS/CORS/CSP evidence, Resend DNS/tracking evidence and named production smoke-test approval. |

@@ -17,6 +17,9 @@ export function userFacingError(error: unknown, fallback: string): string {
   if (/current calculation revision is required/i.test(message)) {
     return "Räkna ut mängderna i Matsedel innan du skapar inköpslistor.";
   }
+  if (/camp readiness must be complete before final status/i.test(message)) {
+    return "Lägret kan inte slutmarkeras ännu. Lös problemen som visas i Matsedel och försök igen.";
+  }
 
   return fallback;
 }

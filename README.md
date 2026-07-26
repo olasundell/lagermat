@@ -25,12 +25,12 @@ pnpm install
 pnpm supabase:start
 cp .env.example .env.local
 pnpm supabase:status
-pnpm dev
+pnpm dev:no-login
 ```
 
 `.env.example` innehåller Supabase CLI:s publika lokala demo-nyckel. Service role- eller secret-nyckeln ska aldrig läggas i Vite-miljön.
 
-Appen kör på [http://127.0.0.1:5173](http://127.0.0.1:5173). Lokala testmejl visas i Mailpit på [http://127.0.0.1:54324](http://127.0.0.1:54324).
+Appen kör på [http://127.0.0.1:5173](http://127.0.0.1:5173). `pnpm dev:no-login` loggar automatiskt in den seedade lokala administratören Oskar, men bara när både appen och Supabase körs lokalt. En redan aktiv session lämnas orörd. Använd vanliga `pnpm dev` när inloggnings- och inbjudningsflöden ska testas. Lokala testmejl visas i Mailpit på [http://127.0.0.1:54324](http://127.0.0.1:54324).
 
 Efter `pnpm supabase:reset` kan den seedade administratören `oskar@bjorkstad.test` begära en inloggningslänk. Öppna länken i Mailpit. Nya användare skapas genom **Team och roller** i användarmenyn; de kan inte registrera sig själva.
 
@@ -39,6 +39,7 @@ Efter `pnpm supabase:reset` kan den seedade administratören `oskar@bjorkstad.te
 | Kommando | Syfte |
 | --- | --- |
 | `pnpm dev` | Starta Vite på loopback |
+| `pnpm dev:no-login` | Starta lokal Vite och logga in den seedade administratören automatiskt |
 | `pnpm build` | Typkontrollera och bygg PWA:n |
 | `pnpm build:hosted` | Bygg hosted PWA och verifiera CSP, cache och bundle |
 | `pnpm check` | Typkontroll och lint |

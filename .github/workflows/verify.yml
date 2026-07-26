@@ -58,7 +58,7 @@ jobs:
       - name: Check repository hygiene and secrets
         run: node scripts/check-repository-secrets.mjs
       - name: Check deployment configuration
-        run: node scripts/verify-deployment-config.mjs
+        run: node scripts/verify-deployment-config.mjs && node scripts/verify-privacy-controls.mjs
       - name: Type-check and lint
         run: pnpm check
       - name: Run unit tests

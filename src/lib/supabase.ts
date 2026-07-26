@@ -11,10 +11,7 @@ export interface SupabaseConfiguration {
 function parseSupabaseUrl(value: string): { valid: boolean; isLocal: boolean } {
   try {
     const url = new URL(value);
-    const isLocalRuntime = import.meta.env.DEV || import.meta.env.MODE === "test";
-    const isLocal = isLocalRuntime
-      ? url.hostname === "127.0.0.1" || url.hostname === "localhost"
-      : false;
+    const isLocal = url.hostname === "127.0.0.1" || url.hostname === "localhost";
     return {
       valid: (isLocal && url.protocol === "http:") || (!isLocal && url.protocol === "https:"),
       isLocal

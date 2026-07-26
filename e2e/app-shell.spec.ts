@@ -21,20 +21,93 @@ function syntheticScoutnetWorkbook() {
   };
 }
 
+async function seedSignOutAcceptanceData(page: import("@playwright/test").Page) {
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("lagermat-local-v1");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(
+        ["mutations", "supplySnapshots", "workspaceSnapshots"],
+        "readwrite"
+      );
+      transaction.objectStore("mutations").put({
+        id: "signout-current-mutation",
+        userId: "44444444-4444-4444-4444-444444444444"
+      });
+      transaction.objectStore("mutations").put({
+        id: "signout-other-mutation",
+        userId: "99999999-9999-9999-9999-999999999999"
+      });
+      transaction.objectStore("supplySnapshots").put({
+        id: "signout-current-supply",
+        userId: "44444444-4444-4444-4444-444444444444"
+      });
+      transaction.objectStore("supplySnapshots").put({
+        id: "signout-other-supply",
+        userId: "99999999-9999-9999-9999-999999999999"
+      });
+      transaction.objectStore("workspaceSnapshots").put({
+        id: "signout-current-workspace",
+        userId: "44444444-4444-4444-4444-444444444444"
+      });
+      transaction.objectStore("workspaceSnapshots").put({
+        id: "signout-other-workspace",
+        userId: "99999999-9999-9999-9999-999999999999"
+      });
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  });
+}
+
+async function signOutAcceptanceCounts(page: import("@playwright/test").Page) {
+  return page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("lagermat-local-v1");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const values = await Promise.all(
+      ["mutations", "supplySnapshots", "workspaceSnapshots"].map((storeName) =>
+        new Promise<Array<{ userId?: string }>>((resolve, reject) => {
+          const request = database.transaction(storeName).objectStore(storeName).getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        })
+      )
+    );
+    database.close();
+    const rows = values.flat();
+    return {
+      current: rows.filter((row) => row.userId === "44444444-4444-4444-4444-444444444444").length,
+      other: rows.filter((row) => row.userId === "99999999-9999-9999-9999-999999999999").length
+    };
+  });
+}
+
 test("desktop app shell exposes all seven main areas", async ({ page, request }, testInfo) => {
   test.skip(!testInfo.project.name.includes("desktop"), "Desktop-only assertion");
   await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
   await expect(page.getByRole("heading", { name: "Sommarläger 2026" })).toBeVisible();
-  await expect(page.getByText(/50 deltagare/)).toBeVisible();
+  await expect(page.getByText(/55 deltagare/)).toBeVisible();
 
   for (const label of ["Översikt", "Deltagare", "Specialkost", "Recept", "Matsedel", "Inköp", "Leveranser"]) {
     await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
 
   await page.goto("/deltagare");
-  await expect(page.getByText("50 personer", { exact: true })).toBeVisible();
+  await expect(page.getByText("55 personer", { exact: true })).toBeVisible();
   await expect(page.getByText("Alva Andersson", { exact: true })).toBeVisible();
   await expect(page.getByText("Joel Wester", { exact: true })).toBeVisible();
+  await expect(page.getByText("Elin Åberg", { exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Ledare", exact: true })).toBeAttached();
   await expect(page.getByText(/Demo Scout|Testanvändare/)).toHaveCount(0);
 });
 
@@ -76,6 +149,37 @@ test("mobile overview does not render a back link to itself", async ({ page, req
   await expect(page.locator('a[aria-label="Tillbaka till översikten"]')).toHaveCount(0);
   await page.goto("/deltagare");
   await expect(page.getByRole("link", { name: "Tillbaka till översikten" })).toBeVisible();
+});
+
+test("sign-out warns, honours cancellation and only clears the current user's offline data", async ({ page, request }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("desktop"), "Desktop-only offline privacy assertion");
+  await loginWithLocalMagicLink(page, request, "mobil@bjorkstad.test");
+  await seedSignOutAcceptanceData(page);
+  const beforeSignOut = await signOutAcceptanceCounts(page);
+  expect(beforeSignOut.current).toBeGreaterThanOrEqual(3);
+  expect(beforeSignOut.other).toBe(3);
+
+  page.once("dialog", async (confirmation) => {
+    expect(confirmation.message()).toContain("inte synkroniserats");
+    await confirmation.dismiss();
+  });
+  await page.getByRole("button", { name: "Öppna användarmenyn" }).click();
+  await page.getByRole("menuitem", { name: "Logga ut" }).click();
+  await expect(page.getByRole("heading", { name: "Sommarläger 2026" })).toBeVisible();
+  await expect.poll(() => signOutAcceptanceCounts(page)).toEqual(beforeSignOut);
+
+  page.once("dialog", async (confirmation) => {
+    expect(confirmation.message()).toContain("inte synkroniserats");
+    await confirmation.accept();
+  });
+  await page.getByRole("button", { name: "Öppna användarmenyn" }).click();
+  await page.getByRole("menuitem", { name: "Logga ut" }).click();
+  await expect(page.getByRole("heading", { name: "Logga in utan lösenord" })).toBeVisible();
+
+  // lagermat-local-v1 must preserve the other user's offline data.
+  const counts = await signOutAcceptanceCounts(page);
+  expect(counts.current).toBe(0);
+  expect(counts.other, "andra användarens offline-data ska finnas kvar").toBe(3);
 });
 
 test("delivery page stays tenant-isolated in a mobile viewport", async ({ page, request }, testInfo) => {
@@ -171,17 +275,89 @@ test("procurement sends the user to calculate when no current revision exists", 
   await expect(page.getByRole("heading", { name: "Matsedel" })).toBeVisible();
 });
 
+test("the complete camp schedule keeps meal actions inside the clicked cell", async ({ page, request }, testInfo) => {
+  await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  await page.goto("/matsedel");
+
+  await expect(page.locator(".warning-banner, .schedule-ready-banner")).toBeVisible();
+  const confirmPlan = page.getByRole("button", { name: "Bekräfta standardplan" });
+  if (await confirmPlan.isVisible()) {
+    await confirmPlan.click();
+    await expect(page.getByText(/Standardplanen skapades/)).toBeVisible();
+    await expect(confirmPlan).toBeHidden();
+  }
+
+  await expect(page.getByRole("columnheader")).toHaveCount(11);
+  await expect(page.getByText(/måltidstillfällen är oplanerade/)).toBeVisible();
+  const mealDetail = page.locator(".meal-detail");
+  const firstGap = page.getByRole("button", { name: /^Oplanerat,/ }).first();
+  const firstGapCard = page.locator(".meal-slot--gap").filter({ has: firstGap });
+  await expect(firstGap).toBeVisible();
+
+  if (testInfo.project.name.includes("desktop")) {
+    await firstGap.click();
+    await expect(firstGap).toHaveAttribute("aria-expanded", "true");
+    await expect(firstGapCard.getByRole("button", { name: /^Lägg till Frukost / })).toBeVisible();
+    await expect(firstGapCard.getByRole("button", { name: /^Skippa Frukost / })).toBeVisible();
+    await expect(mealDetail.getByText("Oplanerat tillfälle", { exact: true })).toBeVisible();
+    await expect(mealDetail.getByRole("button")).toHaveCount(0);
+
+    await firstGapCard.getByRole("button", { name: /^Lägg till Frukost / }).click();
+    const mealEditor = page.getByRole("dialog", { name: "Måltidsunderlag" });
+    await expect(mealEditor).toBeVisible();
+    await mealEditor.getByLabel("Titel").fill("Planerad från lucka");
+    await mealEditor.getByRole("button", { name: "Spara måltid" }).click();
+    await expect(page.getByText("Måltiden sparades. Beräkningen behöver köras om.")).toBeVisible();
+
+    const plannedMeal = page.getByRole("button", { name: /^Planerad från lucka,/ });
+    const plannedMealCard = page.locator(".meal-cell").filter({ has: plannedMeal });
+    await expect(plannedMeal).toHaveAttribute("aria-expanded", "true");
+    await expect(plannedMealCard.getByRole("button", { name: "Redigera Planerad från lucka" })).toBeVisible();
+    await plannedMealCard.getByRole("button", { name: "Skippa Planerad från lucka" }).click();
+    const skipDialog = page.getByRole("alertdialog", { name: "Skippa Planerad från lucka?" });
+    await expect(skipDialog).toBeVisible();
+    await expect(skipDialog.getByText(/Måltidsuppgifterna bevaras/)).toBeVisible();
+    await skipDialog.getByRole("button", { name: "Bekräfta och skippa" }).click();
+
+    await expect(page.getByText(/Planerad från lucka skippades/)).toBeVisible();
+    const skippedMeal = page.getByRole("button", { name: /^Ingen servering, Planerad från lucka bevarad,/ });
+    const skippedMealCard = page.locator(".meal-slot--none").filter({ has: skippedMeal });
+    await expect(skippedMeal).toBeVisible();
+    await expect(skippedMeal).toHaveAttribute("aria-expanded", "true");
+    await expect(mealDetail.getByRole("heading", { name: "Ingen servering" })).toBeVisible();
+    await expect(mealDetail.getByText("Planerad från lucka är bevarad")).toBeVisible();
+    await skippedMealCard.getByRole("button", { name: /^Återställ måltiden,/ }).click();
+    await expect(page.getByText(/Planerad från lucka återställdes/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Planerad från lucka,/ })).toBeVisible();
+
+    const nextGap = page.getByRole("button", { name: /^Oplanerat,/ }).first();
+    const nextGapCard = page.locator(".meal-slot--gap").filter({ has: nextGap });
+    await nextGap.click();
+    await nextGapCard.getByRole("button", { name: /^Skippa / }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Bekräfta och skippa" }).click();
+    await expect(page.getByText("Tillfället markerades som ingen servering.")).toBeVisible();
+  } else {
+    await firstGap.click();
+    await expect(firstGapCard.getByRole("button", { name: /^Lägg till / })).toBeVisible();
+    await expect(firstGapCard.getByRole("button", { name: /^Skippa / })).toBeVisible();
+  }
+});
+
 test("a meal is edited and recalculated into a traceable local revision", async ({ page, request }, testInfo) => {
   test.skip(!testInfo.project.name.includes("desktop"), "Desktop-only calculation assertion");
   await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
   await page.goto("/matsedel");
 
   await expect(page.getByRole("heading", { name: "Matsedel" })).toBeVisible();
-  await page.getByRole("button", { name: "Redigera måltid" }).click();
-  await page.getByLabel("Titel").fill("Chili lunch uppdaterad");
-  await page.getByRole("button", { name: "Lägg till", exact: true }).click();
+  const chiliMeal = page.getByRole("button", { name: /^Chili sin carne,/ });
+  const chiliMealCard = page.locator(".meal-cell").filter({ has: chiliMeal });
+  await chiliMeal.click();
+  await chiliMealCard.getByRole("button", { name: "Redigera Chili sin carne" }).click();
+  const mealEditor = page.getByRole("dialog", { name: "Måltidsunderlag" });
+  await mealEditor.getByLabel("Titel").fill("Chili lunch uppdaterad");
+  await mealEditor.getByRole("button", { name: "Lägg till", exact: true }).click();
   await page.getByLabel("Antal").fill("2");
-  await page.getByRole("button", { name: "Lägg till", exact: true }).click();
+  await mealEditor.getByRole("button", { name: "Lägg till", exact: true }).click();
   await page.getByLabel("Typ av specialkost").last().fill("Gluten");
   await page.getByLabel("Antal").last().fill("1");
   await page.getByRole("button", { name: "Spara måltid" }).click();

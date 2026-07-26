@@ -76,11 +76,21 @@ export async function generateSupplyLists(scope: SupplyScope): Promise<void> {
 }
 
 export function createSupplyReadinessProblems(data: {
+  meal_plan_confirmed: boolean;
+  unplanned_slots: number;
   unresolved_dietary_needs: number;
   meals_without_recipe: number;
   calculation_stale: boolean;
 }): string[] {
   const problems: string[] = [];
+  if (!data.meal_plan_confirmed) {
+    problems.push("Lägrets måltidstillfällen är inte bekräftade");
+  }
+  if (data.unplanned_slots > 0) {
+    problems.push(data.unplanned_slots === 1
+      ? "1 måltidstillfälle är oplanerat"
+      : `${data.unplanned_slots} måltidstillfällen är oplanerade`);
+  }
   if (data.unresolved_dietary_needs > 0) {
     problems.push(data.unresolved_dietary_needs === 1
       ? "1 specialkostuppgift återstår"

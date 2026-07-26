@@ -6,8 +6,14 @@ const emptyCounts: OverviewCounts = {
   unresolvedDiets: 0,
   recipeCopies: 0,
   meals: 0,
+  mealPlanConfirmed: false,
+  requiredSlots: 0,
+  plannedSlots: 0,
+  unplannedSlots: 0,
+  noServiceSlots: 0,
   missingRecipes: 0,
-  calculations: 0,
+  calculationStale: true,
+  canFinalize: false,
   deliveries: 0
 };
 
@@ -24,6 +30,24 @@ describe("overview next action", () => {
     expect(overviewNextAction({ ...emptyCounts, participants: 12 })).toMatchObject({
       title: "Välj recept för lägret",
       to: "/recept"
+    });
+  });
+
+  it("uses the shared meal-plan readiness before suggesting calculation", () => {
+    const withRecipes = { ...emptyCounts, participants: 12, recipeCopies: 2 };
+    expect(overviewNextAction(withRecipes)).toMatchObject({
+      title: "Bekräfta lägrets måltidstillfällen",
+      to: "/matsedel"
+    });
+    expect(overviewNextAction({
+      ...withRecipes,
+      mealPlanConfirmed: true,
+      requiredSlots: 6,
+      plannedSlots: 5,
+      unplannedSlots: 1
+    })).toMatchObject({
+      title: "Färdigställ matsedeln",
+      to: "/matsedel"
     });
   });
 });

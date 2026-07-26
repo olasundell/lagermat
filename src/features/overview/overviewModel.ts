@@ -3,8 +3,14 @@ export interface OverviewCounts {
   unresolvedDiets: number;
   recipeCopies: number;
   meals: number;
+  mealPlanConfirmed: boolean;
+  requiredSlots: number;
+  plannedSlots: number;
+  unplannedSlots: number;
+  noServiceSlots: number;
   missingRecipes: number;
-  calculations: number;
+  calculationStale: boolean;
+  canFinalize: boolean;
   deliveries: number;
 }
 
@@ -44,16 +50,27 @@ export function overviewNextAction(counts: OverviewCounts): OverviewNextAction {
       to: "/recept"
     };
   }
-  if (counts.meals === 0 || counts.missingRecipes > 0) {
+  if (!counts.mealPlanConfirmed) {
+    return {
+      title: "Bekräfta lägrets måltidstillfällen",
+      description: "Skapa standardplanen för frukost, lunch och middag. Anpassa sedan första och sista dagen.",
+      label: "Öppna matsedeln",
+      note: "Planen blir inte redo förrän hela lägerperioden har bekräftade tillfällen.",
+      to: "/matsedel"
+    };
+  }
+  if (counts.unplannedSlots > 0 || counts.missingRecipes > 0) {
     return {
       title: "Färdigställ matsedeln",
-      description: "Kontrollera att varje måltid har ett recept innan mängderna räknas ut.",
+      description: counts.unplannedSlots > 0
+        ? `Planera eller markera ingen servering för ${counts.unplannedSlots} återstående måltidstillfällen.`
+        : "Kontrollera att varje måltid har ett recept innan mängderna räknas ut.",
       label: "Öppna matsedeln",
       note: "Alla måltider behöver ett recept innan inköpsunderlaget kan skapas.",
       to: "/matsedel"
     };
   }
-  if (counts.calculations === 0) {
+  if (counts.calculationStale) {
     return {
       title: "Räkna ut mängderna",
       description: "Matsedeln är klar att räknas om till portions- och ingrediensbehov.",

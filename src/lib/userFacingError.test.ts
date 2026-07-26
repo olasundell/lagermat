@@ -8,4 +8,11 @@ describe("userFacingError", () => {
       "Listorna kunde inte skapas."
     )).toBe("Räkna ut mängderna i Matsedel innan du skapar inköpslistor.");
   });
+
+  it("translates the shared final readiness gate", () => {
+    expect(userFacingError(
+      { message: "Camp readiness must be complete before final status" },
+      "Leveransen kunde inte markeras som klar."
+    )).toBe("Lägret kan inte slutmarkeras ännu. Lös problemen som visas i Matsedel och försök igen.");
+  });
 });

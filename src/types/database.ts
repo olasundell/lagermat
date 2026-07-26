@@ -7,6 +7,31 @@ export type Json =
   | Json[]
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       audit_events: {
@@ -215,6 +240,62 @@ export type Database = {
           },
         ]
       }
+      camp_meal_slots: {
+        Row: {
+          camp_id: string
+          created_at: string
+          id: string
+          label: string | null
+          meal_type: string
+          organization_id: string
+          service_date: string
+          service_status: string
+          slot_key: string
+          sort_order: number
+          source: string
+          starts_at: string
+          updated_at: string
+        }
+        Insert: {
+          camp_id: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          meal_type: string
+          organization_id: string
+          service_date: string
+          service_status?: string
+          slot_key: string
+          sort_order?: number
+          source?: string
+          starts_at: string
+          updated_at?: string
+        }
+        Update: {
+          camp_id?: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          meal_type?: string
+          organization_id?: string
+          service_date?: string
+          service_status?: string
+          slot_key?: string
+          sort_order?: number
+          source?: string
+          starts_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "camp_meal_slots_camp_fk"
+            columns: ["organization_id", "camp_id"]
+            isOneToOne: false
+            referencedRelation: "camps"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
       camp_recipe_copies: {
         Row: {
           camp_id: string
@@ -272,6 +353,8 @@ export type Database = {
           created_by: string
           ends_on: string
           id: string
+          meal_plan_confirmed_at: string | null
+          meal_plan_confirmed_by: string | null
           name: string
           organization_id: string
           starts_on: string
@@ -284,6 +367,8 @@ export type Database = {
           created_by: string
           ends_on: string
           id?: string
+          meal_plan_confirmed_at?: string | null
+          meal_plan_confirmed_by?: string | null
           name: string
           organization_id: string
           starts_on: string
@@ -296,6 +381,8 @@ export type Database = {
           created_by?: string
           ends_on?: string
           id?: string
+          meal_plan_confirmed_at?: string | null
+          meal_plan_confirmed_by?: string | null
           name?: string
           organization_id?: string
           starts_on?: string
@@ -487,6 +574,7 @@ export type Database = {
           camp_recipe_copy_id: string | null
           created_at: string
           id: string
+          meal_slot_id: string
           meal_type: string
           organization_id: string
           starts_at: string
@@ -499,6 +587,7 @@ export type Database = {
           camp_recipe_copy_id?: string | null
           created_at?: string
           id?: string
+          meal_slot_id: string
           meal_type: string
           organization_id: string
           starts_at: string
@@ -511,6 +600,7 @@ export type Database = {
           camp_recipe_copy_id?: string | null
           created_at?: string
           id?: string
+          meal_slot_id?: string
           meal_type?: string
           organization_id?: string
           starts_at?: string
@@ -531,6 +621,13 @@ export type Database = {
             columns: ["organization_id", "camp_id", "camp_recipe_copy_id"]
             isOneToOne: false
             referencedRelation: "camp_recipe_copies"
+            referencedColumns: ["organization_id", "camp_id", "id"]
+          },
+          {
+            foreignKeyName: "meals_slot_fk"
+            columns: ["organization_id", "camp_id", "meal_slot_id"]
+            isOneToOne: true
+            referencedRelation: "camp_meal_slots"
             referencedColumns: ["organization_id", "camp_id", "id"]
           },
         ]
@@ -1217,7 +1314,15 @@ export type Database = {
         Args: { p_camp_id: string; p_organization_id: string }
         Returns: string
       }
+      calculate_camp_pre_meal_readiness: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: string
+      }
       camp_input_digest: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: string
+      }
+      camp_input_digest_pre_slots: {
         Args: { p_camp_id: string; p_organization_id: string }
         Returns: string
       }
@@ -1229,7 +1334,44 @@ export type Database = {
         }
         Returns: undefined
       }
+      confirm_default_meal_plan: {
+        Args: { p_camp_id: string }
+        Returns: number
+      }
+      create_camp: {
+        Args: {
+          p_ends_on: string
+          p_name: string
+          p_organization_id: string
+          p_starts_on: string
+          p_timezone: string
+        }
+        Returns: string
+      }
+      create_participant: {
+        Args: {
+          p_attendance_end: string
+          p_attendance_start: string
+          p_camp_id: string
+          p_dietary_note: string
+          p_display_name: string
+          p_division: string
+          p_food_factor: number
+          p_meal_group: string
+          p_organization_id: string
+          p_patrol: string
+        }
+        Returns: string
+      }
       current_authentication_assurance_level: { Args: never; Returns: string }
+      delete_participant_for_privacy: {
+        Args: { p_participant_id: string }
+        Returns: undefined
+      }
+      export_participant_privacy_data: {
+        Args: { p_participant_id: string }
+        Returns: Json
+      }
       freeze_recipe_version: {
         Args: { p_camp_id: string; p_recipe_version_id: string }
         Returns: string
@@ -1247,7 +1389,12 @@ export type Database = {
         Returns: {
           calculation_stale: boolean
           can_finalize: boolean
+          meal_plan_confirmed: boolean
           meals_without_recipe: number
+          no_service_slots: number
+          planned_slots: number
+          required_slots: number
+          unplanned_slots: number
           unresolved_dietary_needs: number
         }[]
       }
@@ -1308,6 +1455,33 @@ export type Database = {
         }
         Returns: string
       }
+      save_meal_pre_slots: {
+        Args: {
+          p_camp_id: string
+          p_meal_id: string
+          p_meal_type: string
+          p_recipe_version_id: string
+          p_reserves: Json
+          p_starts_at: string
+          p_title: string
+        }
+        Returns: string
+      }
+      save_meal_to_slot: {
+        Args: {
+          p_camp_id: string
+          p_meal_id: string
+          p_meal_slot_id: string
+          p_recipe_version_id: string
+          p_reserves: Json
+          p_title: string
+        }
+        Returns: string
+      }
+      set_meal_slot_service_status: {
+        Args: { p_service_status: string; p_slot_id: string }
+        Returns: undefined
+      }
       set_supply_list_status: {
         Args: {
           p_expected_version: number
@@ -1317,6 +1491,14 @@ export type Database = {
         Returns: number
       }
       set_supply_list_status_legacy: {
+        Args: {
+          p_expected_version: number
+          p_list_id: string
+          p_status: Database["public"]["Enums"]["supply_list_status"]
+        }
+        Returns: number
+      }
+      set_supply_list_status_pre_meal_readiness: {
         Args: {
           p_expected_version: number
           p_list_id: string
@@ -1507,6 +1689,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       calculation_status: ["current", "stale", "superseded"],

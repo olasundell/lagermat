@@ -22,7 +22,7 @@ insert into auth.users (
     'authenticated',
     'authenticated',
     'oskar@bjorkstad.test',
-    '',
+    extensions.crypt('lagermat-local-development-only', extensions.gen_salt('bf')),
     now(),
     '',
     '',
@@ -154,6 +154,7 @@ insert into public.camp_groups (id, organization_id, camp_id, parent_group_id, k
   ('d1000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', null, 'division', 'Upptäckarna', 2),
   ('d1000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', null, 'division', 'Äventyrarna', 3),
   ('d1000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', null, 'division', 'Utmanarna', 4),
+  ('d1000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', null, 'division', 'Ledare', 5),
   ('d2000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'd1000000-0000-0000-0000-000000000001', 'patrol', 'Igelkotten', 1),
   ('d2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'd1000000-0000-0000-0000-000000000001', 'patrol', 'Ekorren', 2),
   ('d2000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'd1000000-0000-0000-0000-000000000002', 'patrol', 'Räven', 1),
@@ -186,7 +187,7 @@ insert into public.import_batches (
   'scoutnet-sommarlager-2026.xlsx',
   'xlsx',
   '[{"index":0,"source":"Namn","target":"display_name"},{"index":1,"source":"Avdelning","target":"division"},{"index":2,"source":"Patrull","target":"patrol"},{"index":3,"source":"Matlag","target":"meal_group"},{"index":4,"source":"Portionsstorlek","target":"food_factor"},{"index":5,"source":"Specialkost","target":"diet_note"}]',
-  '{"accepted":50,"rejected":0,"excluded":0,"discarded_columns":["Personnummer","E-post","Telefon"]}',
+  '{"accepted":55,"rejected":0,"excluded":0,"discarded_columns":["Personnummer","E-post","Telefon"]}',
   'imported',
   '11111111-1111-1111-1111-111111111111',
   '2026-07-15 19:30:00+02'
@@ -213,7 +214,8 @@ select
     when person.ordinal <= 10 then 'd1000000-0000-0000-0000-000000000001'
     when person.ordinal <= 26 then 'd1000000-0000-0000-0000-000000000002'
     when person.ordinal <= 40 then 'd1000000-0000-0000-0000-000000000003'
-    else 'd1000000-0000-0000-0000-000000000004'
+    when person.ordinal <= 50 then 'd1000000-0000-0000-0000-000000000004'
+    else 'd1000000-0000-0000-0000-000000000005'
   end::uuid,
   case
     when person.ordinal <= 5 then 'd2000000-0000-0000-0000-000000000001'
@@ -223,7 +225,7 @@ select
     when person.ordinal <= 33 then 'd2000000-0000-0000-0000-000000000005'
     when person.ordinal <= 40 then 'd2000000-0000-0000-0000-000000000006'
     when person.ordinal <= 45 then 'd2000000-0000-0000-0000-000000000007'
-    else 'd2000000-0000-0000-0000-000000000008'
+    when person.ordinal <= 50 then 'd2000000-0000-0000-0000-000000000008'
   end::uuid,
   ('d3000000-0000-0000-0000-' || lpad((((person.ordinal - 1) % 5) + 1)::text, 12, '0'))::uuid,
   case
@@ -244,7 +246,8 @@ from (values
   (31, 'Rut Öberg'), (32, 'Melvin Östlund'), (33, 'Tove Hall'), (34, 'Amir Hassan'), (35, 'Juni Engström'),
   (36, 'Benjamin Bergman'), (37, 'Liv Nyström'), (38, 'Tage Wallin'), (39, 'Hedda Lindqvist'), (40, 'Theo Jonsson'),
   (41, 'Inez Blom'), (42, 'Vincent Eriksson'), (43, 'Lo Kroon'), (44, 'Karim Saleh'), (45, 'Tyra Månsson'),
-  (46, 'Mille Nord'), (47, 'Olivia Hedlund'), (48, 'Sixten Fors'), (49, 'Nellie Roos'), (50, 'Joel Wester')
+  (46, 'Mille Nord'), (47, 'Olivia Hedlund'), (48, 'Sixten Fors'), (49, 'Nellie Roos'), (50, 'Joel Wester'),
+  (51, 'Elin Åberg'), (52, 'Johan Lindqvist'), (53, 'Sara Wik'), (54, 'Mikael Berg'), (55, 'Hanna Ekström')
 ) as person(ordinal, display_name);
 
 insert into public.participant_attendance (
@@ -268,7 +271,7 @@ insert into public.participant_attendance (
     when person.ordinal in (9, 18, 30, 42, 46, 25, 47) then '2026-08-09 18:00:00+02'::timestamptz
     else '2026-08-11 10:00:00+02'::timestamptz
   end
-from generate_series(1, 50) as person(ordinal);
+from generate_series(1, 55) as person(ordinal);
 
 insert into public.dietary_tags (id, organization_id, camp_id, label, description) values
   ('f1000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Gluten', 'Glutenfri kost.'),

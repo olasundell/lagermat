@@ -10,7 +10,8 @@ import {
   useState
 } from "react";
 import { clearOfflineDataForUser, countPendingMutations } from "../../lib/offlineDb";
-import { supabase, supabaseConfigured } from "../../lib/supabase";
+import { supabase, supabaseConfiguration, supabaseConfigured } from "../../lib/supabase";
+import { localDevLoginCredentials } from "./localDevLogin";
 
 type AuthStatus = "loading" | "configured" | "unconfigured";
 type InvitationStatus = "idle" | "accepting" | "accepted" | "error";
@@ -24,6 +25,7 @@ interface AuthContextValue {
   session: Session | null;
   user: User | null;
   status: AuthStatus;
+  automaticSignInError: string | null;
   invitation: InvitationState;
   requestMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -47,6 +49,7 @@ function removeAuthSecretsFromUrl(): void {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<AuthStatus>(supabaseConfigured ? "loading" : "unconfigured");
+  const [automaticSignInError, setAutomaticSignInError] = useState<string | null>(null);
   const [invitation, setInvitation] = useState<InvitationState>(() => ({
     status: invitationIdFromUrl() ? "accepting" : "idle",
     message: null
@@ -57,11 +60,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return;
 
     let mounted = true;
-    void supabase.auth.getSession().then(({ data, error }) => {
+    const devLogin = localDevLoginCredentials(supabaseConfiguration.isLocal);
+
+    void (async () => {
+      const { data, error } = await supabase.auth.getSession();
       if (!mounted) return;
-      setSession(error ? null : data.session);
+
+      let nextSession = error ? null : data.session;
+      if (!nextSession && devLogin) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword(devLogin);
+        if (!mounted) return;
+        if (signInError) {
+          setAutomaticSignInError(signInError.message);
+        } else {
+          nextSession = signInData.session;
+        }
+      }
+
+      setSession(nextSession);
       setStatus("configured");
-    });
+    })();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
@@ -129,11 +147,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     user: session?.user ?? null,
     status,
+    automaticSignInError,
     invitation,
     requestMagicLink,
     signOut,
     clearInvitation
-  }), [clearInvitation, invitation, requestMagicLink, session, signOut, status]);
+  }), [automaticSignInError, clearInvitation, invitation, requestMagicLink, session, signOut, status]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

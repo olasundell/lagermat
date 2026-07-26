@@ -1,17 +1,17 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(15);
 
 select is(
   (select count(*)::integer from public.participants where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  50,
-  'the local demo camp contains exactly 50 participants'
+  55,
+  'the local demo camp contains exactly 55 participants'
 );
 
 select is(
   (select count(distinct source_reference)::integer from public.participants where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  50,
+  55,
   'every demo participant has a distinct source reference'
 );
 
@@ -30,8 +30,25 @@ select is(
      group by division_id
    ) grouped
    join public.camp_groups group_row on group_row.id = grouped.division_id),
-  'Spårarna:10,Upptäckarna:16,Äventyrarna:14,Utmanarna:10',
-  'the four divisions have realistic deterministic sizes'
+  'Spårarna:10,Upptäckarna:16,Äventyrarna:14,Utmanarna:10,Ledare:5',
+  'the five divisions have realistic deterministic sizes'
+);
+
+select is(
+  (select string_agg(group_row.name || ':' || grouped.food_factor_range, ',' order by group_row.sort_order)
+   from (
+     select division_id, min(food_factor)::text || '-' || max(food_factor)::text as food_factor_range
+     from public.participants
+     where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+       and division_id in (
+         'd1000000-0000-0000-0000-000000000004',
+         'd1000000-0000-0000-0000-000000000005'
+       )
+     group by division_id
+   ) grouped
+   join public.camp_groups group_row on group_row.id = grouped.division_id),
+  'Utmanarna:1.1000-1.1000,Ledare:1.1000-1.1000',
+  'leaders and challengers have the same food factor'
 );
 
 select is(
@@ -44,7 +61,7 @@ select is(
    ) grouped
    join public.camp_groups group_row on group_row.id = grouped.patrol_id),
   '5,5,8,8,7,7,5,5',
-  'the eight patrols contain all 50 participants'
+  'the eight patrols contain all 50 youth participants'
 );
 
 select is(
@@ -56,15 +73,15 @@ select is(
      group by meal_group_id
    ) grouped
    join public.camp_groups group_row on group_row.id = grouped.meal_group_id),
-  '10,10,10,10,10',
-  'the five meal groups contain ten participants each'
+  '11,11,11,11,11',
+  'the five meal groups contain eleven participants each'
 );
 
 select is(
   (select count(*)::text || '|' || count(distinct participant_id)::text
    from public.participant_attendance
    where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  '50|50',
+  '55|55',
   'every demo participant has exactly one attendance interval'
 );
 
@@ -74,8 +91,8 @@ select is(
    where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
      and starts_at = '2026-08-02 12:00:00+02'::timestamptz
      and ends_at = '2026-08-11 10:00:00+02'::timestamptz),
-  38,
-  '38 participants attend the full camp while 12 have varied attendance'
+  43,
+  '43 participants attend the full camp while 12 have varied attendance'
 );
 
 select is(
@@ -113,7 +130,7 @@ select ok(
 
 select ok(
   (select jsonb_typeof(column_mapping) = 'array'
-      and validation_summary ->> 'accepted' = '50'
+      and validation_summary ->> 'accepted' = '55'
    from public.import_batches
    where id = 'a1000000-0000-0000-0000-000000000001'),
   'the recorded import batch has the same valid shape and count as a real import'

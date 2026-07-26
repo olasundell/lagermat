@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useMemo,
   useState
@@ -32,6 +33,13 @@ export interface CampSummary {
   timezone: string;
 }
 
+export interface CreateCampInput {
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  timezone: string;
+}
+
 interface WorkspaceContextValue {
   memberships: OrganizationMembership[];
   camps: CampSummary[];
@@ -39,6 +47,7 @@ interface WorkspaceContextValue {
   activeCamp: CampSummary | null;
   setActiveOrganizationId: (id: string) => void;
   setActiveCampId: (id: string) => void;
+  createCamp: (input: CreateCampInput) => Promise<string>;
   loading: boolean;
   error: string | null;
 }
@@ -60,6 +69,7 @@ function selectedCampKey(userId: string, organizationId: string): string {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const [activeOrganizationId, setActiveOrganizationIdState] = useState<string | null>(null);
   const [activeCampId, setActiveCampIdState] = useState<string | null>(null);
@@ -174,6 +184,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const createCamp = useCallback(async (input: CreateCampInput): Promise<string> => {
+    if (!supabase || !user || !resolvedOrganizationId) {
+      throw new Error("Ingen aktiv organisation finns för det nya lägret.");
+    }
+
+    const { data, error: createError } = await supabase.rpc("create_camp", {
+      p_organization_id: resolvedOrganizationId,
+      p_name: input.name,
+      p_starts_on: input.startsOn,
+      p_ends_on: input.endsOn,
+      p_timezone: input.timezone
+    });
+    if (createError) throw createError;
+    if (typeof data !== "string") throw new Error("Databasen returnerade inget läger-id.");
+
+    await queryClient.invalidateQueries({
+      queryKey: ["camps", user.id, resolvedOrganizationId]
+    });
+    setActiveCampIdState(data);
+    window.localStorage.setItem(selectedCampKey(user.id, resolvedOrganizationId), data);
+    return data;
+  }, [queryClient, resolvedOrganizationId, user]);
+
   const activeMembership = memberships.find((membership) => membership.organizationId === resolvedOrganizationId) ?? null;
   const activeCamp = camps.find((camp) => camp.id === resolvedCampId) ?? null;
   const error = membershipsQuery.error ?? campsQuery.error;
@@ -185,6 +218,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     activeCamp,
     setActiveOrganizationId,
     setActiveCampId,
+    createCamp,
     loading: membershipsQuery.isLoading || campsQuery.isLoading,
     error: error instanceof Error ? error.message : null
   };

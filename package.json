@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:no-login": "VITE_DEV_AUTO_LOGIN=true VITE_DEV_AUTO_LOGIN_EMAIL=oskar@bjorkstad.test VITE_DEV_AUTO_LOGIN_PASSWORD=lagermat-local-development-only vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "build:test": "tsc -b && vite build --mode test",
     "build:hosted": "node scripts/build-netlify.mjs",
@@ -21,7 +22,8 @@
     "recipes:seed": "node scripts/extract-demo-recipes.mjs",
     "recipes:seed:check": "node scripts/extract-demo-recipes.mjs --check",
     "bootstrap:hosted": "node scripts/bootstrap-hosted.mjs",
-    "check:deployment": "node scripts/verify-deployment-config.mjs --hosted && node scripts/check-repository-secrets.mjs",
+    "check:privacy": "node scripts/verify-privacy-controls.mjs",
+    "check:deployment": "node scripts/verify-deployment-config.mjs --hosted && node scripts/verify-privacy-controls.mjs && node scripts/check-repository-secrets.mjs",
     "smoke:hosted": "node scripts/smoke-hosted.mjs",
     "supabase:start": "bash scripts/start-local-stack.sh",
     "supabase:stop": "bash scripts/supabase-local.sh stop",

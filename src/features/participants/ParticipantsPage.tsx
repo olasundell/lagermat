@@ -20,6 +20,8 @@ import {
   type ImportTable,
   type PreviewRow
 } from "./importModel";
+import { CreateParticipantDialog } from "./CreateParticipantDialog";
+import { ParticipantPrivacyDialog } from "./ParticipantPrivacyDialog";
 
 interface ParticipantListRow {
   id: string;
@@ -264,7 +266,7 @@ export function ParticipantsPage() {
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["participants-page"] }),
-      queryClient.invalidateQueries({ queryKey: ["overview"] })
+      queryClient.invalidateQueries({ queryKey: ["camp-overview"] })
     ]);
     setEditingId(null);
     setEditDraft(null);
@@ -297,7 +299,8 @@ export function ParticipantsPage() {
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["participants-page"] }),
-      queryClient.invalidateQueries({ queryKey: ["overview"] })
+      queryClient.invalidateQueries({ queryKey: ["camp-overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["special-diets"] })
     ]);
     setMessage({ kind: "success", text: `${sanitized.length} deltagare importerades. Källfilens övriga värden sparades inte.` });
     setTable(null);
@@ -318,11 +321,21 @@ export function ParticipantsPage() {
           <h1>Deltagare</h1>
           <p>{activeCamp.name} · importera bara det köket behöver.</p>
         </div>
-        <label className="secondary-button file-button">
-          {loadingFile ? <LoaderCircle className="spin" aria-hidden="true" size={19} /> : <Import aria-hidden="true" size={19} />}
-          {loadingFile ? "Läser fil…" : "Välj XLSX eller CSV"}
-          <input name="participant-import-file" type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} disabled={loadingFile || saving} />
-        </label>
+        <div className="page-actions">
+          <CreateParticipantDialog
+            key={activeCamp.id}
+            onCreated={(displayName) => {
+              setParticipantSearch("");
+              setDivisionFilter("");
+              setMessage({ kind: "success", text: `${displayName} lades till i lägret.` });
+            }}
+          />
+          <label className="secondary-button file-button">
+            {loadingFile ? <LoaderCircle className="spin" aria-hidden="true" size={19} /> : <Import aria-hidden="true" size={19} />}
+            {loadingFile ? "Läser fil…" : "Välj XLSX eller CSV"}
+            <input name="participant-import-file" type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} disabled={loadingFile || saving} />
+          </label>
+        </div>
       </header>
 
       <section className="privacy-banner" aria-label="Dataminimering">
@@ -438,7 +451,7 @@ export function ParticipantsPage() {
             {participantQuery.isLoading ? <LoaderCircle className="spin" aria-label="Läser deltagare" size={28} /> : participantQuery.error ? (
               <p className="form-error">{userFacingError(participantQuery.error, "Deltagarna kunde inte läsas.")}</p>
             ) : (participantQuery.data?.participants.length ?? 0) === 0 ? (
-              <div className="participant-empty"><FileSpreadsheet aria-hidden="true" size={35} /><p>Inga deltagare ännu. Välj en Scoutnet-fil för att börja.</p></div>
+              <div className="participant-empty"><FileSpreadsheet aria-hidden="true" size={35} /><p>Inga deltagare ännu. Lägg till en person eller välj en Scoutnet-fil för att börja.</p></div>
             ) : (
               <>
                 <div role="search" aria-label="Sök och filtrera deltagare">
@@ -463,7 +476,27 @@ export function ParticipantsPage() {
                       <span className="participant-avatar">{participant.display_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
                       <div><strong>{participant.display_name}</strong><span>{participant.division_id ? groupNames.get(participant.division_id) : "Ingen avdelning"}{participant.patrol_id ? ` · ${groupNames.get(participant.patrol_id)}` : ""}</span></div>
                       <span className="participant-row__portion">{portionSizeLabel(participant.food_factor)}</span>
-                      <Button className="icon-button" aria-label={`Redigera ${participant.display_name}`} onPress={() => startEditing(participant)}><Pencil aria-hidden="true" size={18} /></Button>
+                      <div className="participant-row__actions">
+                        <Button className="icon-button" aria-label={`Redigera ${participant.display_name}`} onPress={() => startEditing(participant)}><Pencil aria-hidden="true" size={18} /></Button>
+                        {activeMembership.role === "admin" ? (
+                          <ParticipantPrivacyDialog
+                            participantId={participant.id}
+                            participantName={participant.display_name}
+                            onDeleted={async (displayName) => {
+                              if (editingId === participant.id) {
+                                setEditingId(null);
+                                setEditDraft(null);
+                              }
+                              await Promise.all([
+                                queryClient.invalidateQueries({ queryKey: ["participants-page"] }),
+                                queryClient.invalidateQueries({ queryKey: ["camp-overview"] }),
+                                queryClient.invalidateQueries({ queryKey: ["special-diets"] })
+                              ]);
+                              setMessage({ kind: "success", text: `${displayName} och personens lägeruppgifter raderades.` });
+                            }}
+                          />
+                        ) : null}
+                      </div>
                     </div>
                     {editingId === participant.id && editDraft ? (
                       <div className="participant-editor">

@@ -6,7 +6,7 @@ import { supabaseConfiguration } from "../../lib/supabase";
 import { useAuth } from "./AuthContext";
 
 export function LoginPage() {
-  const { requestMagicLink, status } = useAuth();
+  const { automaticSignInError, requestMagicLink, status } = useAuth();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -40,6 +40,12 @@ export function LoginPage() {
         {status === "unconfigured" ? (
           <div className="auth-notice auth-notice--error" role="alert">
             {supabaseConfiguration.error ?? <>Appen saknar Supabase-konfiguration. Kontrollera miljövariablerna och starta om.</>}
+          </div>
+        ) : null}
+
+        {automaticSignInError ? (
+          <div className="auth-notice auth-notice--error" role="alert">
+            Automatisk lokal inloggning misslyckades: {automaticSignInError}
           </div>
         ) : null}
 

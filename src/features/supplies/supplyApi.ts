@@ -48,7 +48,7 @@ export async function fetchSupplyLists(scope: SupplyScope, kinds: SupplyListKind
     if (!supabase) throw new Error("Databasen är inte konfigurerad.");
     const { data, error } = await supabase
       .from("supply_lists")
-      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved)")
+      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, canonical_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved)")
       .eq("organization_id", scope.organizationId)
       .eq("camp_id", scope.campId)
       .eq("source_present", true)

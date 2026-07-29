@@ -11,10 +11,45 @@ import { SupplySyncStatus } from "../supplies/SupplySyncStatus";
 import { fetchCurrentCalculation, fetchSupplyLists, generateSupplyLists, saveSupplyItem, type SupplyItemPatch, type SupplyScope } from "../supplies/supplyApi";
 import { formatExactAmount, hasUnitMismatch, parseDecimalInput, type SupplyItemRow, type SupplyListRow } from "../supplies/supplyModel";
 import { useOfflineSupplyState } from "../supplies/useOfflineSupplyState";
+import { SupplierAccountsPanel, SupplierMatchEditor } from "../suppliers/SupplierFoundationPanel";
+import { SupplierCataloguePanel } from "../suppliers/SupplierCataloguePanel";
+import { SupplierOrderExportActions } from "../suppliers/SupplierOrderExportActions";
+import {
+  approveSafeSupplierMatchCandidates,
+  decideSupplierMatchCandidate,
+  importSupplierCatalogueAndMatch,
+  searchSupplierCatalogueProducts,
+  suggestSupplierCatalogueAlternative,
+} from "../suppliers/supplierCatalogueApi";
+import {
+  fetchSupplierFoundation,
+  saveSupplierAccount,
+  saveSupplierProductMatch,
+} from "../suppliers/supplierApi";
+import type { SupplierAccount, SupplierMatchDetail } from "../suppliers/supplierModel";
+import "../suppliers/suppliers.css";
 
 type Perspective = "purchase" | "distribution";
 
-function OrderEditor({ scope, listId, item, onSaved }: { scope: SupplyScope; listId: string; item: SupplyItemRow; onSaved: () => Promise<void> }) {
+function OrderEditor({
+  scope,
+  listId,
+  item,
+  supplierAccounts,
+  supplierDetails,
+  supplierWritable,
+  onSaved,
+  onSupplierSaved,
+}: {
+  scope: SupplyScope;
+  listId: string;
+  item: SupplyItemRow;
+  supplierAccounts: SupplierAccount[];
+  supplierDetails: SupplierMatchDetail[];
+  supplierWritable: boolean;
+  onSaved: () => Promise<void>;
+  onSupplierSaved: () => Promise<void>;
+}) {
   const [orderedAmount, setOrderedAmount] = useState(item.ordered_amount === null ? "" : formatExactAmount(item.ordered_amount));
   const [orderedUnit, setOrderedUnit] = useState(item.ordered_unit ?? item.required_unit);
   const [packageNote, setPackageNote] = useState(item.package_note ?? "");
@@ -67,6 +102,26 @@ function OrderEditor({ scope, listId, item, onSaved }: { scope: SupplyScope; lis
       <Button className="secondary-button order-editor__save" onPress={save} isDisabled={saving || !item.source_present}>
         <Save aria-hidden="true" size={17} /> {saving ? "Sparar…" : "Spara beställning"}
       </Button>
+      <SupplierMatchEditor
+        item={item}
+        accounts={supplierAccounts}
+        details={supplierDetails}
+        online={supplierWritable}
+        onSave={async (input) => {
+          await saveSupplierProductMatch(scope, input);
+          await onSupplierSaved();
+        }}
+        onApplyProposal={async (proposal) => {
+          await saveSupplyItem(scope, listId, item, {
+            orderedAmount: proposal.orderedAmount,
+            orderedUnit: item.required_unit,
+            packageNote: proposal.packageNote,
+            comment,
+            completed: item.completed,
+          });
+          await onSaved();
+        }}
+      />
     </div>
   );
 }
@@ -99,6 +154,25 @@ export function ProcurementPage() {
   const cached = listsQuery.data?.source === "cache";
   const networkWritable = offlineState.online && !cached && offlineState.pending === 0 && offlineState.conflicts.length === 0;
   const purchaseList = lists.find((list) => list.kind === "purchase") ?? null;
+  const purchaseItems = itemsFor(purchaseList);
+  const purchaseCanonicalKeys = purchaseItems
+    .filter((item) => item.source_present)
+    .map((item) => item.canonical_key);
+  const supplierQuery = useQuery({
+    queryKey: [
+      "supplier-foundation",
+      scope?.organizationId,
+      purchaseList?.id,
+      purchaseList?.version,
+    ],
+    enabled: Boolean(scope && purchaseList && offlineState.online && !cached),
+    queryFn: () => fetchSupplierFoundation(scope!, purchaseCanonicalKeys)
+  });
+  const supplierAccounts = supplierQuery.data?.accounts ?? [];
+  const supplierDetails = supplierQuery.data?.details ?? [];
+  const supplierCandidates = supplierQuery.data?.candidates ?? [];
+  const supplierColumnProfiles = supplierQuery.data?.columnProfiles ?? [];
+  const approvedSupplierMatches = supplierQuery.data?.approvedMatches ?? [];
   const distributionLists = lists.filter((list) => list.kind === "distribution");
   const selectedDistribution = distributionLists.find((list) => list.id === selectedDistributionId) ?? distributionLists[0] ?? null;
   const exportList = perspective === "purchase" ? purchaseList : selectedDistribution;
@@ -112,6 +186,10 @@ export function ProcurementPage() {
       queryClient.invalidateQueries({ queryKey: ["supply-lists", scope?.organizationId, scope?.campId] }),
       queryClient.invalidateQueries({ queryKey: ["current-calculation", scope?.organizationId, scope?.campId] })
     ]);
+  }
+
+  async function refreshSuppliers() {
+    await queryClient.invalidateQueries({ queryKey: ["supplier-foundation", scope?.organizationId] });
   }
 
   async function generate() {
@@ -193,9 +271,109 @@ export function ProcurementPage() {
       ) : null}
 
       {perspective === "purchase" && purchaseList ? (
-        <div className="order-grid">
-          {itemsFor(purchaseList).map((item) => <OrderEditor key={`${item.id}:${item.row_version}`} scope={scope!} listId={purchaseList.id} item={item} onSaved={refresh} />)}
-        </div>
+        <>
+          <SupplierAccountsPanel
+            key={`supplier-accounts:${scope!.organizationId}`}
+            accounts={supplierAccounts}
+            online={networkWritable}
+            loading={supplierQuery.isPending || supplierQuery.isFetching}
+            onSave={async (input) => {
+              await saveSupplierAccount(scope!, input);
+              await refreshSuppliers();
+            }}
+          />
+          <SupplierCataloguePanel
+            accounts={supplierAccounts}
+            items={purchaseItems}
+            candidates={supplierCandidates}
+            approvedMatches={approvedSupplierMatches}
+            columnProfiles={supplierColumnProfiles}
+            online={networkWritable}
+            loading={supplierQuery.isPending || supplierQuery.isFetching}
+            onImport={async (supplierAccountId, preview, mapping) => {
+              const result = await importSupplierCatalogueAndMatch(
+                scope!,
+                supplierAccountId,
+                preview,
+                mapping,
+                purchaseItems,
+              );
+              await refreshSuppliers();
+              return result;
+            }}
+            onApproveSafe={async (candidateIds) => {
+              const selectedCandidates = supplierCandidates.filter((candidate) =>
+                candidateIds.includes(candidate.id)
+              );
+              const supplierAccountId = selectedCandidates[0]?.supplierAccountId;
+              if (
+                !supplierAccountId
+                || selectedCandidates.some((candidate) =>
+                  candidate.supplierAccountId !== supplierAccountId
+                )
+              ) {
+                throw new Error("De säkra förslagen måste höra till samma leverantör.");
+              }
+              await approveSafeSupplierMatchCandidates(
+                scope!,
+                supplierAccountId,
+                candidateIds,
+              );
+              await refreshSuppliers();
+            }}
+            onApprove={async (candidateId) => {
+              await decideSupplierMatchCandidate(scope!, candidateId, "accepted");
+              await refreshSuppliers();
+            }}
+            onReject={async (candidateId) => {
+              await decideSupplierMatchCandidate(scope!, candidateId, "rejected");
+              await refreshSuppliers();
+            }}
+            onSuggestAlternative={async (item, product) => {
+              const account = supplierAccounts.find((candidate) =>
+                candidate.id === product.supplier_account_id
+              );
+              if (!account) throw new Error("Leverantörskontot kunde inte hittas.");
+              await suggestSupplierCatalogueAlternative(
+                scope!,
+                account,
+                item,
+                product,
+              );
+              await refreshSuppliers();
+            }}
+            onSearchAlternatives={(supplierAccountId, query) =>
+              searchSupplierCatalogueProducts(scope!, supplierAccountId, query)}
+          />
+          {activeMembership && activeCamp ? (
+            <SupplierOrderExportActions
+              key={`supplier-export:${scope!.organizationId}`}
+              scope={scope!}
+              list={purchaseList}
+              accounts={supplierAccounts}
+              details={supplierDetails}
+              organizationName={activeMembership.organizationName}
+              campName={activeCamp.name}
+              disabled={!networkWritable}
+            />
+          ) : null}
+          {supplierQuery.error ? <p className="inline-message inline-message--error" role="alert">{userFacingError(supplierQuery.error, "Leverantörsdata kunde inte läsas.")}</p> : null}
+          <div className="order-grid">
+            {purchaseItems.map((item) => (
+              <OrderEditor
+                key={`${item.id}:${item.row_version}`}
+                scope={scope!}
+                listId={purchaseList.id}
+                item={item}
+                supplierAccounts={supplierAccounts}
+                supplierDetails={supplierDetails.filter((detail) => detail.match.canonical_key === item.canonical_key)}
+                supplierWritable={networkWritable}
+                onSaved={refresh}
+                onSupplierSaved={refreshSuppliers}
+              />
+            ))}
+          </div>
+        </>
       ) : null}
 
       {perspective === "distribution" && distributionLists.length ? (

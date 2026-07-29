@@ -4,9 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { ProcurementPage } from "./ProcurementPage";
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === "supply-lists"
-    ? { data: { lists: [], source: "network", cachedAt: null }, error: null, isLoading: false }
-    : { data: { id: "calculation-1", revision_number: 1, status: "current" }, error: null, isPending: false, isFetching: false },
+  useQuery: ({ queryKey }: { queryKey: string[] }) => {
+    if (queryKey[0] === "supply-lists") {
+      return { data: { lists: [], source: "network", cachedAt: null }, error: null, isLoading: false };
+    }
+    if (queryKey[0] === "supplier-foundation") {
+      return { data: { accounts: [], products: [], offers: [], matches: [], details: [], candidates: [], columnProfiles: [], approvedMatches: [] }, error: null, isPending: false, isFetching: false };
+    }
+    return { data: { id: "calculation-1", revision_number: 1, status: "current" }, error: null, isPending: false, isFetching: false };
+  },
   useQueryClient: () => ({ invalidateQueries: vi.fn() })
 }));
 
@@ -30,6 +36,18 @@ vi.mock("../supplies/supplyApi", () => ({
   fetchSupplyLists: vi.fn(),
   generateSupplyLists: vi.fn(),
   saveSupplyItem: vi.fn()
+}));
+vi.mock("../suppliers/supplierApi", () => ({
+  fetchSupplierFoundation: vi.fn(),
+  saveSupplierAccount: vi.fn(),
+  saveSupplierProductMatch: vi.fn()
+}));
+vi.mock("../suppliers/supplierCatalogueApi", () => ({
+  approveSafeSupplierMatchCandidates: vi.fn(),
+  decideSupplierMatchCandidate: vi.fn(),
+  importSupplierCatalogueAndMatch: vi.fn(),
+  searchSupplierCatalogueProducts: vi.fn(),
+  suggestSupplierCatalogueAlternative: vi.fn()
 }));
 
 describe("ProcurementPage perspective tabs", () => {

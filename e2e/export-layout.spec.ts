@@ -20,6 +20,7 @@ test("the A4 export keeps a long operational list readable across pages", async 
     supply_list_items: Array.from({ length: 72 }, (_, index) => ({
       id: `item-${index}`,
       item_key: `item-${index}`,
+      canonical_key: `ingredient:item-${index}`,
       category: ["Grönt", "Torrvaror", "Kylvaror"][Math.floor(index / 24)],
       item_name: `Kontrollvara ${String(index + 1).padStart(2, "0")}`,
       required_amount: index === 0 ? 10.86025 : (index + 1) / 10,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyReserveDrafts, inclusiveCampDates, scheduleCalculationLabel, scheduleIssueParts, visibleReserves } from "./scheduleViewModel";
+import { emptyReserveDrafts, inclusiveCampDates, scheduleCalculationLabel, scheduleIssueParts, scheduleNextAction, visibleReserves } from "./scheduleViewModel";
 
 const ready = {
   meal_plan_confirmed: true,
@@ -38,6 +38,45 @@ describe("schedule empty and reserve states", () => {
       "2 måltidstillfällen är oplanerade",
       "1 specialkostuppgift",
       "beräkningen saknas eller är inaktuell"
+    ]);
+  });
+
+  it("turns the first readiness problem into a concrete action", () => {
+    expect(scheduleNextAction({
+      ...ready,
+      unresolved_dietary_needs: 1,
+      calculation_stale: true,
+      can_finalize: false
+    })).toEqual({
+      kind: "review_dietary_needs",
+      title: "1 specialkostuppgift behöver granskas",
+      description: "Kontrollera uppgiften från anmälan och välj vad köket ska ta hänsyn till.",
+      label: "Granska specialkost"
+    });
+
+    expect(scheduleNextAction({
+      ...ready,
+      unplanned_slots: 2,
+      unresolved_dietary_needs: 1,
+      can_finalize: false
+    })?.kind).toBe("plan_meal_slot");
+
+    expect(scheduleNextAction(ready)).toBeNull();
+  });
+
+  it("maps every readiness problem to the place where it can be fixed", () => {
+    expect([
+      scheduleNextAction({ ...ready, meal_plan_confirmed: false, can_finalize: false })?.kind,
+      scheduleNextAction({ ...ready, unplanned_slots: 1, can_finalize: false })?.kind,
+      scheduleNextAction({ ...ready, unresolved_dietary_needs: 1, can_finalize: false })?.kind,
+      scheduleNextAction({ ...ready, meals_without_recipe: 1, can_finalize: false })?.kind,
+      scheduleNextAction({ ...ready, calculation_stale: true, can_finalize: false })?.kind
+    ]).toEqual([
+      "confirm_meal_plan",
+      "plan_meal_slot",
+      "review_dietary_needs",
+      "choose_meal_recipe",
+      "calculate"
     ]);
   });
 

@@ -409,6 +409,43 @@ button { color: inherit; }
 .auth-notice--error,
 .form-error { color: #9b3508; background: var(--warning-surface); border: 1px solid #efb493; }
 .form-success { color: #256719; background: var(--success-surface); border: 1px solid #9aca8c; }
+.schedule-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 210;
+  width: min(440px, calc(100vw - 48px));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 11px 11px 14px;
+  color: #205e16;
+  background: #fff;
+  border: 1px solid #9aca8c;
+  border-radius: 7px;
+  box-shadow: 0 14px 38px rgb(0 39 68 / 22%);
+  animation: schedule-toast-in 160ms ease-out;
+}
+.schedule-toast > svg { flex: 0 0 auto; }
+.schedule-toast > span { min-width: 0; font-size: 13px; line-height: 1.4; font-weight: 650; }
+.schedule-toast__close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #42613c;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.schedule-toast__close:hover { color: #205e16; background: rgb(37 103 25 / 8%); }
+.schedule-toast__close:focus-visible { outline: 3px solid rgb(37 103 25 / 26%); outline-offset: 1px; }
+@keyframes schedule-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
 .auth-sent { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: start; padding: 20px; color: #205e16; background: var(--success-surface); border: 1px solid #9aca8c; border-radius: 6px; }
 .auth-sent p { margin: 5px 0 15px; color: #42613c; line-height: 1.45; }
 .auth-sent .button-link { grid-column: 2; width: fit-content; }
@@ -706,9 +743,16 @@ button { color: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
+.warning-banner { appearance: none; padding: 12px 18px; font-family: inherit; text-decoration: none; }
+.warning-banner:hover { color: #9b3508; background: #fff2e9; border-color: #df8555; }
+.warning-banner:focus-visible { outline: 3px solid rgb(185 65 11 / 24%); outline-offset: 3px; }
 .schedule-ready-banner { color: #256719; background: var(--success-surface); border-color: #9aca8c; cursor: default; }
+.warning-banner__copy { min-width: 0; display: grid; gap: 3px; }
+.warning-banner__copy strong { font-size: 14px; line-height: 1.35; }
+.warning-banner__copy small { color: #7d3a1c; font-size: 12px; line-height: 1.4; font-weight: 500; }
+.schedule-ready-banner .warning-banner__copy small { color: #3e6936; }
 .warning-banner__action,
-.offline-banner__action { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.offline-banner__action { display: inline-flex; align-items: center; justify-self: end; gap: 3px; color: #9b3508; font-weight: 750; white-space: nowrap; }
 .meal-plan-setup { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; padding: 18px; color: var(--scout-blue); background: #eef6fa; border: 1px solid #bed3df; border-radius: 5px; }
 .meal-plan-setup h2 { margin: 0 0 6px; font-size: 18px; }
 .meal-plan-setup p { max-width: 760px; margin: 0; color: #3f5664; font-size: 13px; line-height: 1.5; }
@@ -728,7 +772,7 @@ button { color: inherit; }
 .schedule-table td { height: 128px; padding: 7px; vertical-align: top; }
 .meal-slot-stack { display: grid; gap: 7px; }
 .meal-cell,
-.meal-slot { position: relative; width: 100%; min-height: 110px; height: auto; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #d8dadd; border-radius: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+.meal-slot { position: relative; width: 100%; min-height: 110px; height: 110px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #d8dadd; border-radius: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
 .meal-cell { background: #fff; }
 .meal-cell:hover,
 .meal-slot:hover { border-color: #7895aa; }
@@ -741,8 +785,7 @@ button { color: inherit; }
 .meal-cell__meta { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
 .meal-cell__hint,
 .meal-slot__cta { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--scout-blue); font-size: 11px; font-weight: 700; }
-.meal-card__chevron { transition: transform 140ms ease; }
-[aria-expanded="true"] .meal-card__chevron { transform: rotate(90deg); }
+.meal-card__chevron { flex: 0 0 auto; }
 .meal-slot { border-style: dashed; font-size: 12px; text-align: center; }
 .meal-slot .meal-card__trigger { justify-content: center; text-align: center; }
 .meal-slot--gap { color: #8b360d; background: var(--warning-surface); border-color: #e7a783; }
@@ -751,17 +794,17 @@ button { color: inherit; }
 .meal-slot--none .meal-card__trigger > span:first-child { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 650; }
 .meal-slot--none .meal-slot__cta,
 .meal-slot--gap .meal-slot__cta { color: var(--scout-blue); }
-/* The actions sit below the meal's own content inside the clicked cell instead
-   of covering it, so the title, time and status stay readable while choosing. */
-/* One column, because a day cell is far too narrow to fit two readable labels
-   side by side. */
-.meal-card__actions { position: relative; display: grid; grid-template-columns: 1fr; gap: 6px; padding: 9px 8px 9px; color: var(--ink); background: #f7fbfd; border-top: 1px solid #d8dadd; }
-.meal-slot--gap .meal-card__actions { background: #fff7f1; border-top-color: #e7a783; }
-.meal-slot--none .meal-card__actions { background: #eaedee; border-top-color: #c8cdd1; }
-.meal-card__actions-title { grid-column: 1 / -1; align-self: center; padding-right: 26px; font-size: 11px; font-weight: 750; text-align: left; }
-.meal-card__close { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; color: #52606a; background: transparent; border: 0; border-radius: 3px; cursor: pointer; }
+.meal-card__actions { position: absolute; inset: 0; z-index: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: 24px minmax(0, 1fr); gap: 5px; padding: 7px; color: var(--ink); background: #f7fbfd; border-radius: 3px; }
+.meal-slot--gap .meal-card__actions { background: #fff7f1; }
+.meal-slot--none .meal-card__actions { background: #eaedee; }
+.meal-card__actions--single .meal-card__action { grid-column: 1 / -1; }
+.meal-card__actions-title { min-width: 0; grid-column: 1 / -1; align-self: center; overflow: hidden; padding-right: 30px; font-size: 11px; line-height: 1.2; font-weight: 750; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.meal-card__close { position: absolute; top: 3px; right: 3px; z-index: 3; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; color: #52606a; background: transparent; border: 0; border-radius: 3px; cursor: pointer; }
 .meal-card__close:hover { color: var(--ink); background: rgb(0 54 96 / 8%); }
-.meal-card__action { min-width: 0; min-height: 32px; display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 6px 8px; background: #fff; border: 1px solid #aebfc9; border-radius: 4px; font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.meal-card__close:focus-visible,
+.meal-card__action:focus-visible { outline: 3px solid rgb(0 92 153 / 35%); outline-offset: -3px; }
+.meal-card__action { min-width: 0; min-height: 44px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 5px 4px; color: inherit; background: #fff; border: 1px solid #aebfc9; border-radius: 4px; font: inherit; font-size: 11px; line-height: 1.15; font-weight: 750; text-align: center; white-space: normal; cursor: pointer; }
+.meal-card__action svg { flex: 0 0 auto; }
 .meal-card__action:hover { background: #edf5f8; }
 .meal-card__action--primary { color: var(--scout-blue); }
 .meal-card__action--danger { color: #9f2f25; }
@@ -1016,7 +1059,7 @@ button { color: inherit; }
   .schedule-heading { padding: 0 18px; }
   .schedule-layout { padding: 0 18px; }
   .warning-banner { min-height: 74px; grid-template-columns: auto 1fr; }
-  .warning-banner__action { grid-column: 2; }
+  .warning-banner__action { grid-column: 2; justify-self: start; }
   .meal-plan-setup { align-items: stretch; flex-direction: column; margin-left: 0; margin-right: 0; }
   .meal-plan-setup .primary-button { width: 100%; }
   .schedule-table-wrap { margin-left: -18px; margin-right: -18px; border-radius: 0; }
@@ -1056,6 +1099,7 @@ button { color: inherit; }
   .pwa-update { right: 12px; bottom: 12px; width: calc(100vw - 24px); grid-template-columns: auto minmax(0, 1fr) auto; }
   .pwa-update .primary-button { grid-column: 2; width: fit-content; }
   .pwa-update .icon-button { grid-column: 3; grid-row: 1; }
+  .schedule-toast { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
   .invite-form { grid-template-columns: 1fr; }
   .invite-form .primary-button { grid-column: auto; }
   .member-row { grid-template-columns: 42px minmax(0, 1fr); padding: 12px 0; }

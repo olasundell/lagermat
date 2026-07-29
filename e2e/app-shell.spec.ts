@@ -249,7 +249,7 @@ test("a published workbook recipe is frozen locally for the active camp", async 
   await page.goto("/recept");
 
   await expect(page.getByRole("heading", { name: "Recept", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Receptöversikt")).toContainText("26 recept");
+  await expect(page.getByLabel("Receptöversikt")).toContainText("34 recept");
   await expect(page.getByLabel("Receptöversikt")).toContainText("9 valda för lägret");
   await expect(page.getByLabel("Receptöversikt")).not.toContainText("mängdlägen");
   await page.getByPlaceholder("Sök bland recept").fill("Frukost");
@@ -275,8 +275,53 @@ test("procurement sends the user to calculate when no current revision exists", 
   await expect(page.getByRole("heading", { name: "Matsedel" })).toBeVisible();
 });
 
+test("the schedule warning explains the next fix and opens it", async ({ page, request }) => {
+  if (process.env.PLAYWRIGHT_DEMO_MODE !== "true") {
+    await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  }
+  await page.goto("/matsedel");
+
+  const warning = page.getByRole("link", { name: /1 specialkostuppgift behöver granskas.*Granska specialkost/ });
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("Kontrollera uppgiften från anmälan");
+  await expect(page.getByText("Underlag med varningar", { exact: true })).toHaveCount(0);
+
+  await warning.click();
+  await expect(page).toHaveURL(/\/specialkost$/);
+  await expect(page.getByRole("heading", { name: "Specialkost", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Att granska" })).toBeVisible();
+});
+
+test("the calculation confirmation is a short-lived overlay", async ({ page, request }) => {
+  if (process.env.PLAYWRIGHT_DEMO_MODE !== "true") {
+    await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  }
+  await page.goto("/matsedel");
+
+  const scheduleLayout = page.locator(".schedule-layout");
+  await expect(scheduleLayout).toBeVisible();
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  const layoutBefore = await scheduleLayout.boundingBox();
+  expect(layoutBefore).not.toBeNull();
+
+  await page.getByRole("button", { name: "Räkna ut mängder" }).click();
+  const notification = page.locator(".schedule-toast");
+  await expect(notification).toContainText(/Mängderna räknades om/);
+  await expect(notification).toHaveCSS("position", "fixed");
+  await expect(page.locator(".schedule-page > .form-success")).toHaveCount(0);
+
+  const layoutAfter = await scheduleLayout.boundingBox();
+  expect(layoutAfter?.y).toBe(layoutBefore?.y);
+  await expect(notification).toBeHidden({ timeout: 5_000 });
+});
+
 test("the complete camp schedule keeps meal actions inside the clicked cell", async ({ page, request }, testInfo) => {
-  await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  if (process.env.PLAYWRIGHT_DEMO_MODE !== "true") {
+    await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  }
   await page.goto("/matsedel");
 
   await expect(page.locator(".warning-banner, .schedule-ready-banner")).toBeVisible();
@@ -288,31 +333,94 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
   const mealDetail = page.locator(".meal-detail");
   const chiliMeal = page.getByRole("button", { name: /^Chili sin carne,/ });
   const chiliMealCard = page.locator(".meal-cell").filter({ has: chiliMeal });
+  const lunchRow = page.locator(".schedule-table tbody tr").filter({
+    has: page.getByRole("rowheader", { name: "Lunch", exact: true })
+  });
+  const dinnerRow = page.locator(".schedule-table tbody tr").filter({
+    has: page.getByRole("rowheader", { name: "Middag", exact: true })
+  });
+  const pastaMeal = page.getByRole("button", { name: /^Pasta carbonara,/ });
+
+  await chiliMeal.scrollIntoViewIfNeeded();
+  await expect(chiliMeal).toContainText("Ändra måltid");
+  const [cardBefore, rowBefore, nextRowBefore, scrollBefore] = await Promise.all([
+    chiliMealCard.boundingBox(),
+    lunchRow.boundingBox(),
+    dinnerRow.boundingBox(),
+    page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }))
+  ]);
+  expect(cardBefore).not.toBeNull();
+  expect(rowBefore).not.toBeNull();
+  expect(nextRowBefore).not.toBeNull();
+
   await chiliMeal.click();
   await expect(chiliMeal).toHaveAttribute("aria-expanded", "true");
-  await expect(chiliMealCard.getByRole("button", { name: "Redigera Chili sin carne" })).toBeVisible();
-  await expect(chiliMealCard.getByRole("button", { name: "Skippa Chili sin carne" })).toBeVisible();
+  const editMeal = chiliMealCard.getByRole("button", { name: "Redigera Chili sin carne" });
+  const markNoService = chiliMealCard.getByRole("button", { name: "Markera Chili sin carne som ingen servering" });
+  await expect(editMeal).toBeVisible();
+  await expect(editMeal).toBeFocused();
+  await expect(markNoService).toContainText("Ingen servering");
   await expect(mealDetail.getByRole("heading", { name: "Chili sin carne" })).toBeVisible();
 
-  if (testInfo.project.name.includes("desktop")) {
-    await chiliMealCard.getByRole("button", { name: "Skippa Chili sin carne" }).click();
-    const skipDialog = page.getByRole("alertdialog", { name: "Skippa Chili sin carne?" });
-    await expect(skipDialog).toBeVisible();
-    await expect(skipDialog.getByText(/Måltidsuppgifterna bevaras/)).toBeVisible();
-    await skipDialog.getByRole("button", { name: "Bekräfta och skippa" }).click();
+  const [cardAfter, rowAfter, nextRowAfter, scrollAfter] = await Promise.all([
+    chiliMealCard.boundingBox(),
+    lunchRow.boundingBox(),
+    dinnerRow.boundingBox(),
+    page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }))
+  ]);
+  expect(cardAfter?.width).toBe(cardBefore?.width);
+  expect(cardAfter?.height).toBe(cardBefore?.height);
+  expect((cardAfter?.x ?? 0) - (rowAfter?.x ?? 0)).toBeCloseTo((cardBefore?.x ?? 0) - (rowBefore?.x ?? 0), 5);
+  expect((cardAfter?.y ?? 0) + scrollAfter.y).toBeCloseTo((cardBefore?.y ?? 0) + scrollBefore.y, 5);
+  expect(rowAfter?.width).toBe(rowBefore?.width);
+  expect(rowAfter?.height).toBe(rowBefore?.height);
+  expect((rowAfter?.y ?? 0) + scrollAfter.y).toBeCloseTo((rowBefore?.y ?? 0) + scrollBefore.y, 5);
+  expect(nextRowAfter?.width).toBe(nextRowBefore?.width);
+  expect(nextRowAfter?.height).toBe(nextRowBefore?.height);
+  expect((nextRowAfter?.y ?? 0) + scrollAfter.y).toBeCloseTo((nextRowBefore?.y ?? 0) + scrollBefore.y, 5);
 
-    await expect(page.getByText(/Chili sin carne skippades/)).toBeVisible();
-    const skippedMeal = page.getByRole("button", { name: /^Ingen servering, Chili sin carne bevarad,/ });
-    const skippedMealCard = page.locator(".meal-slot--none").filter({ has: skippedMeal });
-    await expect(skippedMeal).toBeVisible();
-    await expect(skippedMeal).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(chiliMeal).toHaveAttribute("aria-expanded", "false");
+  await expect(chiliMeal).toBeFocused();
+  await expect(mealDetail.getByRole("heading", { name: "Chili sin carne" })).toBeVisible();
+
+  await chiliMeal.click();
+  await chiliMealCard.getByRole("button", { name: "Stäng måltidsval" }).click();
+  await expect(chiliMeal).toHaveAttribute("aria-expanded", "false");
+  await expect(chiliMeal).toBeFocused();
+
+  await chiliMeal.click();
+  await pastaMeal.click();
+  await expect(chiliMeal).toHaveAttribute("aria-expanded", "false");
+  await expect(pastaMeal).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".meal-card__actions")).toHaveCount(1);
+  const pastaMealCard = page.locator(".meal-cell").filter({ has: pastaMeal });
+  await pastaMealCard.getByRole("button", { name: "Stäng måltidsval" }).click();
+  await chiliMeal.click();
+
+  if (testInfo.project.name.includes("desktop")) {
+    await markNoService.click();
+    const noServiceDialog = page.getByRole("alertdialog", { name: "Markera Chili sin carne som ingen servering?" });
+    await expect(noServiceDialog).toBeVisible();
+    await expect(noServiceDialog.getByText(/Måltidsuppgifterna bevaras/)).toBeVisible();
+    await noServiceDialog.getByRole("button", { name: "Markera som ingen servering" }).click();
+
+    await expect(page.getByText("Chili sin carne markerades som ingen servering. Måltidsuppgifterna är bevarade och kan återställas.")).toBeVisible();
+    const noServiceMeal = page.getByRole("button", { name: /^Ingen servering, Chili sin carne bevarad,/ });
+    const noServiceMealCard = page.locator(".meal-slot--none").filter({ has: noServiceMeal });
+    await expect(noServiceMeal).toBeVisible();
+    await expect(noServiceMeal).toHaveAttribute("aria-expanded", "true");
     await expect(mealDetail.getByRole("heading", { name: "Ingen servering" })).toBeVisible();
+    await expect(mealDetail.getByText("Måltidstillfälle")).toBeVisible();
     await expect(mealDetail.getByText("Chili sin carne är bevarad")).toBeVisible();
-    await skippedMealCard.getByRole("button", { name: /^Återställ måltiden,/ }).click();
+    const restoreMeal = noServiceMealCard.getByRole("button", { name: /^Återställ måltid,/ });
+    await restoreMeal.click();
     await expect(page.getByText(/Chili sin carne återställdes/)).toBeVisible();
     await expect(page.getByRole("button", { name: /^Chili sin carne,/ })).toBeVisible();
+    await page.getByRole("button", { name: "Räkna ut mängder" }).click();
+    await expect(page.getByText(/Mängderna räknades om/)).toBeVisible();
   } else {
-    await expect(chiliMealCard.getByRole("button", { name: "Skippa Chili sin carne" })).toBeVisible();
+    await expect(markNoService).toContainText("Ingen servering");
   }
 });
 

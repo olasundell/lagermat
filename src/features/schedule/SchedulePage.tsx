@@ -17,7 +17,7 @@ import {
   UsersRound,
   X
 } from "lucide-react";
-import { useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -32,8 +32,9 @@ import {
   emptyReserveDrafts,
   inclusiveCampDates,
   scheduleCalculationLabel,
-  scheduleIssueParts,
+  scheduleNextAction,
   visibleReserves,
+  type ScheduleNextActionKind,
   type ScheduleReadiness
 } from "./scheduleViewModel";
 
@@ -137,6 +138,7 @@ const defaultMealTimes: Record<MealType, string> = {
   evening: "20:00",
   other: "15:00"
 };
+const successNotificationDurationMs = 3_000;
 
 function dateTimeInputValue(value: string): string {
   const parsed = new Date(value);
@@ -192,10 +194,6 @@ function traceGroups(trace: Json): number {
   return Array.isArray(groups) ? groups.length : 0;
 }
 
-function isDraftRevision(revision: CalculationRevisionRow | null): boolean {
-  return traceObject(revision?.problem_summary ?? null).is_draft === true;
-}
-
 function MealStatusIcon({ status }: { status: MealStatus }) {
   if (status === "missing_recipe") return <CircleAlert className="meal-status meal-status--missing" aria-label="Recept saknas" size={18} fill="currentColor" />;
   if (status === "diet") return <Circle className="meal-status meal-status--diet" aria-label="Har specialkostreserver" size={13} fill="currentColor" />;
@@ -207,6 +205,7 @@ export function SchedulePage() {
   const { activeCamp, activeMembership } = useWorkspace();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
   const [editingMealId, setEditingMealId] = useState<string | null | undefined>(undefined);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   const [skipTargetSlotId, setSkipTargetSlotId] = useState<string | null>(null);
@@ -216,6 +215,14 @@ export function SchedulePage() {
   const [slotSavingId, setSlotSavingId] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const mealActionTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const confirmPlanButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (message?.kind !== "success") return;
+    const timeoutId = window.setTimeout(() => setMessage(null), successNotificationDurationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
 
   const scope = activeCamp && activeMembership
     ? { organizationId: activeMembership.organizationId, campId: activeCamp.id }
@@ -368,13 +375,30 @@ export function SchedulePage() {
   }
 
   function selectSlot(slot: MealSlotRow, meal: MealRow | null) {
-    const isClosing = selectedSlotId === slot.id;
-    setSelectedId(isClosing ? null : meal?.id ?? null);
-    setSelectedSlotId(isClosing ? null : slot.id);
+    setSelectedId(meal?.id ?? null);
+    setSelectedSlotId(slot.id);
+    setExpandedSlotId(slot.id);
     setEditingMealId(undefined);
     setEditingSlotId(null);
     setDraft(null);
     setMessage(null);
+  }
+
+  function closeSlotActions(slotId: string) {
+    setExpandedSlotId(null);
+    window.requestAnimationFrame(() => mealActionTriggerRefs.current.get(slotId)?.focus());
+  }
+
+  function handleSlotActionsKeyDown(event: KeyboardEvent<HTMLDivElement>, slotId: string) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeSlotActions(slotId);
+  }
+
+  function rememberMealActionTrigger(slotId: string, element: HTMLButtonElement | null) {
+    if (element) mealActionTriggerRefs.current.set(slotId, element);
+    else mealActionTriggerRefs.current.delete(slotId);
   }
 
   function closeMealEditor() {
@@ -493,7 +517,7 @@ export function SchedulePage() {
       kind: "success",
       text: serviceStatus === "no_service"
         ? linkedMeal
-          ? `${linkedMeal.title} skippades. Måltidsuppgifterna är bevarade och kan återställas.`
+          ? `${linkedMeal.title} markerades som ingen servering. Måltidsuppgifterna är bevarade och kan återställas.`
           : "Tillfället markerades som ingen servering."
         : linkedMeal
           ? `${linkedMeal.title} återställdes i matsedeln. Beräkningen behöver köras om.`
@@ -535,11 +559,52 @@ export function SchedulePage() {
     setCalculating(false);
   }
 
+  function handleScheduleNextAction(kind: ScheduleNextActionKind) {
+    if (kind === "confirm_meal_plan") {
+      confirmPlanButtonRef.current?.scrollIntoView({ block: "center" });
+      confirmPlanButtonRef.current?.focus();
+      return;
+    }
+    if (kind === "plan_meal_slot") {
+      const unplannedSlot = slots.find((slot) =>
+        slot.service_status === "required" && !mealsBySlot.has(slot.id)
+      );
+      if (unplannedSlot) selectSlot(unplannedSlot, null);
+      return;
+    }
+    if (kind === "choose_meal_recipe") {
+      const mealWithoutRecipe = meals.find((meal) => !meal.camp_recipe_copy_id);
+      if (mealWithoutRecipe) openMealEditor(mealWithoutRecipe);
+      return;
+    }
+    if (kind === "calculate") void calculate();
+  }
+
   if (!scope || !activeCamp || !activeMembership) {
     return <section className="page page--narrow"><p className="form-error">Välj organisation och läger först.</p></section>;
   }
 
-  const issueParts = scheduleIssueParts(readiness);
+  const nextAction = scheduleNextAction(readiness);
+  const nextActionPath = nextAction?.kind === "review_dietary_needs"
+    ? "/specialkost"
+    : nextAction?.kind === "choose_meal_recipe" && versionOptions.length === 0
+      ? "/recept"
+      : null;
+  const nextActionLabel = nextAction?.kind === "choose_meal_recipe" && versionOptions.length === 0
+    ? "Öppna recepten"
+    : nextAction?.kind === "calculate" && calculating
+      ? "Räknar om…"
+      : nextAction?.label;
+  const nextActionContent = nextAction ? (
+    <>
+      <CircleAlert aria-hidden="true" size={24} fill="currentColor" />
+      <span className="warning-banner__copy">
+        <strong>{nextAction.title}</strong>
+        <small>{nextAction.description}</small>
+      </span>
+      <span className="warning-banner__action">{nextActionLabel} <ChevronRight aria-hidden="true" size={17} /></span>
+    </>
+  ) : null;
   const selectedReserves = selectedMeal ? visibleReserves(selectedMeal.meal_reserves) : [];
 
   return (
@@ -562,18 +627,43 @@ export function SchedulePage() {
         </div>
       </div>
 
-      {message ? <p className={message.kind === "error" ? "form-error" : "form-success"} role={message.kind === "error" ? "alert" : "status"}>{message.kind === "success" ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}{message.text}</p> : null}
+      {message?.kind === "error" ? <p className="form-error" role="alert"><CircleAlert aria-hidden="true" size={18} />{message.text}</p> : null}
+      {message?.kind === "success" ? (
+        <div className="schedule-toast" role="status" aria-live="polite" aria-atomic="true">
+          <Check aria-hidden="true" size={19} />
+          <span>{message.text}</span>
+          <Button className="schedule-toast__close" aria-label="Stäng meddelandet" onPress={() => setMessage(null)}>
+            <X aria-hidden="true" size={17} />
+          </Button>
+        </div>
+      ) : null}
 
       {scheduleQuery.isLoading ? <LoaderCircle className="spin" aria-label="Läser matsedel" size={30} /> : scheduleQuery.error ? (
         <p className="form-error">{userFacingError(scheduleQuery.error, "Matsedeln kunde inte läsas.")}</p>
       ) : (
         <div className="schedule-layout">
           <div className="schedule-workspace">
-            {readiness ? <div className={issueParts.length > 0 ? "warning-banner" : "schedule-ready-banner"}>
-              {issueParts.length > 0 ? <CircleAlert aria-hidden="true" size={24} fill="currentColor" /> : <Check aria-hidden="true" size={23} />}
-              <span>{issueParts.length > 0 ? `Nästa att lösa: ${issueParts.join(", ")}` : "Hela matsedeln är planerad, granskad och aktuell."}</span>
-              {revision ? <span className="warning-banner__action">{isDraftRevision(revision) ? "Underlag med varningar" : "Mängderna är aktuella"}</span> : null}
-            </div> : null}
+            {nextAction && nextActionContent ? nextActionPath ? (
+              <Link to={nextActionPath} className="warning-banner">
+                {nextActionContent}
+              </Link>
+            ) : (
+              <Button
+                className="warning-banner"
+                onPress={() => handleScheduleNextAction(nextAction.kind)}
+                isDisabled={nextAction.kind === "calculate" && calculating}
+              >
+                {nextActionContent}
+              </Button>
+            ) : readiness ? (
+              <div className="schedule-ready-banner">
+                <Check aria-hidden="true" size={23} />
+                <span className="warning-banner__copy">
+                  <strong>Matsedeln är klar</strong>
+                  <small>{revision ? "Alla måltider är planerade och mängderna är aktuella." : "Alla måltider är planerade och granskade."}</small>
+                </span>
+              </div>
+            ) : null}
 
             {!readiness?.meal_plan_confirmed ? (
               <div className="meal-plan-setup">
@@ -581,7 +671,7 @@ export function SchedulePage() {
                   <h2>Skapa lägrets måltidstillfällen</h2>
                   <p>Standardplanen lägger in frukost, lunch och middag för varje lägerdag. Därefter kan du markera första eller sista dagens tillfällen som ingen servering och lägga till extra mål.</p>
                 </div>
-                <Button className="primary-button" onPress={confirmDefaultPlan} isDisabled={configuring}>
+                <Button ref={confirmPlanButtonRef} className="primary-button" onPress={confirmDefaultPlan} isDisabled={configuring}>
                   {configuring ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <CalendarPlus aria-hidden="true" size={18} />}
                   {configuring ? "Skapar plan…" : "Bekräfta standardplan"}
                 </Button>
@@ -607,36 +697,46 @@ export function SchedulePage() {
                         {cellSlots.map((slot) => {
                           const meal = mealsBySlot.get(slot.id);
                           const isSelected = selectedSlotId === slot.id;
+                          const isExpanded = expandedSlotId === slot.id;
                           const actionRegionId = `meal-slot-actions-${slot.id}`;
                           if (slot.service_status === "no_service") {
+                            const restoreLabel = meal ? "Återställ måltid" : "Återställ tillfälle";
                             return (
                               <div
                                 className={`meal-slot meal-slot--none${isSelected ? " meal-slot--selected" : ""}`}
                                 key={slot.id}
                               >
                                 <Button
+                                  ref={(element) => rememberMealActionTrigger(slot.id, element)}
                                   className="meal-card__trigger"
                                   onPress={() => selectSlot(slot, meal ?? null)}
-                                  aria-label={`Ingen servering, ${meal ? `${meal.title} bevarad, ` : ""}${mealTypeLabels[slot.meal_type]} ${slot.service_date}, välj åtgärd`}
-                                  aria-expanded={isSelected}
+                                  aria-label={`Ingen servering, ${meal ? `${meal.title} bevarad, ` : ""}${mealTypeLabels[slot.meal_type]} ${slot.service_date}, öppna återställning`}
+                                  aria-expanded={isExpanded}
                                   aria-controls={actionRegionId}
                                 >
                                   <span><Ban aria-hidden="true" size={16} /> Ingen servering</span>
                                   {meal ? <strong>{meal.title} är bevarad</strong> : null}
-                                  <span className="meal-slot__cta">{isSelected ? "Dölj åtgärd" : "Återställ här"} <ChevronRight className="meal-card__chevron" aria-hidden="true" size={15} /></span>
+                                  <span className="meal-slot__cta">{restoreLabel} <ChevronRight className="meal-card__chevron" aria-hidden="true" size={15} /></span>
                                 </Button>
-                                {isSelected ? (
-                                  <div className="meal-card__actions" id={actionRegionId} role="group" aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}>
-                                    <span className="meal-card__actions-title">Återställ tillfället?</span>
-                                    <Button className="meal-card__close" onPress={() => selectSlot(slot, meal ?? null)} aria-label="Stäng åtgärder"><X aria-hidden="true" size={15} /></Button>
+                                {isExpanded ? (
+                                  <div
+                                    className="meal-card__actions meal-card__actions--single"
+                                    id={actionRegionId}
+                                    role="group"
+                                    aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
+                                    onKeyDown={(event) => handleSlotActionsKeyDown(event, slot.id)}
+                                  >
+                                    <span className="meal-card__actions-title">{restoreLabel}</span>
+                                    <Button className="meal-card__close" onPress={() => closeSlotActions(slot.id)} aria-label="Stäng måltidsval"><X aria-hidden="true" size={15} /></Button>
                                     <Button
+                                      autoFocus
                                       className="meal-card__action meal-card__action--primary"
                                       onPress={() => setSlotServiceStatus(slot, "required")}
                                       isDisabled={slotSavingId === slot.id}
-                                      aria-label={`${meal ? "Återställ måltiden" : "Återställ tillfället"}, ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
+                                      aria-label={`${restoreLabel}, ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
                                     >
                                       {slotSavingId === slot.id ? <LoaderCircle className="spin" aria-hidden="true" size={15} /> : <RotateCcw aria-hidden="true" size={15} />}
-                                      Återställ
+                                      {restoreLabel}
                                     </Button>
                                   </div>
                                 ) : null}
@@ -650,25 +750,32 @@ export function SchedulePage() {
                                 className={`meal-cell${isSelected ? " meal-cell--selected" : ""}`}
                               >
                                 <Button
+                                  ref={(element) => rememberMealActionTrigger(slot.id, element)}
                                   className="meal-card__trigger"
                                   onPress={() => selectSlot(slot, meal)}
-                                  aria-label={`${meal.title}, ${timeLabel(meal.starts_at, activeCamp.timezone)}, ${mealTypeLabels[meal.meal_type]}, välj åtgärd`}
-                                  aria-expanded={isSelected}
+                                  aria-label={`${meal.title}, ${timeLabel(meal.starts_at, activeCamp.timezone)}, ${mealTypeLabels[meal.meal_type]}, öppna måltidsval`}
+                                  aria-expanded={isExpanded}
                                   aria-controls={actionRegionId}
                                 >
                                   <strong>{meal.title}</strong>
                                   <span className="meal-cell__meta"><span>{timeLabel(meal.starts_at, activeCamp.timezone)} · {linesByMeal.has(meal.id) ? "beräknad" : "ej beräknad"}</span><MealStatusIcon status={statusForMeal(meal)} /></span>
-                                  <span className="meal-cell__hint">{isSelected ? "Dölj åtgärder" : "Redigera eller skippa här"} <ChevronRight className="meal-card__chevron" aria-hidden="true" size={14} /></span>
+                                  <span className="meal-cell__hint">Ändra måltid <ChevronRight className="meal-card__chevron" aria-hidden="true" size={14} /></span>
                                 </Button>
-                                {isSelected ? (
-                                  <div className="meal-card__actions" id={actionRegionId} role="group" aria-label={`Åtgärder för ${meal.title}`}>
-                                    <span className="meal-card__actions-title">Vad vill du göra?</span>
-                                    <Button className="meal-card__close" onPress={() => selectSlot(slot, meal)} aria-label="Stäng åtgärder"><X aria-hidden="true" size={15} /></Button>
-                                    <Button className="meal-card__action meal-card__action--primary" onPress={() => openMealEditor(meal)} aria-label={`Redigera ${meal.title}`}>
+                                {isExpanded ? (
+                                  <div
+                                    className="meal-card__actions"
+                                    id={actionRegionId}
+                                    role="group"
+                                    aria-label={`Åtgärder för ${meal.title}`}
+                                    onKeyDown={(event) => handleSlotActionsKeyDown(event, slot.id)}
+                                  >
+                                    <span className="meal-card__actions-title">Ändra måltid</span>
+                                    <Button className="meal-card__close" onPress={() => closeSlotActions(slot.id)} aria-label="Stäng måltidsval"><X aria-hidden="true" size={15} /></Button>
+                                    <Button autoFocus className="meal-card__action meal-card__action--primary" onPress={() => openMealEditor(meal)} aria-label={`Redigera ${meal.title}`}>
                                       <Pencil aria-hidden="true" size={15} /> Redigera
                                     </Button>
-                                    <Button className="meal-card__action meal-card__action--danger" onPress={() => setSkipTargetSlotId(slot.id)} aria-label={`Skippa ${meal.title}`}>
-                                      <Ban aria-hidden="true" size={15} /> Skippa
+                                    <Button className="meal-card__action meal-card__action--danger" onPress={() => setSkipTargetSlotId(slot.id)} aria-label={`Markera ${meal.title} som ingen servering`}>
+                                      <Ban aria-hidden="true" size={15} /> Ingen servering
                                     </Button>
                                   </div>
                                 ) : null}
@@ -681,34 +788,42 @@ export function SchedulePage() {
                               key={slot.id}
                             >
                               <Button
+                                ref={(element) => rememberMealActionTrigger(slot.id, element)}
                                 className="meal-card__trigger"
                                 onPress={() => selectSlot(slot, null)}
-                                aria-label={`Oplanerat, ${mealTypeLabels[slot.meal_type]} ${slot.service_date}, ${timeLabel(slot.starts_at, activeCamp.timezone)}, välj åtgärd`}
-                                aria-expanded={isSelected}
+                                aria-label={`Oplanerat, ${mealTypeLabels[slot.meal_type]} ${slot.service_date}, ${timeLabel(slot.starts_at, activeCamp.timezone)}, öppna planering`}
+                                aria-expanded={isExpanded}
                                 aria-controls={actionRegionId}
                               >
                                 <strong>Oplanerat</strong>
                                 <span>{timeLabel(slot.starts_at, activeCamp.timezone)}</span>
-                                <span className="meal-slot__cta">{isSelected ? "Dölj åtgärder" : "Lägg till eller skippa här"} <ChevronRight className="meal-card__chevron" aria-hidden="true" size={15} /></span>
+                                <span className="meal-slot__cta">Planera tillfälle <ChevronRight className="meal-card__chevron" aria-hidden="true" size={15} /></span>
                               </Button>
-                              {isSelected ? (
-                                <div className="meal-card__actions" id={actionRegionId} role="group" aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}>
-                                  <span className="meal-card__actions-title">Vad vill du göra?</span>
-                                  <Button className="meal-card__close" onPress={() => selectSlot(slot, null)} aria-label="Stäng åtgärder"><X aria-hidden="true" size={15} /></Button>
+                              {isExpanded ? (
+                                <div
+                                  className="meal-card__actions"
+                                  id={actionRegionId}
+                                  role="group"
+                                  aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
+                                  onKeyDown={(event) => handleSlotActionsKeyDown(event, slot.id)}
+                                >
+                                  <span className="meal-card__actions-title">Planera tillfälle</span>
+                                  <Button className="meal-card__close" onPress={() => closeSlotActions(slot.id)} aria-label="Stäng måltidsval"><X aria-hidden="true" size={15} /></Button>
                                   <Button
+                                    autoFocus
                                     className="meal-card__action meal-card__action--primary"
                                     onPress={() => openNewMeal(slot)}
                                     isDisabled={versionOptions.length === 0}
                                     aria-label={`Lägg till ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
                                   >
-                                    <Plus aria-hidden="true" size={15} /> Lägg till
+                                    <Plus aria-hidden="true" size={15} /> Lägg till måltid
                                   </Button>
                                   <Button
                                     className="meal-card__action meal-card__action--danger"
                                     onPress={() => setSkipTargetSlotId(slot.id)}
-                                    aria-label={`Skippa ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}
+                                    aria-label={`Markera ${mealTypeLabels[slot.meal_type]} ${slot.service_date} som ingen servering`}
                                   >
-                                    <Ban aria-hidden="true" size={15} /> Skippa
+                                    <Ban aria-hidden="true" size={15} /> Ingen servering
                                   </Button>
                                 </div>
                               ) : null}
@@ -741,7 +856,7 @@ export function SchedulePage() {
               <>
                 <div className="meal-detail__heading">
                   <div>
-                    <p className="page-heading__eyebrow">Hoppat tillfälle</p>
+                    <p className="page-heading__eyebrow">Måltidstillfälle</p>
                     <h2 id="meal-detail-title">Ingen servering</h2>
                     <p>{dayHeading(selectedSlot.starts_at, activeCamp.timezone).weekday} · {timeLabel(selectedSlot.starts_at, activeCamp.timezone)} · {mealTypeLabels[selectedSlot.meal_type]}</p>
                   </div>
@@ -834,7 +949,7 @@ export function SchedulePage() {
               <div className="meal-skip-dialog__heading">
                 <div>
                   <p className="page-heading__eyebrow">Bekräfta ingen servering</p>
-                  <h2 id="meal-skip-dialog-title">Skippa {skipTargetMeal ? skipTargetMeal.title : mealTypeLabels[skipTargetSlot.meal_type]}?</h2>
+                  <h2 id="meal-skip-dialog-title">Markera {skipTargetMeal ? skipTargetMeal.title : mealTypeLabels[skipTargetSlot.meal_type]} som ingen servering?</h2>
                 </div>
                 <Button className="icon-button" aria-label="Stäng bekräftelsen" onPress={() => setSkipTargetSlotId(null)} isDisabled={slotSavingId === skipTargetSlot.id}><X aria-hidden="true" size={21} /></Button>
               </div>
@@ -847,7 +962,7 @@ export function SchedulePage() {
                   <Button className="button-link" onPress={() => setSkipTargetSlotId(null)} isDisabled={slotSavingId === skipTargetSlot.id}>Avbryt</Button>
                   <Button className="danger-button" onPress={confirmSkip} isDisabled={slotSavingId === skipTargetSlot.id}>
                     {slotSavingId === skipTargetSlot.id ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Ban aria-hidden="true" size={18} />}
-                    {slotSavingId === skipTargetSlot.id ? "Skippar…" : "Bekräfta och skippa"}
+                    {slotSavingId === skipTargetSlot.id ? "Markerar…" : "Markera som ingen servering"}
                   </Button>
                 </div>
               </div>

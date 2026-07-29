@@ -38,7 +38,7 @@ import {
 } from "./scheduleViewModel";
 
 type MealType = "breakfast" | "lunch" | "dinner" | "evening" | "other";
-type MealStatus = "clear" | "diet" | "review" | "unknown";
+type MealStatus = "missing_recipe" | "diet" | "clear";
 
 interface MealReserveRow {
   id: string;
@@ -197,10 +197,9 @@ function isDraftRevision(revision: CalculationRevisionRow | null): boolean {
 }
 
 function MealStatusIcon({ status }: { status: MealStatus }) {
-  if (status === "clear") return <Leaf className="meal-status meal-status--clear" aria-label="Kostunderlag granskat" size={17} />;
+  if (status === "missing_recipe") return <CircleAlert className="meal-status meal-status--missing" aria-label="Recept saknas" size={18} fill="currentColor" />;
   if (status === "diet") return <Circle className="meal-status meal-status--diet" aria-label="Har specialkostreserver" size={13} fill="currentColor" />;
-  if (status === "review") return <CircleAlert className="meal-status meal-status--review" aria-label="Underlag behöver granskas" size={18} fill="currentColor" />;
-  return <span className="meal-status meal-status--unknown" aria-label="Saknar beräkning">–</span>;
+  return <Leaf className="meal-status meal-status--clear" aria-label="Recept klart" size={17} />;
 }
 
 export function SchedulePage() {
@@ -286,10 +285,11 @@ export function SchedulePage() {
   const slotsById = new Map(slots.map((slot) => [slot.id, slot]));
   const explicitlySelectedSlot = selectedSlotId ? slotsById.get(selectedSlotId) ?? null : null;
   const selectedMealById = selectedId ? meals.find((meal) => meal.id === selectedId) ?? null : null;
-  const defaultMeal = meals.find((meal) => slotsById.get(meal.meal_slot_id)?.service_status === "required") ?? null;
+  // No implicit fallback meal: the panel must never describe a meal that no cell
+  // shows as selected.
   const selectedMeal = explicitlySelectedSlot
     ? mealsBySlot.get(explicitlySelectedSlot.id) ?? null
-    : selectedMealById ?? defaultMeal;
+    : selectedMealById;
   const selectedSlot = explicitlySelectedSlot
     ?? (selectedMeal ? slotsById.get(selectedMeal.meal_slot_id) ?? null : null);
   const skipTargetSlot = skipTargetSlotId ? slotsById.get(skipTargetSlotId) ?? null : null;
@@ -307,11 +307,13 @@ export function SchedulePage() {
     .map((line) => ({ line, mode: traceString(line.trace, "mode"), rule: traceString(line.trace, "dietary_rule") }))
     .find((entry) => entry.mode === "weighted_portion" && entry.rule === "standard");
 
+  // Per-meal facts only. Camp-wide unresolved dietary review is already reported
+  // once in the banner, so it must not stamp an identical warning on every meal.
   function statusForMeal(meal: MealRow): MealStatus {
-    if (!meal.camp_recipe_copy_id || !revision) return "unknown";
-    if ((readiness?.unresolved_dietary_needs ?? 0) > 0) return "review";
-    if (meal.meal_reserves.some((reserve) => !["standard", "standardkost"].includes(reserve.dietary_label.toLocaleLowerCase("sv-SE")))) return "diet";
-    return "clear";
+    if (!meal.camp_recipe_copy_id) return "missing_recipe";
+    const hasSpecialReserve = visibleReserves(meal.meal_reserves)
+      .some((reserve) => !["standard", "standardkost"].includes(reserve.dietary_label.toLocaleLowerCase("sv-SE")));
+    return hasSpecialReserve ? "diet" : "clear";
   }
 
   function openNewMeal(slot?: MealSlotRow) {
@@ -335,7 +337,8 @@ export function SchedulePage() {
     setSelectedId(meal.id);
     setSelectedSlotId(meal.meal_slot_id);
     setEditingMealId(meal.id);
-    setEditingSlotId(null);
+    // The slot owns date, time and type, so editing stays bound to it.
+    setEditingSlotId(meal.meal_slot_id);
     setDraft({
       title: meal.title,
       startsAt: dateTimeInputValue(meal.starts_at),
@@ -405,9 +408,9 @@ export function SchedulePage() {
         portions: Math.max(0, Number.parseInt(reserve.portions || "0", 10) || 0)
       }))
       .filter((reserve) => reserve.dietary_label.length > 0 && reserve.portions > 0);
-    const result = editingMealId === null && editingSlotId
+    const result = editingSlotId
       ? await supabase.rpc("save_meal_to_slot", {
-          p_meal_id: null as unknown as string,
+          p_meal_id: (editingMealId ?? null) as unknown as string,
           p_meal_slot_id: editingSlotId,
           p_camp_id: scope.campId,
           p_title: draft.title.trim(),
@@ -559,7 +562,7 @@ export function SchedulePage() {
         </div>
       </div>
 
-      {message ? <p className={message.kind === "error" ? "form-error" : "form-success"} role="status">{message.kind === "success" ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}{message.text}</p> : null}
+      {message ? <p className={message.kind === "error" ? "form-error" : "form-success"} role={message.kind === "error" ? "alert" : "status"}>{message.kind === "success" ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}{message.text}</p> : null}
 
       {scheduleQuery.isLoading ? <LoaderCircle className="spin" aria-label="Läser matsedel" size={30} /> : scheduleQuery.error ? (
         <p className="form-error">{userFacingError(scheduleQuery.error, "Matsedeln kunde inte läsas.")}</p>
@@ -623,7 +626,7 @@ export function SchedulePage() {
                                   <span className="meal-slot__cta">{isSelected ? "Dölj åtgärd" : "Återställ här"} <ChevronRight className="meal-card__chevron" aria-hidden="true" size={15} /></span>
                                 </Button>
                                 {isSelected ? (
-                                  <div className="meal-card__actions meal-card__actions--single" id={actionRegionId} role="group" aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}>
+                                  <div className="meal-card__actions" id={actionRegionId} role="group" aria-label={`Åtgärder för ${mealTypeLabels[slot.meal_type]} ${slot.service_date}`}>
                                     <span className="meal-card__actions-title">Återställ tillfället?</span>
                                     <Button className="meal-card__close" onPress={() => selectSlot(slot, meal ?? null)} aria-label="Stäng åtgärder"><X aria-hidden="true" size={15} /></Button>
                                     <Button
@@ -725,11 +728,11 @@ export function SchedulePage() {
             </div>
 
             <div className="schedule-legend" aria-label="Statusförklaring">
-              <span><CircleAlert className="meal-status--review" aria-hidden="true" size={17} fill="currentColor" /> Oplanerat tillfälle</span>
+              <span><i className="legend-swatch legend-swatch--gap" aria-hidden="true" /> Oplanerat tillfälle</span>
               <span><Ban aria-hidden="true" size={15} /> Ingen servering</span>
-              <span><Leaf className="meal-status--clear" aria-hidden="true" size={16} /> Kostunderlag granskat</span>
+              <span><CircleAlert className="meal-status--missing" aria-hidden="true" size={16} fill="currentColor" /> Recept saknas</span>
               <span><Circle className="meal-status--diet" aria-hidden="true" size={12} fill="currentColor" /> Har specialkostreserver</span>
-              <span><b>–</b> Saknar aktuell beräkning</span>
+              <span><Leaf className="meal-status--clear" aria-hidden="true" size={16} /> Recept klart</span>
             </div>
           </div>
 
@@ -754,7 +757,6 @@ export function SchedulePage() {
                 ) : (
                   <p className="muted-copy">Tillfället ingår inte i lägrets måltidsplan.</p>
                 )}
-                <p className="meal-detail__status"><Check aria-hidden="true" size={16} /> Återställ direkt i den markerade rutan.</p>
               </>
             ) : selectedMeal ? (
               <>
@@ -762,7 +764,6 @@ export function SchedulePage() {
                 <div className="portion-count"><UsersRound aria-hidden="true" size={22} /><strong>{selectedMultiplier ? `Motsvarar ${decimal(Number(traceString(selectedMultiplier.line.trace, "multiplier")))} normalportioner` : "Inte beräknad"}</strong><span>Beräknat från deltagarnas portionsstorlek och närvaro</span></div>
                 <div className="detail-section"><div className="detail-section__title"><h3>Recept för måltiden</h3><ChevronRight aria-hidden="true" size={17} /></div><dl><div><dt>Recept</dt><dd>{selectedMeal.camp_recipe_copies?.name ?? "Saknas"}</dd></div><div><dt>Version</dt><dd>{selectedMeal.camp_recipe_copies?.recipe_versions ? `Version ${selectedMeal.camp_recipe_copies.recipe_versions.version_number}` : "Version saknas"}</dd></div><div><dt>Extra portioner</dt><dd>{selectedReserves.length > 0 ? selectedReserves.map((reserve) => `${reserve.portions} ${reserve.dietary_label}`).join(", ") : "Inga"}</dd></div></dl></div>
                 <div className="calculation-detail"><div className="detail-section__title"><h3>Beräknade mängder</h3><span>{selectedLines.length} {selectedLines.length === 1 ? "ingrediens" : "ingredienser"}</span></div>{selectedLines.length === 0 ? <p className="muted-copy">Räkna ut mängderna för att se ingredienserna här.</p> : <ul>{selectedLines.sort((left, right) => left.ingredient_name.localeCompare(right.ingredient_name, "sv-SE")).map((line) => <li key={line.id}><div><strong>{line.ingredient_name}</strong><span>{decimal(line.exact_amount)} {line.unit}</span></div><details><summary>Så räknades mängden ut</summary><p>{readableFormula(line.trace)}</p><p>{traceGroups(line.trace)} {traceGroups(line.trace) === 1 ? "grupp ingår" : "grupper ingår"}.</p></details></li>)}</ul>}</div>
-                <p className="meal-detail__status"><Check aria-hidden="true" size={16} /> Redigera eller skippa direkt i den markerade rutan.</p>
               </>
             ) : selectedSlot ? (
               <div className="meal-action-panel">
@@ -773,10 +774,7 @@ export function SchedulePage() {
                     <p>{dayHeading(selectedSlot.starts_at, activeCamp.timezone).weekday} · {timeLabel(selectedSlot.starts_at, activeCamp.timezone)}</p>
                   </div>
                 </div>
-                <div className="meal-action-panel__prompt">
-                  <CircleAlert aria-hidden="true" size={22} />
-                  <div><strong>Åtgärderna finns i rutan</strong><span>Lägg till eller skippa utan att lämna den markerade platsen i matsedeln.</span></div>
-                </div>
+                <p className="muted-copy">Tillfället har ingen måltid ännu.</p>
               </div>
             ) : <div className="empty-panel"><h2 id="meal-detail-title">Välj en måltid</h2><p>Detaljer och nästa åtgärd visas här.</p></div>}
           </aside>
@@ -804,8 +802,12 @@ export function SchedulePage() {
               <div className="meal-editor">
                 <div className="meal-editor__fields">
                   <label>Titel<input name="meal-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-                  <label>Tid<input name="meal-starts-at" type="datetime-local" value={draft.startsAt} disabled={Boolean(editingSlotId)} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} /></label>
-                  <label>Typ<select name="meal-type" value={draft.mealType} disabled={Boolean(editingSlotId)} onChange={(event) => setDraft({ ...draft, mealType: event.target.value as MealType })}>{mealTypes.map((type) => <option key={type} value={type}>{mealTypeLabels[type]}</option>)}</select></label>
+                  {editingSlotId ? null : (
+                    <>
+                      <label>Tid<input name="meal-starts-at" type="datetime-local" value={draft.startsAt} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} /></label>
+                      <label>Typ<select name="meal-type" value={draft.mealType} onChange={(event) => setDraft({ ...draft, mealType: event.target.value as MealType })}>{mealTypes.map((type) => <option key={type} value={type}>{mealTypeLabels[type]}</option>)}</select></label>
+                    </>
+                  )}
                   <label>Publicerad receptversion<select name="meal-recipe-version" value={draft.recipeVersionId} onChange={(event) => setDraft({ ...draft, recipeVersionId: event.target.value })}>{versionOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                 </div>
                 <div className="meal-reserve-editor"><div className="detail-section__title"><h3>Extra portioner</h3><Button className="text-button" onPress={() => setDraft({ ...draft, reserves: [...draft.reserves, { id: crypto.randomUUID(), dietaryLabel: "Standardkost", portions: "1" }] })}><Plus aria-hidden="true" size={16} /> Lägg till</Button></div>{draft.reserves.map((reserve) => <div className="meal-reserve-row" key={reserve.id}><label><span>Typ av specialkost</span><input name={`reserve-diet-${reserve.id}`} value={reserve.dietaryLabel} onChange={(event) => updateReserve(reserve.id, { dietaryLabel: event.target.value })} /></label><label><span>Antal</span><input name={`reserve-portions-${reserve.id}`} type="number" min="0" step="1" value={reserve.portions} onChange={(event) => updateReserve(reserve.id, { portions: event.target.value })} /></label><Button className="icon-button" aria-label={`Ta bort extra portion ${reserve.dietaryLabel}`} onPress={() => setDraft({ ...draft, reserves: draft.reserves.filter((item) => item.id !== reserve.id) })}><X aria-hidden="true" size={18} /></Button></div>)}</div>

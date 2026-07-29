@@ -21,8 +21,8 @@ select is(
   (select meal_plan_confirmed_at is not null
    from public.camps
    where id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  false,
-  'the migration does not guess a complete plan for existing meals'
+  true,
+  'the complete demo menu explicitly confirms its meal plan'
 );
 
 select is(
@@ -44,28 +44,28 @@ select set_config(
 
 select is(
   (select count(*)::integer from public.camp_meal_slots),
-  1,
-  'RLS exposes only the active organization meal slots'
+  12,
+  'RLS exposes the twelve configured demo menu slots'
 );
 
 select is(
   public.confirm_default_meal_plan(
     'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
   )::integer,
-  29,
-  'confirmation fills the 29 missing breakfast lunch and dinner slots'
+  0,
+  'confirmation is idempotent when the complete demo plan is already configured'
 );
 
 select is(
   (select count(*)::integer from public.camp_meal_slots),
-  30,
-  'the ten-day camp has exactly 30 configured standard slots'
+  12,
+  'the four-day camp has exactly twelve configured standard slots'
 );
 
 select is(
   (select count(distinct service_date)::integer
    from public.camp_meal_slots),
-  10,
+  4,
   'every inclusive camp date is represented'
 );
 
@@ -97,8 +97,8 @@ select is(
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
    )),
-  1,
-  'the migrated meal remains planned after confirmation'
+  12,
+  'the complete demo menu plans every required slot'
 );
 
 select is(
@@ -107,8 +107,41 @@ select is(
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
    )),
-  29,
-  'every remaining required slot is visibly unplanned'
+  0,
+  'the complete demo menu leaves no required slot unplanned'
+);
+
+reset role;
+insert into public.camp_meal_slots (
+  id,
+  organization_id,
+  camp_id,
+  slot_key,
+  service_date,
+  starts_at,
+  meal_type,
+  label,
+  service_status,
+  source,
+  sort_order
+) values (
+  'a5000000-0000-0000-0000-000000000001',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'test:evening',
+  '2026-08-04',
+  '2026-08-04 20:00:00+02',
+  'evening',
+  'Kvällsfika',
+  'required',
+  'extra',
+  40
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '11111111-1111-1111-1111-111111111111',
+  true
 );
 
 select lives_ok(
@@ -118,41 +151,41 @@ select lives_ok(
        and meal_type = 'breakfast'),
     'no_service'
   )$$,
-  'a planner can explicitly mark a gap as no service'
+  'a planner can explicitly skip a planned meal'
 );
 
 select is(
-  (select no_service_slots::text || '|' || unplanned_slots::text
+  (select no_service_slots::text || '|' || planned_slots::text || '|' || unplanned_slots::text
    from public.get_camp_readiness(
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
    )),
-  '1|28',
+  '1|11|1',
   'no service is distinct from an unplanned required slot'
 );
 
 select lives_ok(
   $$select public.save_meal_to_slot(
     null,
-    (select id from public.camp_meal_slots
-     where service_date = '2026-08-03'
-       and meal_type = 'breakfast'),
+    'a5000000-0000-0000-0000-000000000001',
     'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-    'Havregrynsgröt',
+    'Kvällsfika',
     (select version.id
      from public.recipe_versions as version
+     join public.recipes as recipe
+       on recipe.organization_id = version.organization_id
+      and recipe.id = version.recipe_id
      where version.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
        and version.status = 'published'
-     order by version.id
-     limit 1),
+       and recipe.name = 'Kvällsfika'),
     '[]'::jsonb
   )$$,
-  'planning from a gap creates a meal in the selected slot'
+  'planning from an extra gap creates a meal in the selected slot'
 );
 
 select is(
   (select count(distinct meal_slot_id)::integer from public.meals),
-  2,
+  13,
   'the new meal keeps the one-to-one slot relation'
 );
 
@@ -160,15 +193,17 @@ select throws_ok(
   $$select public.save_meal_to_slot(
     null,
     (select meal_slot_id from public.meals
-     where title = 'Havregrynsgröt'),
+     where title = 'Kvällsfika'),
     'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
     'Dubbelbokning',
     (select version.id
      from public.recipe_versions as version
+     join public.recipes as recipe
+       on recipe.organization_id = version.organization_id
+      and recipe.id = version.recipe_id
      where version.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
        and version.status = 'published'
-     order by version.id
-     limit 1),
+       and recipe.name = 'Kvällsfika'),
     '[]'::jsonb
   )$$,
   '23505',
@@ -179,7 +214,7 @@ select throws_ok(
 select lives_ok(
   $$select public.set_meal_slot_service_status(
     (select meal_slot_id from public.meals
-     where title = 'Havregrynsgröt'),
+     where title = 'Kvällsfika'),
     'no_service'
   )$$,
   'a planner can skip an already planned meal'
@@ -188,7 +223,7 @@ select lives_ok(
 select is(
   (select count(*)::integer
    from public.meals
-   where title = 'Havregrynsgröt'),
+   where title = 'Kvällsfika'),
   1,
   'skipping preserves the planned meal for restoration'
 );
@@ -199,7 +234,7 @@ select is(
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
    )),
-  '2|1|27',
+  '2|11|0',
   'a skipped planned meal is excluded from required and planned coverage'
 );
 
@@ -208,7 +243,7 @@ select lives_ok(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
     'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
   )$$,
-  'draft calculation remains available while structural gaps remain'
+  'draft calculation remains available while readiness has unresolved issues'
 );
 
 select is(
@@ -218,7 +253,7 @@ select is(
      and camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
      and status = 'current'),
   'true',
-  'a calculation with structural gaps is persistently marked as a draft'
+  'a calculation with unresolved readiness issues is persistently marked as a draft'
 );
 
 select ok(
@@ -233,7 +268,7 @@ select ok(
         and revision.camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
         and revision.status = 'current'
     )
-      and meal.title = 'Havregrynsgröt'
+      and meal.title = 'Kvällsfika'
   ),
   'a skipped meal contributes no calculation lines'
 );
@@ -241,7 +276,7 @@ select ok(
 select lives_ok(
   $$select public.set_meal_slot_service_status(
     (select meal_slot_id from public.meals
-     where title = 'Havregrynsgröt'),
+     where title = 'Kvällsfika'),
     'required'
   )$$,
   'a skipped meal can be restored without recreating it'
@@ -317,7 +352,7 @@ select ok(
         and revision.camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
         and revision.status = 'current'
     )
-      and meal.title = 'Havregrynsgröt'
+      and meal.title = 'Kvällsfika'
   ),
   'restoring a skipped meal brings it back into the calculation'
 );

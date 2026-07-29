@@ -80,6 +80,7 @@ export type Database = {
           calculation_revision_id: string
           camp_id: string
           camp_recipe_copy_id: string | null
+          canonical_key: string | null
           created_at: string
           exact_amount: number
           id: string
@@ -95,6 +96,7 @@ export type Database = {
           calculation_revision_id: string
           camp_id: string
           camp_recipe_copy_id?: string | null
+          canonical_key?: string | null
           created_at?: string
           exact_amount: number
           id?: string
@@ -110,6 +112,7 @@ export type Database = {
           calculation_revision_id?: string
           camp_id?: string
           camp_recipe_copy_id?: string | null
+          canonical_key?: string | null
           created_at?: string
           exact_amount?: number
           id?: string
@@ -400,6 +403,41 @@ export type Database = {
           },
         ]
       }
+      canonical_ingredients: {
+        Row: {
+          canonical_key: string
+          created_at: string
+          display_name: string
+          organization_id: string
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_key: string
+          created_at?: string
+          display_name: string
+          organization_id: string
+          unit: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_key?: string
+          created_at?: string
+          display_name?: string
+          organization_id?: string
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canonical_ingredients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dietary_need_tags: {
         Row: {
           camp_id: string
@@ -523,6 +561,84 @@ export type Database = {
             columns: ["organization_id", "camp_id"]
             isOneToOne: false
             referencedRelation: "camps"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      ingredient_supplier_matches: {
+        Row: {
+          amount_per_purchase_unit: number
+          approved_at: string | null
+          approved_by: string | null
+          approved_product_fingerprint: string | null
+          canonical_key: string
+          created_at: string
+          id: string
+          organization_id: string
+          required_unit: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_per_purchase_unit: number
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_product_fingerprint?: string | null
+          canonical_key: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          required_unit: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_per_purchase_unit?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_product_fingerprint?: string | null
+          canonical_key?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          required_unit?: string
+          supplier_account_id?: string
+          supplier_product_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingredient_supplier_matches_account_product_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "supplier_product_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+          {
+            foreignKeyName: "ingredient_supplier_matches_canonical_fk"
+            columns: ["organization_id", "canonical_key"]
+            isOneToOne: false
+            referencedRelation: "canonical_ingredients"
+            referencedColumns: ["organization_id", "canonical_key"]
+          },
+          {
+            foreignKeyName: "ingredient_supplier_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingredient_supplier_matches_product_fk"
+            columns: ["organization_id", "supplier_product_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
             referencedColumns: ["organization_id", "id"]
           },
         ]
@@ -910,9 +1026,94 @@ export type Database = {
           },
         ]
       }
+      preferred_supplier_matches: {
+        Row: {
+          canonical_key: string
+          ingredient_supplier_match_id: string
+          organization_id: string
+          selected_at: string
+          selected_by: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_key: string
+          ingredient_supplier_match_id: string
+          organization_id: string
+          selected_at: string
+          selected_by: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_key?: string
+          ingredient_supplier_match_id?: string
+          organization_id?: string
+          selected_at?: string
+          selected_by?: string
+          supplier_account_id?: string
+          supplier_product_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "preferred_supplier_matches_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "preferred_supplier_matches_canonical_fk"
+            columns: ["organization_id", "canonical_key"]
+            isOneToOne: false
+            referencedRelation: "canonical_ingredients"
+            referencedColumns: ["organization_id", "canonical_key"]
+          },
+          {
+            foreignKeyName: "preferred_supplier_matches_match_fk"
+            columns: ["organization_id", "canonical_key", "supplier_product_id"]
+            isOneToOne: false
+            referencedRelation: "ingredient_supplier_matches"
+            referencedColumns: [
+              "organization_id",
+              "canonical_key",
+              "supplier_product_id",
+            ]
+          },
+          {
+            foreignKeyName: "preferred_supplier_matches_match_id_fk"
+            columns: ["organization_id", "ingredient_supplier_match_id"]
+            isOneToOne: false
+            referencedRelation: "ingredient_supplier_matches"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "preferred_supplier_matches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "preferred_supplier_matches_product_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "supplier_product_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+        ]
+      }
       recipe_ingredients: {
         Row: {
           amount: number
+          canonical_key: string | null
           comment: string | null
           created_at: string
           dietary_rule: Database["public"]["Enums"]["dietary_rule"]
@@ -928,6 +1129,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          canonical_key?: string | null
           comment?: string | null
           created_at?: string
           dietary_rule?: Database["public"]["Enums"]["dietary_rule"]
@@ -943,6 +1145,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          canonical_key?: string | null
           comment?: string | null
           created_at?: string
           dietary_rule?: Database["public"]["Enums"]["dietary_rule"]
@@ -1051,6 +1254,531 @@ export type Database = {
           },
         ]
       }
+      supplier_accounts: {
+        Row: {
+          account_key: string
+          active: boolean
+          created_at: string
+          created_by: string
+          customer_number: string | null
+          display_name: string
+          id: string
+          organization_id: string
+          provider_key: string
+          updated_at: string
+        }
+        Insert: {
+          account_key?: string
+          active?: boolean
+          created_at?: string
+          created_by: string
+          customer_number?: string | null
+          display_name: string
+          id?: string
+          organization_id: string
+          provider_key: string
+          updated_at?: string
+        }
+        Update: {
+          account_key?: string
+          active?: boolean
+          created_at?: string
+          created_by?: string
+          customer_number?: string | null
+          display_name?: string
+          id?: string
+          organization_id?: string
+          provider_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_import_column_profiles: {
+        Row: {
+          column_mapping: Json
+          created_at: string
+          created_by: string
+          id: string
+          organization_id: string
+          profile_name: string
+          source_kind: string
+          supplier_account_id: string
+          updated_at: string
+        }
+        Insert: {
+          column_mapping: Json
+          created_at?: string
+          created_by: string
+          id?: string
+          organization_id: string
+          profile_name: string
+          source_kind: string
+          supplier_account_id: string
+          updated_at?: string
+        }
+        Update: {
+          column_mapping?: Json
+          created_at?: string
+          created_by?: string
+          id?: string
+          organization_id?: string
+          profile_name?: string
+          source_kind?: string
+          supplier_account_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_import_column_profiles_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_import_column_profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_import_rows: {
+        Row: {
+          id: string
+          import_run_id: string
+          imported_at: string | null
+          normalized_data: Json
+          organization_id: string
+          raw_data: Json
+          row_fingerprint: string
+          source_row: number
+          staged_at: string
+          staged_by: string
+          supplier_account_id: string
+          supplier_product_id: string | null
+          validation_errors: Json
+        }
+        Insert: {
+          id?: string
+          import_run_id: string
+          imported_at?: string | null
+          normalized_data: Json
+          organization_id: string
+          raw_data: Json
+          row_fingerprint: string
+          source_row: number
+          staged_at?: string
+          staged_by: string
+          supplier_account_id: string
+          supplier_product_id?: string | null
+          validation_errors?: Json
+        }
+        Update: {
+          id?: string
+          import_run_id?: string
+          imported_at?: string | null
+          normalized_data?: Json
+          organization_id?: string
+          raw_data?: Json
+          row_fingerprint?: string
+          source_row?: number
+          staged_at?: string
+          staged_by?: string
+          supplier_account_id?: string
+          supplier_product_id?: string | null
+          validation_errors?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_import_rows_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_import_rows_product_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "supplier_product_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_import_rows_run_fk"
+            columns: ["organization_id", "supplier_account_id", "import_run_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_import_runs"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+        ]
+      }
+      supplier_import_runs: {
+        Row: {
+          column_profile_id: string | null
+          error_summary: Json
+          finalized_at: string | null
+          finalized_by: string | null
+          id: string
+          invalid_row_count: number
+          organization_id: string
+          source_fingerprint: string
+          source_kind: string
+          source_name: string
+          staged_row_count: number
+          started_at: string
+          started_by: string
+          status: string
+          supplier_account_id: string
+          valid_row_count: number
+        }
+        Insert: {
+          column_profile_id?: string | null
+          error_summary?: Json
+          finalized_at?: string | null
+          finalized_by?: string | null
+          id?: string
+          invalid_row_count?: number
+          organization_id: string
+          source_fingerprint: string
+          source_kind: string
+          source_name: string
+          staged_row_count?: number
+          started_at?: string
+          started_by: string
+          status?: string
+          supplier_account_id: string
+          valid_row_count?: number
+        }
+        Update: {
+          column_profile_id?: string | null
+          error_summary?: Json
+          finalized_at?: string | null
+          finalized_by?: string | null
+          id?: string
+          invalid_row_count?: number
+          organization_id?: string
+          source_fingerprint?: string
+          source_kind?: string
+          source_name?: string
+          staged_row_count?: number
+          started_at?: string
+          started_by?: string
+          status?: string
+          supplier_account_id?: string
+          valid_row_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_import_runs_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_import_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_import_runs_profile_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "column_profile_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_import_column_profiles"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+        ]
+      }
+      supplier_match_candidates: {
+        Row: {
+          amount_per_purchase_unit: number
+          canonical_key: string
+          decided_at: string | null
+          decided_by: string | null
+          decision_source: string | null
+          generated_at: string
+          generated_by: string
+          id: string
+          import_run_id: string | null
+          matcher_version: string
+          organization_id: string
+          product_fingerprint: string
+          required_unit: string
+          score: number
+          signals: Json
+          status: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_per_purchase_unit: number
+          canonical_key: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_source?: string | null
+          generated_at?: string
+          generated_by: string
+          id?: string
+          import_run_id?: string | null
+          matcher_version: string
+          organization_id: string
+          product_fingerprint: string
+          required_unit: string
+          score: number
+          signals: Json
+          status: string
+          supplier_account_id: string
+          supplier_product_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_per_purchase_unit?: number
+          canonical_key?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_source?: string | null
+          generated_at?: string
+          generated_by?: string
+          id?: string
+          import_run_id?: string | null
+          matcher_version?: string
+          organization_id?: string
+          product_fingerprint?: string
+          required_unit?: string
+          score?: number
+          signals?: Json
+          status?: string
+          supplier_account_id?: string
+          supplier_product_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_match_candidates_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_match_candidates_canonical_fk"
+            columns: ["organization_id", "canonical_key"]
+            isOneToOne: false
+            referencedRelation: "canonical_ingredients"
+            referencedColumns: ["organization_id", "canonical_key"]
+          },
+          {
+            foreignKeyName: "supplier_match_candidates_import_run_fk"
+            columns: ["organization_id", "supplier_account_id", "import_run_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_import_runs"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_match_candidates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_match_candidates_product_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "supplier_product_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+        ]
+      }
+      supplier_offers: {
+        Row: {
+          availability_status: string
+          created_at: string
+          currency: string
+          fetched_at: string
+          id: string
+          organization_id: string
+          price: number | null
+          supplier_product_id: string
+          updated_at: string
+          valid_from: string | null
+          valid_to: string | null
+        }
+        Insert: {
+          availability_status?: string
+          created_at?: string
+          currency?: string
+          fetched_at: string
+          id?: string
+          organization_id: string
+          price?: number | null
+          supplier_product_id: string
+          updated_at?: string
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Update: {
+          availability_status?: string
+          created_at?: string
+          currency?: string
+          fetched_at?: string
+          id?: string
+          organization_id?: string
+          price?: number | null
+          supplier_product_id?: string
+          updated_at?: string
+          valid_from?: string | null
+          valid_to?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_offers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_offers_product_fk"
+            columns: ["organization_id", "supplier_product_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_products"
+            referencedColumns: ["organization_id", "id"]
+          },
+        ]
+      }
+      supplier_products: {
+        Row: {
+          active: boolean
+          brand: string | null
+          catch_weight: boolean
+          category: string | null
+          created_at: string
+          created_by: string
+          display_name: string
+          gtin: string | null
+          id: string
+          latest_import_run_id: string | null
+          minimum_order_units: number
+          normalized_search_name: string | null
+          organization_id: string
+          package_amount: number
+          package_unit: string
+          packaging_metadata: Json
+          product_data_source: string
+          product_fingerprint: string
+          purchase_unit: string
+          source_metadata: Json
+          source_updated_at: string
+          supplier_account_id: string
+          supplier_article_number: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          brand?: string | null
+          catch_weight?: boolean
+          category?: string | null
+          created_at?: string
+          created_by: string
+          display_name: string
+          gtin?: string | null
+          id?: string
+          latest_import_run_id?: string | null
+          minimum_order_units?: number
+          normalized_search_name?: string | null
+          organization_id: string
+          package_amount: number
+          package_unit: string
+          packaging_metadata?: Json
+          product_data_source: string
+          product_fingerprint: string
+          purchase_unit: string
+          source_metadata?: Json
+          source_updated_at: string
+          supplier_account_id: string
+          supplier_article_number: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          brand?: string | null
+          catch_weight?: boolean
+          category?: string | null
+          created_at?: string
+          created_by?: string
+          display_name?: string
+          gtin?: string | null
+          id?: string
+          latest_import_run_id?: string | null
+          minimum_order_units?: number
+          normalized_search_name?: string | null
+          organization_id?: string
+          package_amount?: number
+          package_unit?: string
+          packaging_metadata?: Json
+          product_data_source?: string
+          product_fingerprint?: string
+          purchase_unit?: string
+          source_metadata?: Json
+          source_updated_at?: string
+          supplier_account_id?: string
+          supplier_article_number?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_products_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_products_latest_import_fk"
+            columns: [
+              "organization_id",
+              "supplier_account_id",
+              "latest_import_run_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "supplier_import_runs"
+            referencedColumns: ["organization_id", "supplier_account_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supply_item_mutations: {
         Row: {
           actor_user_id: string
@@ -1121,6 +1849,7 @@ export type Database = {
       supply_list_items: {
         Row: {
           camp_id: string
+          canonical_key: string | null
           category: string
           comment: string | null
           completed: boolean
@@ -1144,6 +1873,7 @@ export type Database = {
         }
         Insert: {
           camp_id: string
+          canonical_key?: string | null
           category: string
           comment?: string | null
           completed?: boolean
@@ -1167,6 +1897,7 @@ export type Database = {
         }
         Update: {
           camp_id?: string
+          canonical_key?: string | null
           category?: string
           comment?: string | null
           completed?: boolean
@@ -1279,6 +2010,15 @@ export type Database = {
           role: Database["public"]["Enums"]["organization_role"]
         }[]
       }
+      apply_supplier_candidate_approval: {
+        Args: {
+          p_actor_user_id: string
+          p_candidate_id: string
+          p_decision_source: string
+          p_organization_id: string
+        }
+        Returns: string
+      }
       apply_supply_item_mutation: {
         Args: {
           p_base_values: Json
@@ -1288,6 +2028,15 @@ export type Database = {
           p_client_mutation_id: string
           p_item_id: string
           p_organization_id: string
+        }
+        Returns: Json
+      }
+      approve_safe_supplier_match_candidates: {
+        Args: {
+          p_candidate_ids: string[]
+          p_matcher_version: string
+          p_organization_id: string
+          p_supplier_account_id: string
         }
         Returns: Json
       }
@@ -1324,6 +2073,10 @@ export type Database = {
       }
       camp_input_digest_pre_slots: {
         Args: { p_camp_id: string; p_organization_id: string }
+        Returns: string
+      }
+      canonical_ingredient_key: {
+        Args: { p_name: string; p_unit: string }
         Returns: string
       }
       change_member_role: {
@@ -1364,12 +2117,28 @@ export type Database = {
         Returns: string
       }
       current_authentication_assurance_level: { Args: never; Returns: string }
+      decide_supplier_match_candidate: {
+        Args: {
+          p_candidate_id: string
+          p_decision: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
       delete_participant_for_privacy: {
         Args: { p_participant_id: string }
         Returns: undefined
       }
       export_participant_privacy_data: {
         Args: { p_participant_id: string }
+        Returns: Json
+      }
+      finalize_supplier_import: {
+        Args: {
+          p_import_run_id: string
+          p_organization_id: string
+          p_supplier_account_id: string
+        }
         Returns: Json
       }
       freeze_recipe_version: {
@@ -1421,6 +2190,14 @@ export type Database = {
         Args: { target_organization_id: string }
         Returns: boolean
       }
+      is_supplier_candidate_current: {
+        Args: {
+          p_candidate_id: string
+          p_organization_id: string
+          p_require_safe: boolean
+        }
+        Returns: boolean
+      }
       list_organization_members: {
         Args: { target_organization_id: string }
         Returns: {
@@ -1438,6 +2215,24 @@ export type Database = {
           p_target_list_id: string
         }
         Returns: number
+      }
+      normalized_supplier_match_name: {
+        Args: { p_display_name: string }
+        Returns: string
+      }
+      normalized_supplier_search_name: {
+        Args: { p_display_name: string }
+        Returns: string
+      }
+      normalized_supplier_unit: { Args: { p_unit: string }; Returns: string }
+      replace_supplier_match_candidates: {
+        Args: {
+          p_candidates: Json
+          p_matcher_version: string
+          p_organization_id: string
+          p_supplier_account_id: string
+        }
+        Returns: Json
       }
       review_dietary_need: {
         Args: { p_dietary_need_id: string; p_tag_labels: string[] }
@@ -1478,6 +2273,57 @@ export type Database = {
         }
         Returns: string
       }
+      save_supplier_account: {
+        Args: {
+          p_customer_number: string
+          p_display_name: string
+          p_organization_id: string
+          p_provider_key: string
+        }
+        Returns: string
+      }
+      save_supplier_account_identity: {
+        Args: {
+          p_account_key: string
+          p_customer_number: string
+          p_display_name: string
+          p_organization_id: string
+          p_provider_key: string
+        }
+        Returns: string
+      }
+      save_supplier_import_column_profile: {
+        Args: {
+          p_column_mapping: Json
+          p_organization_id: string
+          p_profile_name: string
+          p_source_kind: string
+          p_supplier_account_id: string
+        }
+        Returns: string
+      }
+      save_supplier_product_match: {
+        Args: {
+          p_amount_per_purchase_unit: number
+          p_availability_status?: string
+          p_canonical_key: string
+          p_currency?: string
+          p_display_name: string
+          p_gtin?: string
+          p_minimum_order_units?: number
+          p_organization_id: string
+          p_package_amount: number
+          p_package_unit: string
+          p_price?: number
+          p_price_valid_from?: string
+          p_price_valid_to?: string
+          p_purchase_unit: string
+          p_required_unit: string
+          p_supplier_account_id: string
+          p_supplier_article_number: string
+        }
+        Returns: string
+      }
       set_meal_slot_service_status: {
         Args: { p_service_status: string; p_slot_id: string }
         Returns: undefined
@@ -1506,6 +2352,65 @@ export type Database = {
         }
         Returns: number
       }
+      stage_supplier_import_rows: {
+        Args: {
+          p_import_run_id: string
+          p_organization_id: string
+          p_rows: Json
+          p_supplier_account_id: string
+        }
+        Returns: Json
+      }
+      start_supplier_import: {
+        Args: {
+          p_column_profile_id: string
+          p_organization_id: string
+          p_source_fingerprint: string
+          p_source_kind: string
+          p_source_name: string
+          p_supplier_account_id: string
+        }
+        Returns: string
+      }
+      supplier_expected_amount: {
+        Args: {
+          p_package_amount: number
+          p_package_unit: string
+          p_required_unit: string
+        }
+        Returns: number
+      }
+      supplier_import_row_errors: {
+        Args: { p_normalized_data: Json }
+        Returns: Json
+      }
+      supplier_jsonb_integer: { Args: { p_value: Json }; Returns: number }
+      supplier_jsonb_numeric: { Args: { p_value: Json }; Returns: number }
+      supplier_product_fingerprint: {
+        Args: {
+          p_catch_weight: boolean
+          p_display_name: string
+          p_gtin: string
+          p_minimum_order_units: number
+          p_package_amount: number
+          p_package_unit: string
+          p_purchase_unit: string
+          p_supplier_article_number: string
+        }
+        Returns: string
+      }
+      supplier_safe_match_score: {
+        Args: {
+          p_canonical_key: string
+          p_organization_id: string
+          p_required_unit: string
+          p_supplier_account_id: string
+          p_supplier_product_id: string
+        }
+        Returns: number
+      }
+      supplier_unit_base_factor: { Args: { p_unit: string }; Returns: number }
+      supplier_unit_dimension: { Args: { p_unit: string }; Returns: string }
       switch_meal_recipe_version: {
         Args: { p_meal_id: string; p_recipe_version_id: string }
         Returns: string

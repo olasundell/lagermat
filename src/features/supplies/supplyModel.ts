@@ -4,6 +4,7 @@ export type SupplyListStatus = "draft" | "active" | "complete";
 export interface SupplyItemRow {
   id: string;
   item_key: string;
+  canonical_key: string;
   category: string;
   item_name: string;
   required_amount: number;

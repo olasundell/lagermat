@@ -16,6 +16,7 @@ const list: SupplyListRow = {
   supply_list_items: [{
     id: "item-1",
     item_key: "aubergine",
+    canonical_key: "ingredient:aubergine",
     category: "Grönt",
     item_name: "Aubergine",
     required_amount: 5.7,

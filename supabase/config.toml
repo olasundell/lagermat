@@ -395,12 +395,22 @@ deno_version = 2
 
 [edge_runtime.secrets]
 APP_ORIGIN = "env(APP_ORIGIN)"
+# DABAS_API_KEY is intentionally supplied through the hosted/local secret
+# environment and must never be committed to the repository.
+# Set DABAS_ADAPTER=fixture locally to exercise enrichment without an external
+# key. The fixture adapter is selected exclusively by the server environment.
 
 [functions.invite-member]
 enabled = true
 verify_jwt = true
 import_map = "./functions/invite-member/deno.json"
 entrypoint = "./functions/invite-member/index.ts"
+
+[functions.supplier-catalogue]
+enabled = true
+verify_jwt = true
+import_map = "./functions/supplier-catalogue/deno.json"
+entrypoint = "./functions/supplier-catalogue/index.ts"
 
 [analytics]
 enabled = false

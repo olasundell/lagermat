@@ -48,8 +48,8 @@ vi.mock("../supplies/supplyApi", () => ({
 }));
 
 const items: SupplyItemRow[] = [
-  { id: "1", item_key: "a", category: "Grönt", item_name: "Aubergine", required_amount: 5.7, required_unit: "st", ordered_amount: 3, ordered_unit: "kg", package_note: null, comment: null, completed: false, row_version: 1, source_present: true, manually_moved: false },
-  { id: "2", item_key: "b", category: "Kylvaror", item_name: "Bregott", required_amount: 10.86025, required_unit: "paket", ordered_amount: 11, ordered_unit: "paket", package_note: null, comment: null, completed: true, row_version: 1, source_present: true, manually_moved: false }
+  { id: "1", item_key: "a", canonical_key: "ingredient:a", category: "Grönt", item_name: "Aubergine", required_amount: 5.7, required_unit: "st", ordered_amount: 3, ordered_unit: "kg", package_note: null, comment: null, completed: false, row_version: 1, source_present: true, manually_moved: false },
+  { id: "2", item_key: "b", canonical_key: "ingredient:b", category: "Kylvaror", item_name: "Bregott", required_amount: 10.86025, required_unit: "paket", ordered_amount: 11, ordered_unit: "paket", package_note: null, comment: null, completed: true, row_version: 1, source_present: true, manually_moved: false }
 ];
 
 describe("delivery supply model", () => {

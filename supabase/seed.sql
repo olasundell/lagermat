@@ -402,6 +402,210 @@ select
   ingredient.sort_order
 from app_private.recipe_ingredient_templates as ingredient;
 
+-- Local-only recipes broaden the demo library without changing the reviewed
+-- catalogue used when a hosted organization is bootstrapped.
+insert into public.recipes (id, organization_id, name, created_by) values
+  ('b2000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Havregrynsgröt med äppelmos', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Pannkakor med sylt', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Tomatsoppa med ostsmörgås', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Potatis- och purjolökssoppa', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Krämig linsgryta med ris', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Vegetarisk lasagne', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000007', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Pastasallad med pesto', '11111111-1111-1111-1111-111111111111'),
+  ('b2000000-0000-0000-0000-000000000008', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Ugnsrostade rotfrukter med halloumi', '11111111-1111-1111-1111-111111111111');
+
+insert into public.recipe_versions (
+  id,
+  organization_id,
+  recipe_id,
+  version_number,
+  status,
+  instructions,
+  content_digest,
+  created_by,
+  published_at
+) values
+  (
+    'b2100000-0000-0000-0000-000000000001',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000001',
+    1,
+    'published',
+    'Koka havregryn, vatten och salt under omrörning. Servera med äppelmos och valfri dryck.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:havregrynsgrot-med-appelmos', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000002',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000002',
+    1,
+    'published',
+    'Vispa smeten slät och stek pannkakorna i omgångar. Servera med sylt.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:pannkakor-med-sylt', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000003',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000003',
+    1,
+    'published',
+    'Fräs löken, tillsätt tomater, vatten och buljong och låt soppan sjuda. Mixa, rör i grädde och servera med ostsmörgås.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:tomatsoppa-med-ostsmorgas', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000004',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000004',
+    1,
+    'published',
+    'Fräs purjolöken, tillsätt potatis, vatten och buljong och koka mjukt. Mixa och rör i grädde.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:potatis-och-purjolokssoppa', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000005',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000005',
+    1,
+    'published',
+    'Fräs lök, morot och curry. Tillsätt linser, tomater, kokosmjölk och buljong och sjud tills linserna är mjuka. Servera med ris.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:kramig-linsgryta-med-ris', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000006',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000006',
+    1,
+    'published',
+    'Koka en tomatsås med vegofärs och grönsaker. Varva sås, lasagneplattor och ostsås och grädda tills plattorna är mjuka.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:vegetarisk-lasagne', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000007',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000007',
+    1,
+    'published',
+    'Koka pastan och kyl den. Blanda med kikärter, grönsaker, pesto och olja strax före servering.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:pastasallad-med-pesto', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  ),
+  (
+    'b2100000-0000-0000-0000-000000000008',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'b2000000-0000-0000-0000-000000000008',
+    1,
+    'published',
+    'Rosta rotfrukter och lök med olja och örtkryddor. Stek halloumi eller tofu och servera ovanpå.',
+    encode(extensions.digest(convert_to('lagermat-demo-recipe:v1:ugnsrostade-rotfrukter-med-halloumi', 'UTF8'), 'sha256'), 'hex'),
+    '11111111-1111-1111-1111-111111111111',
+    now()
+  );
+
+insert into public.recipe_ingredients (
+  id,
+  organization_id,
+  recipe_version_id,
+  name,
+  unit,
+  amount,
+  mode,
+  dietary_rule,
+  dietary_tag_label,
+  sort_order
+) values
+  ('b2200000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Havregryn', 'kg', 0.05, 'weighted_portion', 'exclude', 'Gluten', 10),
+  ('b2200000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Glutenfria havregryn', 'kg', 0.05, 'weighted_portion', 'only', 'Gluten', 20),
+  ('b2200000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Vatten', 'l', 0.25, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Salt', 'kg', 0.001, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Äppelmos', 'kg', 0.04, 'weighted_portion', 'standard', null, 50),
+  ('b2200000-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Mjölk', 'l', 0.15, 'weighted_portion', 'exclude', 'Mjölkprotein', 60),
+  ('b2200000-0000-0000-0000-000000000007', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000001', 'Havredryck', 'l', 0.15, 'weighted_portion', 'only', 'Mjölkprotein', 70),
+
+  ('b2200000-0000-0000-0000-000000000008', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Vetemjöl', 'kg', 0.06, 'weighted_portion', 'exclude', 'Gluten', 10),
+  ('b2200000-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Glutenfri mjölmix', 'kg', 0.06, 'weighted_portion', 'only', 'Gluten', 20),
+  ('b2200000-0000-0000-0000-000000000010', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Mjölk', 'l', 0.15, 'weighted_portion', 'exclude', 'Mjölkprotein', 30),
+  ('b2200000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Havredryck', 'l', 0.15, 'weighted_portion', 'only', 'Mjölkprotein', 40),
+  ('b2200000-0000-0000-0000-000000000012', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Ägg', 'st', 1, 'weighted_portion', 'standard', null, 50),
+  ('b2200000-0000-0000-0000-000000000013', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Matfett', 'kg', 0.01, 'weighted_portion', 'exclude', 'Mjölkprotein', 60),
+  ('b2200000-0000-0000-0000-000000000014', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Mjölkfritt matfett', 'kg', 0.01, 'weighted_portion', 'only', 'Mjölkprotein', 70),
+  ('b2200000-0000-0000-0000-000000000015', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000002', 'Sylt', 'kg', 0.04, 'weighted_portion', 'standard', null, 80),
+
+  ('b2200000-0000-0000-0000-000000000016', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Krossade tomater', 'kg', 0.2, 'weighted_portion', 'standard', null, 10),
+  ('b2200000-0000-0000-0000-000000000017', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Vatten', 'l', 0.15, 'weighted_portion', 'standard', null, 20),
+  ('b2200000-0000-0000-0000-000000000018', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Gul lök', 'kg', 0.03, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000019', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Grönsaksbuljong', 'kg', 0.005, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000020', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Matlagningsgrädde', 'l', 0.03, 'weighted_portion', 'exclude', 'Mjölkprotein', 50),
+  ('b2200000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Havregrädde', 'l', 0.03, 'weighted_portion', 'only', 'Mjölkprotein', 60),
+  ('b2200000-0000-0000-0000-000000000022', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Bröd', 'skivor', 2, 'weighted_portion', 'exclude', 'Gluten', 70),
+  ('b2200000-0000-0000-0000-000000000023', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Glutenfritt bröd', 'skivor', 2, 'weighted_portion', 'only', 'Gluten', 80),
+  ('b2200000-0000-0000-0000-000000000024', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Ost', 'skivor', 2, 'weighted_portion', 'exclude', 'Mjölkprotein', 90),
+  ('b2200000-0000-0000-0000-000000000025', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000003', 'Mjölkfri ost', 'kg', 0.03, 'weighted_portion', 'only', 'Mjölkprotein', 100),
+
+  ('b2200000-0000-0000-0000-000000000026', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Potatis', 'kg', 0.25, 'weighted_portion', 'standard', null, 10),
+  ('b2200000-0000-0000-0000-000000000027', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Purjolök', 'kg', 0.08, 'weighted_portion', 'standard', null, 20),
+  ('b2200000-0000-0000-0000-000000000028', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Vatten', 'l', 0.2, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000029', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Grönsaksbuljong', 'kg', 0.005, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000030', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Matlagningsgrädde', 'l', 0.05, 'weighted_portion', 'exclude', 'Mjölkprotein', 50),
+  ('b2200000-0000-0000-0000-000000000031', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Havregrädde', 'l', 0.05, 'weighted_portion', 'only', 'Mjölkprotein', 60),
+  ('b2200000-0000-0000-0000-000000000032', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000004', 'Rapsolja', 'l', 0.01, 'weighted_portion', 'standard', null, 70),
+
+  ('b2200000-0000-0000-0000-000000000033', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Röda linser', 'kg', 0.08, 'weighted_portion', 'standard', null, 10),
+  ('b2200000-0000-0000-0000-000000000034', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Ris', 'kg', 0.1, 'weighted_portion', 'standard', null, 20),
+  ('b2200000-0000-0000-0000-000000000035', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Krossade tomater', 'kg', 0.15, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000036', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Kokosmjölk', 'l', 0.1, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Gul lök', 'kg', 0.04, 'weighted_portion', 'standard', null, 50),
+  ('b2200000-0000-0000-0000-000000000038', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Morot', 'kg', 0.08, 'weighted_portion', 'standard', null, 60),
+  ('b2200000-0000-0000-0000-000000000039', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Grönsaksbuljong', 'kg', 0.005, 'weighted_portion', 'standard', null, 70),
+  ('b2200000-0000-0000-0000-000000000040', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Curry', 'kg', 0.003, 'weighted_portion', 'standard', null, 80),
+  ('b2200000-0000-0000-0000-000000000041', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000005', 'Rapsolja', 'l', 0.01, 'weighted_portion', 'standard', null, 90),
+
+  ('b2200000-0000-0000-0000-000000000042', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Lasagneplattor', 'kg', 0.1, 'weighted_portion', 'exclude', 'Gluten', 10),
+  ('b2200000-0000-0000-0000-000000000043', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Glutenfria lasagneplattor', 'kg', 0.1, 'weighted_portion', 'only', 'Gluten', 20),
+  ('b2200000-0000-0000-0000-000000000044', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Vegofärs', 'kg', 0.1, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000045', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Krossade tomater', 'kg', 0.15, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000046', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Gul lök', 'kg', 0.04, 'weighted_portion', 'standard', null, 50),
+  ('b2200000-0000-0000-0000-000000000047', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Morot', 'kg', 0.05, 'weighted_portion', 'standard', null, 60),
+  ('b2200000-0000-0000-0000-000000000048', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Mjölk', 'l', 0.12, 'weighted_portion', 'exclude', 'Mjölkprotein', 70),
+  ('b2200000-0000-0000-0000-000000000049', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Havredryck', 'l', 0.12, 'weighted_portion', 'only', 'Mjölkprotein', 80),
+  ('b2200000-0000-0000-0000-000000000050', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Riven ost', 'kg', 0.04, 'weighted_portion', 'exclude', 'Mjölkprotein', 90),
+  ('b2200000-0000-0000-0000-000000000051', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Mjölkfri riven ost', 'kg', 0.04, 'weighted_portion', 'only', 'Mjölkprotein', 100),
+  ('b2200000-0000-0000-0000-000000000052', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Rapsolja', 'l', 0.01, 'weighted_portion', 'standard', null, 110),
+  ('b2200000-0000-0000-0000-000000000053', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000006', 'Örtkryddor', 'kg', 0.003, 'weighted_portion', 'standard', null, 120),
+
+  ('b2200000-0000-0000-0000-000000000054', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Pasta', 'kg', 0.1, 'weighted_portion', 'exclude', 'Gluten', 10),
+  ('b2200000-0000-0000-0000-000000000055', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Glutenfri pasta', 'kg', 0.1, 'weighted_portion', 'only', 'Gluten', 20),
+  ('b2200000-0000-0000-0000-000000000056', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Kikärter', 'kg', 0.06, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000057', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Körsbärstomater', 'kg', 0.08, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000058', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Gurka', 'kg', 0.08, 'weighted_portion', 'standard', null, 50),
+  ('b2200000-0000-0000-0000-000000000059', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Majs', 'kg', 0.05, 'weighted_portion', 'standard', null, 60),
+  ('b2200000-0000-0000-0000-000000000060', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Pesto', 'kg', 0.025, 'weighted_portion', 'exclude', 'Mjölkprotein', 70),
+  ('b2200000-0000-0000-0000-000000000061', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Mjölkfri pesto', 'kg', 0.025, 'weighted_portion', 'only', 'Mjölkprotein', 80),
+  ('b2200000-0000-0000-0000-000000000062', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000007', 'Rapsolja', 'l', 0.01, 'weighted_portion', 'standard', null, 90),
+
+  ('b2200000-0000-0000-0000-000000000063', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Potatis', 'kg', 0.2, 'weighted_portion', 'standard', null, 10),
+  ('b2200000-0000-0000-0000-000000000064', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Morot', 'kg', 0.1, 'weighted_portion', 'standard', null, 20),
+  ('b2200000-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Palsternacka', 'kg', 0.08, 'weighted_portion', 'standard', null, 30),
+  ('b2200000-0000-0000-0000-000000000066', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Rödlök', 'kg', 0.04, 'weighted_portion', 'standard', null, 40),
+  ('b2200000-0000-0000-0000-000000000067', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Halloumi', 'kg', 0.08, 'weighted_portion', 'exclude', 'Mjölkprotein', 50),
+  ('b2200000-0000-0000-0000-000000000068', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Tofu', 'kg', 0.08, 'weighted_portion', 'only', 'Mjölkprotein', 60),
+  ('b2200000-0000-0000-0000-000000000069', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Rapsolja', 'l', 0.015, 'weighted_portion', 'standard', null, 70),
+  ('b2200000-0000-0000-0000-000000000070', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'b2100000-0000-0000-0000-000000000008', 'Örtkryddor', 'kg', 0.002, 'weighted_portion', 'standard', null, 80);
+
+-- This compact recipe remains an operational fixture for snapshot and
+-- calculation workflows.
 insert into public.recipes (id, organization_id, name, created_by) values (
   'a2000000-0000-0000-0000-000000000001',
   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',

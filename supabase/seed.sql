@@ -145,9 +145,20 @@ insert into public.organizations (id, name, slug, created_by) values
 insert into public.organization_memberships (organization_id, user_id, role, status) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', '44444444-4444-4444-4444-444444444444', 'planner', 'active');
 
-insert into public.camps (id, organization_id, name, starts_on, ends_on, timezone, status, created_by) values
-  ('caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Sommarläger 2026', '2026-08-02', '2026-08-11', 'Europe/Stockholm', 'active', '11111111-1111-1111-1111-111111111111'),
-  ('cbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'Hösthajk 2026', '2026-09-18', '2026-09-20', 'Europe/Stockholm', 'draft', '22222222-2222-2222-2222-222222222222');
+insert into public.camps (
+  id,
+  organization_id,
+  name,
+  starts_on,
+  ends_on,
+  timezone,
+  status,
+  created_by,
+  meal_plan_confirmed_at,
+  meal_plan_confirmed_by
+) values
+  ('caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'Sommarläger 2026', '2026-08-02', '2026-08-05', 'Europe/Stockholm', 'active', '11111111-1111-1111-1111-111111111111', '2026-07-20 18:00:00+02', '11111111-1111-1111-1111-111111111111'),
+  ('cbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', 'Hösthajk 2026', '2026-09-18', '2026-09-20', 'Europe/Stockholm', 'draft', '22222222-2222-2222-2222-222222222222', null, null);
 
 insert into public.camp_groups (id, organization_id, camp_id, parent_group_id, kind, name, sort_order) values
   ('d1000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', null, 'division', 'Spårarna', 1),
@@ -264,12 +275,12 @@ insert into public.participant_attendance (
   ('e1000000-0000-0000-0000-' || lpad(person.ordinal::text, 12, '0'))::uuid,
   case
     when person.ordinal in (7, 14, 21, 28, 35) then '2026-08-03 15:00:00+02'::timestamptz
-    when person.ordinal in (25, 47) then '2026-08-05 09:00:00+02'::timestamptz
-    else '2026-08-02 12:00:00+02'::timestamptz
+    when person.ordinal in (25, 47) then '2026-08-03 09:00:00+02'::timestamptz
+    else '2026-08-02 08:00:00+02'::timestamptz
   end,
   case
-    when person.ordinal in (9, 18, 30, 42, 46, 25, 47) then '2026-08-09 18:00:00+02'::timestamptz
-    else '2026-08-11 10:00:00+02'::timestamptz
+    when person.ordinal in (9, 18, 30, 42, 46, 25, 47) then '2026-08-04 18:00:00+02'::timestamptz
+    else '2026-08-05 20:00:00+02'::timestamptz
   end
 from generate_series(1, 55) as person(ordinal);
 
@@ -458,25 +469,121 @@ insert into public.camp_recipe_copies (
   '11111111-1111-1111-1111-111111111111'
 );
 
+insert into public.camp_recipe_copies (
+  id,
+  organization_id,
+  camp_id,
+  source_recipe_version_id,
+  name,
+  version_key,
+  frozen_snapshot,
+  copied_by
+)
+select
+  chosen.copy_id,
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::uuid,
+  'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::uuid,
+  version.id,
+  recipe.name,
+  version.id::text || '@' || left(version.content_digest, 16),
+  jsonb_build_object(
+    'name', recipe.name,
+    'version', version.version_number,
+    'version_key', version.id::text || '@' || left(version.content_digest, 16),
+    'content_digest', version.content_digest,
+    'instructions', version.instructions,
+    'portion_size', version.portion_size,
+    'ingredients', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', ingredient.id,
+          'name', ingredient.name,
+          'unit', ingredient.unit,
+          'amount', ingredient.amount::text,
+          'mode', ingredient.mode,
+          'dietary_rule', ingredient.dietary_rule,
+          'dietary_tag_label', ingredient.dietary_tag_label,
+          'comment', ingredient.comment,
+          'source_row', ingredient.source_row,
+          'sort_order', ingredient.sort_order
+        )
+        order by ingredient.sort_order, ingredient.id
+      )
+      from public.recipe_ingredients as ingredient
+      where ingredient.organization_id = version.organization_id
+        and ingredient.recipe_version_id = version.id
+    ), '[]'::jsonb)
+  ),
+  '11111111-1111-1111-1111-111111111111'::uuid
+from (values
+  ('a4000000-0000-0000-0000-000000000001'::uuid, 'frukost'),
+  ('a4000000-0000-0000-0000-000000000002'::uuid, 'pasta-carbonara'),
+  ('a4000000-0000-0000-0000-000000000003'::uuid, 'thaigryta-med-kyckling-och-kokosmjolk'),
+  ('a4000000-0000-0000-0000-000000000004'::uuid, 'tacos'),
+  ('a4000000-0000-0000-0000-000000000005'::uuid, 'hamburgare'),
+  ('a4000000-0000-0000-0000-000000000006'::uuid, 'kottbullar-med-pasta-och-tomatsas'),
+  ('a4000000-0000-0000-0000-000000000007'::uuid, 'korv-med-brod'),
+  ('a4000000-0000-0000-0000-000000000008'::uuid, 'falafel-med-pasta-och-tomatsas')
+) as chosen(copy_id, template_key)
+join app_private.recipe_templates as template
+  on template.template_key = chosen.template_key
+join public.recipe_versions as version
+  on version.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::uuid
+ and version.id = template.id
+ and version.status = 'published'
+join public.recipes as recipe
+  on recipe.organization_id = version.organization_id
+ and recipe.id = version.recipe_id;
+
+insert into public.camp_meal_slots (
+  id,
+  organization_id,
+  camp_id,
+  slot_key,
+  service_date,
+  starts_at,
+  meal_type,
+  label,
+  service_status,
+  source,
+  sort_order
+) values
+  ('a3000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-02:breakfast', '2026-08-02', '2026-08-02 08:00:00+02', 'breakfast', 'Frukost', 'required', 'default', 10),
+  ('a3000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-02:lunch', '2026-08-02', '2026-08-02 12:00:00+02', 'lunch', 'Lunch', 'required', 'default', 20),
+  ('a3000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-02:dinner', '2026-08-02', '2026-08-02 18:00:00+02', 'dinner', 'Middag', 'required', 'default', 30),
+  ('a3000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-03:breakfast', '2026-08-03', '2026-08-03 08:00:00+02', 'breakfast', 'Frukost', 'required', 'default', 10),
+  ('a3000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-03:lunch', '2026-08-03', '2026-08-03 12:00:00+02', 'lunch', 'Lunch', 'required', 'default', 20),
+  ('a3000000-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-03:dinner', '2026-08-03', '2026-08-03 18:00:00+02', 'dinner', 'Middag', 'required', 'default', 30),
+  ('a3000000-0000-0000-0000-000000000007', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-04:breakfast', '2026-08-04', '2026-08-04 08:00:00+02', 'breakfast', 'Frukost', 'required', 'default', 10),
+  ('a3000000-0000-0000-0000-000000000008', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-04:lunch', '2026-08-04', '2026-08-04 12:00:00+02', 'lunch', 'Lunch', 'required', 'default', 20),
+  ('a3000000-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-04:dinner', '2026-08-04', '2026-08-04 18:00:00+02', 'dinner', 'Middag', 'required', 'default', 30),
+  ('a3000000-0000-0000-0000-000000000010', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-05:breakfast', '2026-08-05', '2026-08-05 08:00:00+02', 'breakfast', 'Frukost', 'required', 'default', 10),
+  ('a3000000-0000-0000-0000-000000000011', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-05:lunch', '2026-08-05', '2026-08-05 12:00:00+02', 'lunch', 'Lunch', 'required', 'default', 20),
+  ('a3000000-0000-0000-0000-000000000012', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'default:2026-08-05:dinner', '2026-08-05', '2026-08-05 18:00:00+02', 'dinner', 'Middag', 'required', 'default', 30);
+
 insert into public.meals (
   id,
   organization_id,
   camp_id,
   camp_recipe_copy_id,
+  meal_slot_id,
   starts_at,
   meal_type,
   title,
   status
-) values (
-  'a2000000-0000-0000-0000-000000000004',
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  'a2000000-0000-0000-0000-000000000003',
-  '2026-08-03 12:00:00+02',
-  'lunch',
-  'Chili sin carne',
-  'blocked'
-);
+) values
+  ('a2000000-0000-0000-0000-000000000015', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000001', '2026-08-02 08:00:00+02', 'breakfast', 'Frukost', 'ready'),
+  ('a2000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a2000000-0000-0000-0000-000000000003', 'a3000000-0000-0000-0000-000000000002', '2026-08-02 12:00:00+02', 'lunch', 'Chili sin carne', 'ready'),
+  ('a2000000-0000-0000-0000-000000000016', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000002', 'a3000000-0000-0000-0000-000000000003', '2026-08-02 18:00:00+02', 'dinner', 'Pasta carbonara', 'ready'),
+  ('a2000000-0000-0000-0000-000000000017', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000004', '2026-08-03 08:00:00+02', 'breakfast', 'Frukost', 'ready'),
+  ('a2000000-0000-0000-0000-000000000018', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000003', 'a3000000-0000-0000-0000-000000000005', '2026-08-03 12:00:00+02', 'lunch', 'Thaigryta med kyckling och kokosmjölk', 'ready'),
+  ('a2000000-0000-0000-0000-000000000019', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000004', 'a3000000-0000-0000-0000-000000000006', '2026-08-03 18:00:00+02', 'dinner', 'Tacos', 'ready'),
+  ('a2000000-0000-0000-0000-000000000020', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000007', '2026-08-04 08:00:00+02', 'breakfast', 'Frukost', 'ready'),
+  ('a2000000-0000-0000-0000-000000000021', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000005', 'a3000000-0000-0000-0000-000000000008', '2026-08-04 12:00:00+02', 'lunch', 'Hamburgare', 'ready'),
+  ('a2000000-0000-0000-0000-000000000022', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000006', 'a3000000-0000-0000-0000-000000000009', '2026-08-04 18:00:00+02', 'dinner', 'Köttbullar med pasta och tomatsås', 'ready'),
+  ('a2000000-0000-0000-0000-000000000023', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000001', 'a3000000-0000-0000-0000-000000000010', '2026-08-05 08:00:00+02', 'breakfast', 'Frukost', 'ready'),
+  ('a2000000-0000-0000-0000-000000000024', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000007', 'a3000000-0000-0000-0000-000000000011', '2026-08-05 12:00:00+02', 'lunch', 'Korv med bröd', 'ready'),
+  ('a2000000-0000-0000-0000-000000000025', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', 'a4000000-0000-0000-0000-000000000008', 'a3000000-0000-0000-0000-000000000012', '2026-08-05 18:00:00+02', 'dinner', 'Falafel med pasta och tomatsås', 'ready');
 
 insert into public.calculation_revisions (
   id,

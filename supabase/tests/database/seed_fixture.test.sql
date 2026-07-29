@@ -1,7 +1,15 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(18);
+
+select is(
+  (select starts_on::text || '|' || ends_on::text
+   from public.camps
+   where id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
+  '2026-08-02|2026-08-05',
+  'the local demo camp spans four inclusive days'
+);
 
 select is(
   (select count(*)::integer from public.participants where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
@@ -89,10 +97,31 @@ select is(
   (select count(*)::integer
    from public.participant_attendance
    where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
-     and starts_at = '2026-08-02 12:00:00+02'::timestamptz
-     and ends_at = '2026-08-11 10:00:00+02'::timestamptz),
+     and starts_at = '2026-08-02 08:00:00+02'::timestamptz
+     and ends_at = '2026-08-05 20:00:00+02'::timestamptz),
   43,
   '43 participants attend the full camp while 12 have varied attendance'
+);
+
+select is(
+  (select count(*)::text || '|' || count(distinct meal_slot_id)::text || '|' ||
+          count(distinct (starts_at at time zone 'Europe/Stockholm')::date)::text
+   from public.meals
+   where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
+  '12|12|4',
+  'the four-day demo menu has twelve uniquely slotted meals'
+);
+
+select is(
+  (select string_agg(meal_type || ':' || meal_count, ',' order by meal_type)
+   from (
+     select meal_type, count(*)::text as meal_count
+     from public.meals
+     where camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+     group by meal_type
+   ) as menu),
+  'breakfast:4,dinner:4,lunch:4',
+  'the demo menu covers breakfast lunch and dinner on every camp day'
 );
 
 select is(

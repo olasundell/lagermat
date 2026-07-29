@@ -169,16 +169,16 @@ select is(
   (select count(*)::integer
    from public.recipes
    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  26,
-  'the local organization has the complete catalogue plus one operational fixture recipe'
+  34,
+  'the local organization has the complete catalogue, eight demo recipes and one operational fixture recipe'
 );
 
 select is(
   (select count(*)::integer
    from public.recipe_ingredients
    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  246,
-  'the local organization has every catalogue component plus the fixture component'
+  316,
+  'the local organization has every catalogue component, all demo components and the fixture component'
 );
 
 select * from finish();

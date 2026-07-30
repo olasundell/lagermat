@@ -12,21 +12,33 @@ import { fetchCurrentCalculation, fetchSupplyLists, generateSupplyLists, saveSup
 import { formatExactAmount, hasUnitMismatch, parseDecimalInput, type SupplyItemRow, type SupplyListRow } from "../supplies/supplyModel";
 import { useOfflineSupplyState } from "../supplies/useOfflineSupplyState";
 import { SupplierAccountsPanel, SupplierMatchEditor } from "../suppliers/SupplierFoundationPanel";
-import { SupplierCataloguePanel } from "../suppliers/SupplierCataloguePanel";
+import {
+  SupplierCataloguePanel,
+  type SupplierCatalogueCandidateView,
+} from "../suppliers/SupplierCataloguePanel";
 import { SupplierOrderExportActions } from "../suppliers/SupplierOrderExportActions";
 import {
   approveSafeSupplierMatchCandidates,
   decideSupplierMatchCandidate,
+  ensureSupplierCatalogueMatches,
   importSupplierCatalogueAndMatch,
   searchSupplierCatalogueProducts,
   suggestSupplierCatalogueAlternative,
 } from "../suppliers/supplierCatalogueApi";
 import {
+  ensureIcaSicklaSupplierAccount,
   fetchSupplierFoundation,
   saveSupplierAccount,
   saveSupplierProductMatch,
 } from "../suppliers/supplierApi";
-import type { SupplierAccount, SupplierMatchDetail } from "../suppliers/supplierModel";
+import {
+  describeSupplierPurchaseQuantity,
+  proposeSupplierCandidateOrder,
+  proposeSupplierOrder,
+  type SupplierAccount,
+  type SupplierMatchDetail,
+} from "../suppliers/supplierModel";
+import { isIcaSicklaAccount } from "../suppliers/icaStore";
 import "../suppliers/suppliers.css";
 
 type Perspective = "purchase" | "distribution";
@@ -59,6 +71,17 @@ function OrderEditor({
   const parsedAmount = parseDecimalInput(orderedAmount);
   const mismatch = parsedAmount !== null && !Number.isNaN(parsedAmount)
     && orderedUnit.trim().toLocaleLowerCase("sv-SE") !== item.required_unit.trim().toLocaleLowerCase("sv-SE");
+  const verifiedSupplierOrder = supplierDetails
+    .map((detail) => ({
+      detail,
+      proposal: proposeSupplierOrder(item.required_amount, item.required_unit, detail),
+    }))
+    .find(({ detail, proposal }) =>
+      proposal.status === "ready"
+      && parsedAmount === proposal.purchaseUnits
+      && detail.product.purchase_unit.trim().toLocaleLowerCase("sv-SE")
+        === orderedUnit.trim().toLocaleLowerCase("sv-SE")
+    );
 
   async function save() {
     if (Number.isNaN(parsedAmount)) {
@@ -89,20 +112,38 @@ function OrderEditor({
       <div className="order-editor__identity">
         <strong>{item.item_name}</strong>
         <span>Beräknat behov {formatExactAmount(item.required_amount)} {item.required_unit}</span>
+        {verifiedSupplierOrder?.proposal.status === "ready" ? (
+          <div className="order-editor__supplier-summary">
+            <PackageCheck aria-hidden="true" size={17} />
+            <span>
+              <strong>
+                Köp {describeSupplierPurchaseQuantity(
+                  verifiedSupplierOrder.detail.product,
+                  verifiedSupplierOrder.proposal.purchaseUnits,
+                  verifiedSupplierOrder.detail.match.amount_per_purchase_unit,
+                  verifiedSupplierOrder.detail.match.required_unit,
+                )}
+              </strong>
+              <small>Verifierad förpackningsomräkning via {verifiedSupplierOrder.detail.account.display_name}</small>
+            </span>
+          </div>
+        ) : null}
         {!item.source_present ? <span className="missing-source">Finns inte längre i beräkningen. Dina beställningsuppgifter är sparade.</span> : null}
       </div>
       <label>Beställt antal<input name={`ordered-amount-${item.id}`} aria-label={`Beställt antal för ${item.item_name}`} inputMode="decimal" value={orderedAmount} onChange={(event) => setOrderedAmount(event.target.value)} /></label>
       <label>Beställd enhet<input name={`ordered-unit-${item.id}`} aria-label={`Beställd enhet för ${item.item_name}`} value={orderedUnit} onChange={(event) => setOrderedUnit(event.target.value)} /></label>
       <label>Förpackning<input name={`package-note-${item.id}`} value={packageNote} onChange={(event) => setPackageNote(event.target.value)} placeholder="Till exempel 2 säckar" /></label>
       <label>Kommentar<input name={`comment-${item.id}`} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Valfri kommentar" /></label>
-      {mismatch || hasUnitMismatch(item) ? (
+      {(mismatch || hasUnitMismatch(item)) && !verifiedSupplierOrder ? (
         <p className="unit-warning"><AlertTriangle aria-hidden="true" size={17} /> Behovet anges i {item.required_unit} men beställningen i {orderedUnit || "en annan enhet"}. Kontrollera mängden manuellt eller välj samma enhet.</p>
       ) : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       <Button className="secondary-button order-editor__save" onPress={save} isDisabled={saving || !item.source_present}>
         <Save aria-hidden="true" size={17} /> {saving ? "Sparar…" : "Spara beställning"}
       </Button>
-      <SupplierMatchEditor
+      {supplierDetails.length || supplierAccounts.some((account) =>
+        account.active && !isIcaSicklaAccount(account)
+      ) ? <SupplierMatchEditor
         item={item}
         accounts={supplierAccounts}
         details={supplierDetails}
@@ -111,17 +152,17 @@ function OrderEditor({
           await saveSupplierProductMatch(scope, input);
           await onSupplierSaved();
         }}
-        onApplyProposal={async (proposal) => {
+        onApplyProposal={async (detail, proposal) => {
           await saveSupplyItem(scope, listId, item, {
-            orderedAmount: proposal.orderedAmount,
-            orderedUnit: item.required_unit,
+            orderedAmount: proposal.purchaseUnits,
+            orderedUnit: detail.product.purchase_unit,
             packageNote: proposal.packageNote,
             comment,
             completed: item.completed,
           });
           await onSaved();
         }}
-      />
+      /> : null}
     </div>
   );
 }
@@ -166,7 +207,40 @@ export function ProcurementPage() {
       purchaseList?.version,
     ],
     enabled: Boolean(scope && purchaseList && offlineState.online && !cached),
-    queryFn: () => fetchSupplierFoundation(scope!, purchaseCanonicalKeys)
+    queryFn: async () => {
+      await ensureIcaSicklaSupplierAccount(scope!);
+      let foundation = await fetchSupplierFoundation(scope!, purchaseCanonicalKeys);
+      let generated = false;
+      const catalogueWarnings: string[] = [];
+      let catalogueRetryAfterMs: number | null = null;
+      for (const account of foundation.accounts.filter((candidate) => candidate.active)) {
+        const outcome = await ensureSupplierCatalogueMatches(
+          scope!,
+          account.id,
+          purchaseItems,
+        );
+        generated ||= outcome.generated;
+        if (outcome.warning) catalogueWarnings.push(outcome.warning);
+        if (outcome.retryAfterMs !== null) {
+          catalogueRetryAfterMs = catalogueRetryAfterMs === null
+            ? outcome.retryAfterMs
+            : Math.min(catalogueRetryAfterMs, outcome.retryAfterMs);
+        }
+      }
+      if (generated) {
+        foundation = await fetchSupplierFoundation(scope!, purchaseCanonicalKeys);
+      }
+      return {
+        ...foundation,
+        catalogueWarnings: [...new Set(catalogueWarnings)],
+        catalogueRetryAfterMs,
+      };
+    },
+    refetchInterval: (query) => {
+      const retryAfterMs = query.state.data?.catalogueRetryAfterMs;
+      return typeof retryAfterMs === "number" ? retryAfterMs : false;
+    },
+    refetchIntervalInBackground: false,
   });
   const supplierAccounts = supplierQuery.data?.accounts ?? [];
   const supplierDetails = supplierQuery.data?.details ?? [];
@@ -190,6 +264,31 @@ export function ProcurementPage() {
 
   async function refreshSuppliers() {
     await queryClient.invalidateQueries({ queryKey: ["supplier-foundation", scope?.organizationId] });
+  }
+
+  async function applySupplierCandidateOrders(
+    selectedCandidates: SupplierCatalogueCandidateView[],
+  ) {
+    if (!scope || !purchaseList) return;
+    await Promise.all(selectedCandidates.map(async (candidate) => {
+      const item = purchaseItems.find((purchaseItem) =>
+        purchaseItem.canonical_key === candidate.canonicalKey
+      );
+      if (!item) return;
+      const proposal = proposeSupplierCandidateOrder(
+        item.required_amount,
+        item.required_unit,
+        candidate,
+      );
+      if (proposal.status !== "ready") return;
+      await saveSupplyItem(scope, purchaseList.id, item, {
+        orderedAmount: proposal.purchaseUnits,
+        orderedUnit: candidate.product.purchase_unit,
+        packageNote: proposal.packageNote,
+        comment: item.comment ?? "",
+        completed: item.completed,
+      });
+    }));
   }
 
   async function generate() {
@@ -290,6 +389,11 @@ export function ProcurementPage() {
             columnProfiles={supplierColumnProfiles}
             online={networkWritable}
             loading={supplierQuery.isPending || supplierQuery.isFetching}
+            syncWarning={supplierQuery.data?.catalogueWarnings?.join(" ") ?? null}
+            syncPending={
+              supplierQuery.data?.catalogueRetryAfterMs !== null
+              && supplierQuery.data?.catalogueRetryAfterMs !== undefined
+            }
             onImport={async (supplierAccountId, preview, mapping) => {
               const result = await importSupplierCatalogueAndMatch(
                 scope!,
@@ -319,11 +423,18 @@ export function ProcurementPage() {
                 supplierAccountId,
                 candidateIds,
               );
-              await refreshSuppliers();
+              await applySupplierCandidateOrders(selectedCandidates);
+              await Promise.all([refreshSuppliers(), refresh()]);
             }}
             onApprove={async (candidateId) => {
+              const selectedCandidate = supplierCandidates.find((candidate) =>
+                candidate.id === candidateId
+              );
               await decideSupplierMatchCandidate(scope!, candidateId, "accepted");
-              await refreshSuppliers();
+              if (selectedCandidate) {
+                await applySupplierCandidateOrders([selectedCandidate]);
+              }
+              await Promise.all([refreshSuppliers(), refresh()]);
             }}
             onReject={async (candidateId) => {
               await decideSupplierMatchCandidate(scope!, candidateId, "rejected");

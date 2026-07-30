@@ -914,6 +914,11 @@ button { color: inherit; }
 .order-editor__identity { align-self: center; display: grid; gap: 5px; }
 .order-editor__identity strong { font-size: 16px; }
 .order-editor__identity > span { color: var(--muted); font-size: 12px; }
+.order-editor__supplier-summary { display: flex; align-items: flex-start; gap: 7px; margin-top: 3px; padding: 8px 9px; color: #256719; background: var(--success-surface); border: 1px solid #9aca8c; border-radius: 5px; }
+.order-editor__supplier-summary > svg { flex: 0 0 auto; margin-top: 1px; }
+.order-editor__supplier-summary > span { display: grid; gap: 2px; min-width: 0; }
+.order-editor__supplier-summary strong { color: #184f10; font-size: 13px; line-height: 1.3; }
+.order-editor__supplier-summary small { color: #3d6237; font-size: 10px; line-height: 1.35; }
 .order-editor__identity .missing-source { color: #9b3508; font-weight: 600; }
 .order-editor label,
 .field-label { display: grid; gap: 6px; color: #3f4347; font-size: 11px; font-weight: 600; }

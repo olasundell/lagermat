@@ -287,8 +287,8 @@ select set_config(
   'scoutmat_test.account_a_id',
   public.save_supplier_account(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-    'ICA',
-    'ICA Nära Björkstad',
+    'martin_servera',
+    'Martin & Servera Björkstad',
     '  KUND-42  '
   )::text,
   true
@@ -306,7 +306,7 @@ select ok(
     select 1
     from public.supplier_accounts
     where id = current_setting('scoutmat_test.account_a_id')::uuid
-      and provider_key = 'ica'
+      and provider_key = 'martin_servera'
       and customer_number = 'KUND-42'
       and active
       and created_by = '11111111-1111-1111-1111-111111111111'
@@ -340,7 +340,7 @@ select set_config(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
     public.canonical_ingredient_key('Krossade tomater', 'kg'),
     current_setting('scoutmat_test.account_a_id')::uuid,
-    'ICA-123',
+    'MS-123',
     'Krossade tomater 6 x 2,5 kg',
     'kartong',
     15,
@@ -419,7 +419,7 @@ select set_config(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
     public.canonical_ingredient_key('Krossade tomater', 'kg'),
     current_setting('scoutmat_test.account_a_id')::uuid,
-    'ICA-123',
+    'MS-123',
     'Krossade tomater 6 x 2,5 kg',
     'kartong',
     15,
@@ -463,7 +463,7 @@ select throws_ok(
         'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
         %L,
         %L,
-        'ICA-UNIT-MISMATCH',
+        'MS-UNIT-MISMATCH',
         'Krossade tomater styckvis',
         'låda',
         1,

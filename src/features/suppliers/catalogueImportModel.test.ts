@@ -128,9 +128,9 @@ describe("leverantörsneutral katalogimport", () => {
   it("klassar demoartiklar som säkra, tvetydiga respektive blockerade", () => {
     expect(demoSupplierCataloguePreview.mappingIssues).toEqual([]);
     expect(demoSupplierCataloguePreview.rows.map((row) => row.status))
-      .toEqual(["safe", "ambiguous", "blocked"]);
+      .toEqual(["safe", "ambiguous", "blocked", "safe"]);
     expect(demoSupplierCataloguePreview).toMatchObject({
-      safeCount: 1,
+      safeCount: 2,
       ambiguousCount: 1,
       blockedCount: 1,
     });
@@ -147,6 +147,13 @@ describe("leverantörsneutral katalogimport", () => {
         }),
       ]),
     );
+    expect(demoSupplierCataloguePreview.rows[3]).toMatchObject({
+      displayName: "Krossade tomater",
+      totalAmount: 2.4,
+      totalUnit: "kg",
+      innerUnitCount: 6,
+      innerUnitLabel: "burkar",
+    });
   });
 
   it("ger semantiskt likvärdiga rader samma fingerprint", () => {

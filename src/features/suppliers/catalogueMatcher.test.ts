@@ -28,6 +28,7 @@ function account(overrides: Partial<SupplierAccount> = {}): SupplierAccount {
     account_key: "00000000-0000-4000-8000-000000000001",
     organization_id: "organization-1",
     provider_key: "menigo",
+    provider_location_id: null,
     display_name: "Menigo",
     customer_number: "12345",
     active: true,
@@ -129,6 +130,18 @@ describe("catalogue normalisation", () => {
   it("tar bort strukturellt förpackningsbrus utan att ta bort produktnamnet", () => {
     expect(normalizeSupplierProductName("Ris, 6 x 500 g kartong")).toBe("ris");
     expect(normalizeSupplierProductName("Krossade tomater 3 kg")).toBe("krossade tomater");
+    expect(
+      normalizeSupplierProductName(
+        "Krossade tomater 3-p 1170g ICA",
+        "ICA",
+      ),
+    ).toBe("krossade tomater");
+    expect(
+      normalizeSupplierProductName(
+        "ICA Basic Tomater krossade 500g",
+        "ICA Basic",
+      ),
+    ).toBe("tomater krossade");
   });
 });
 
@@ -140,6 +153,25 @@ describe("deterministic catalogue matching", () => {
     expect(result.reason).toBe("unique_safe_candidate");
     expect(result.selected?.score).toEqual({ name: 80, unit: 15, package: 5, total: 100 });
     expect(result.selected?.amount_per_purchase_unit).toBe(3);
+  });
+
+  it("räknar bort ett verifierat varumärke vid kanten av ICA-artikelns namn", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-krossade-tomater",
+        display_name: "Krossade tomater",
+      },
+      products: [product({
+        display_name: "Krossade tomater 3-p 1170g ICA",
+        brand: "ICA",
+        package_amount: 1.17,
+        package_unit: "kg",
+      })],
+    }));
+
+    expect(result.status).toBe("safe");
+    expect(result.selected?.score.total).toBe(100);
   });
 
   it("gör exakta mass- och volymkonverteringar med Decimal", () => {
@@ -428,16 +460,73 @@ describe("deterministic catalogue matching", () => {
     expect(result.candidates[0]?.score).toEqual(result.candidates[1]?.score);
   });
 
+  it("jämför likvärdiga artiklar på pris per verifierad behovsenhet", () => {
+    const products = [
+      product({
+        id: "single",
+        supplier_article_number: "2119127",
+        display_name: "Krossade tomater 390 g ICA",
+        brand: "ICA",
+        package_amount: 0.39,
+      }),
+      product({
+        id: "three-pack",
+        supplier_article_number: "2141387",
+        display_name: "Krossade tomater 3-p 1170g ICA",
+        brand: "ICA",
+        package_amount: 1.17,
+        packaging_metadata: {
+          inner_unit_count: 3,
+          inner_unit_label: "stycken",
+        },
+      }),
+    ];
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-krossade-tomater",
+        display_name: "Krossade tomater",
+      },
+      products,
+      offers: [
+        offer({
+          id: "offer-single",
+          supplier_product_id: "single",
+          price: 10.35,
+        }),
+        offer({
+          id: "offer-three-pack",
+          supplier_product_id: "three-pack",
+          price: 28.55,
+        }),
+      ],
+    }));
+
+    expect(result.status).toBe("review");
+    expect(result.margin_to_next).toBe(0);
+    expect(result.candidates[0]?.product.id).toBe("three-pack");
+    expect(result.candidates[0]?.score).toEqual(result.candidates[1]?.score);
+  });
+
   it("skapar stabila fingerprints och blockerar en uttryckligen avvisad produktversion", () => {
     const original = product();
     const sameData = product();
     const changedPackage = product({ package_amount: 6 });
+    const changedInnerPackage = product({
+      packaging_metadata: {
+        inner_unit_count: 6,
+        inner_unit_label: "stycken",
+      },
+    });
 
     expect(createSupplierProductFingerprint(original)).toBe(
       createSupplierProductFingerprint(sameData),
     );
     expect(createSupplierProductFingerprint(original)).not.toBe(
       createSupplierProductFingerprint(changedPackage),
+    );
+    expect(createSupplierProductFingerprint(original)).not.toBe(
+      createSupplierProductFingerprint(changedInnerPackage),
     );
 
     const result = matchSupplierCatalogue(input({

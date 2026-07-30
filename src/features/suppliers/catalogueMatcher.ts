@@ -6,8 +6,8 @@ import type {
   SupplierProduct,
 } from "./supplierModel";
 
-export const CATALOGUE_MATCHER_VERSION = "deterministic-v1" as const;
-export const CATALOGUE_NORMALIZATION_VERSION = "sv-v1" as const;
+export const CATALOGUE_MATCHER_VERSION = "deterministic-v3" as const;
+export const CATALOGUE_NORMALIZATION_VERSION = "sv-v2" as const;
 export const SAFE_MATCH_SCORE = 96;
 export const SAFE_MATCH_MARGIN = 8;
 export const REVIEW_MATCH_SCORE = 70;
@@ -209,7 +209,10 @@ export function normalizeSupplierUnit(value: string): string {
   return UNIT_ALIASES[normalized] ?? normalized;
 }
 
-export function normalizeSupplierProductName(value: string): string {
+export function normalizeSupplierProductName(
+  value: string,
+  brand: string | null = null,
+): string {
   const quantityExpression = new RegExp(
     `\\b\\d+(?:[.,]\\d+)?\\s*(?:x|×)\\s*\\d+(?:[.,]\\d+)?\\s*${PACKAGING_UNIT_PATTERN}\\b`,
     "giu",
@@ -218,13 +221,26 @@ export function normalizeSupplierProductName(value: string): string {
     `\\b\\d+(?:[.,]\\d+)?\\s*${PACKAGING_UNIT_PATTERN}\\b`,
     "giu",
   );
+  const itemCountExpression =
+    /\b\d+(?:[.,]\d+)?\s*(?:-\s*)?(?:p|pack|stycken|styck|st)\b/giu;
 
-  return normalizeCatalogueText(
+  const productName = normalizeCatalogueText(
     value
       .replace(quantityExpression, " ")
       .replace(singlePackageExpression, " ")
-      .replace(/\b(?:kolli|kartong|förpackning|förp|påse|burk)\b/giu, " "),
+      .replace(itemCountExpression, " ")
+      .replace(/\b(?:kolli|kartong|förpackning|förp|pack|påse|burk)\b/giu, " "),
   );
+  const normalizedBrand = normalizeCatalogueText(brand ?? "");
+  if (!normalizedBrand || productName === normalizedBrand) return productName;
+
+  if (productName.startsWith(`${normalizedBrand} `)) {
+    return productName.slice(normalizedBrand.length).trim();
+  }
+  if (productName.endsWith(` ${normalizedBrand}`)) {
+    return productName.slice(0, -(normalizedBrand.length + 1)).trim();
+  }
+  return productName;
 }
 
 function canonicalDecimal(value: number): string {
@@ -246,6 +262,31 @@ function fnv1a64(value: string): string {
     hash = (hash * prime) & mask;
   }
   return hash.toString(16).padStart(16, "0");
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "null";
+  }
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  return `{${
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right, "en"))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
+      .join(",")
+  }}`;
+}
+
+function packagingFingerprintMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const metadata = value as Record<string, unknown>;
+  return {
+    inner_unit_count: metadata.inner_unit_count ?? null,
+    inner_unit_label: typeof metadata.inner_unit_label === "string"
+      ? normalizeCatalogueText(metadata.inner_unit_label)
+      : null,
+  };
 }
 
 export function createSupplierProductFingerprint(product: SupplierProduct): string {
@@ -270,8 +311,10 @@ export function createSupplierProductFingerprint(product: SupplierProduct): stri
     canonicalDecimal(product.package_amount),
     normalizeSupplierUnit(product.package_unit),
     String(product.minimum_order_units),
+    String(product.catch_weight),
+    stableJson(packagingFingerprintMetadata(product.packaging_metadata)),
   ].join("\u001f");
-  return `sp-v1:${fnv1a64(signature)}`;
+  return `sp-v2:${fnv1a64(signature)}`;
 }
 
 function tokenize(value: string): string[] {
@@ -566,15 +609,40 @@ function compareCandidates(
   const availabilityDifference = availabilityRank(left) - availabilityRank(right);
   if (availabilityDifference !== 0) return availabilityDifference;
 
-  const priceRank = (candidate: CatalogueMatchCandidate): number => {
+  const unitPriceRank = (
+    candidate: CatalogueMatchCandidate,
+  ): { currency: string; value: Decimal } | null => {
     const price = candidate.offer?.price;
-    return typeof price === "number" && Number.isFinite(price)
-      ? price
-      : Number.POSITIVE_INFINITY;
+    const amount = candidate.amount_per_purchase_unit;
+    const currency = candidate.offer?.currency.trim().toLocaleUpperCase("en-US");
+    if (
+      typeof price !== "number"
+      || !Number.isFinite(price)
+      || price <= 0
+      || typeof amount !== "number"
+      || !Number.isFinite(amount)
+      || amount <= 0
+      || !currency
+    ) {
+      return null;
+    }
+    return {
+      currency,
+      value: new Decimal(price).dividedBy(amount),
+    };
   };
-  const leftPrice = priceRank(left);
-  const rightPrice = priceRank(right);
-  if (leftPrice !== rightPrice) return leftPrice - rightPrice;
+  const leftUnitPrice = unitPriceRank(left);
+  const rightUnitPrice = unitPriceRank(right);
+  if (leftUnitPrice && rightUnitPrice) {
+    if (leftUnitPrice.currency === rightUnitPrice.currency) {
+      const unitPriceDifference = leftUnitPrice.value.comparedTo(
+        rightUnitPrice.value,
+      );
+      if (unitPriceDifference !== 0) return unitPriceDifference;
+    }
+  } else if (leftUnitPrice || rightUnitPrice) {
+    return leftUnitPrice ? -1 : 1;
+  }
 
   const providerDifference = compareText(left.account.provider_key, right.account.provider_key);
   if (providerDifference !== 0) return providerDifference;
@@ -600,7 +668,10 @@ function assessCandidate(
   const explanations: CatalogueMatchExplanation[] = [];
   const fingerprint = createSupplierProductFingerprint(product);
   const ingredientName = normalizeCatalogueText(ingredient.display_name);
-  const productName = normalizeSupplierProductName(product.display_name);
+  const productName = normalizeSupplierProductName(
+    product.display_name,
+    product.brand,
+  );
   const requiredUnit = normalizeSupplierUnit(ingredient.unit);
 
   if (!account.active) {

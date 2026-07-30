@@ -5,7 +5,18 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: [".tmp", "dev-dist", "dist", "coverage", "playwright-report", "test-results", "supabase/.temp"] },
+  {
+    ignores: [
+      ".netlify",
+      ".tmp",
+      "dev-dist",
+      "dist",
+      "coverage",
+      "playwright-report",
+      "test-results",
+      "supabase/.temp"
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

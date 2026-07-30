@@ -8,11 +8,13 @@ import type {
   SaveSupplierProductMatchInput,
 } from "./supplierApi";
 import {
+  describeSupplierPurchaseQuantity,
   proposeSupplierOrder,
   type ReadySupplierOrderProposal,
   type SupplierAccount,
   type SupplierMatchDetail,
 } from "./supplierModel";
+import { ICA_KVANTUM_SICKLA, isIcaSicklaAccount } from "./icaStore";
 
 const SUPPLIER_PROVIDERS = [
   { key: "menigo", label: "Menigo" },
@@ -82,16 +84,25 @@ export function SupplierAccountsPanel({
   loading,
   onSave,
 }: SupplierAccountsPanelProps) {
-  const [providerKey, setProviderKey] = useState("menigo");
+  const [providerKey, setProviderKey] = useState("ica");
   const [accountKey, setAccountKey] = useState(() => crypto.randomUUID());
-  const [displayName, setDisplayName] = useState("Menigo");
+  const [displayName, setDisplayName] = useState<string>(ICA_KVANTUM_SICKLA.name);
+  const [providerLocationId, setProviderLocationId] = useState<string | null>(
+    ICA_KVANTUM_SICKLA.id,
+  );
   const [customerNumber, setCustomerNumber] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   function changeProvider(nextProviderKey: string) {
     setProviderKey(nextProviderKey);
+    if (nextProviderKey === "ica") {
+      setDisplayName(ICA_KVANTUM_SICKLA.name);
+      setProviderLocationId(ICA_KVANTUM_SICKLA.id);
+      return;
+    }
     setDisplayName(providerLabel(nextProviderKey));
+    setProviderLocationId(null);
   }
 
   async function save() {
@@ -105,6 +116,7 @@ export function SupplierAccountsPanel({
       await onSave({
         accountKey,
         providerKey,
+        providerLocationId,
         displayName: displayName.trim(),
         customerNumber: customerNumber.trim() || null,
       });
@@ -144,7 +156,14 @@ export function SupplierAccountsPanel({
               <Store aria-hidden="true" size={18} />
               <span>
                 <strong>{account.display_name}</strong>
-                <small>{providerLabel(account.provider_key)}{account.customer_number ? ` · kundnummer ${account.customer_number}` : " · inget kundnummer"}</small>
+                <small>
+                  {providerLabel(account.provider_key)}
+                  {account.provider_location_id
+                    ? ` · butik ${account.provider_location_id}`
+                    : account.customer_number
+                      ? ` · kundnummer ${account.customer_number}`
+                      : " · inget kundnummer"}
+                </small>
               </span>
             </div>
           ))}
@@ -155,15 +174,49 @@ export function SupplierAccountsPanel({
         <summary><Plus aria-hidden="true" size={17} /> Lägg till leverantör</summary>
         <div className="supplier-account-form__fields">
           <label>Leverantör
-            <select value={providerKey} onChange={(event) => changeProvider(event.target.value)} disabled={!online || saving}>
+            <select
+              id="supplier-provider"
+              name="supplier-provider"
+              value={providerKey}
+              onChange={(event) => changeProvider(event.target.value)}
+              disabled={!online || saving}
+            >
               {SUPPLIER_PROVIDERS.map((provider) => <option key={provider.key} value={provider.key}>{provider.label}</option>)}
             </select>
           </label>
           <label>Visningsnamn
-            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} disabled={!online || saving} />
+            <input
+              id="supplier-display-name"
+              name="supplier-display-name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              disabled={!online || saving}
+            />
           </label>
+          {providerKey === "ica" ? (
+            <label>ICA-butik
+              <select
+                id="supplier-provider-location"
+                name="supplier-provider-location"
+                value={providerLocationId ?? ""}
+                onChange={(event) => setProviderLocationId(event.target.value)}
+                disabled={!online || saving}
+              >
+                <option value={ICA_KVANTUM_SICKLA.id}>
+                  {ICA_KVANTUM_SICKLA.name} · {ICA_KVANTUM_SICKLA.address}
+                </option>
+              </select>
+            </label>
+          ) : null}
           <label>Kundnummer
-            <input value={customerNumber} onChange={(event) => setCustomerNumber(event.target.value)} placeholder="Valfritt" disabled={!online || saving} />
+            <input
+              id="supplier-customer-number"
+              name="supplier-customer-number"
+              value={customerNumber}
+              onChange={(event) => setCustomerNumber(event.target.value)}
+              placeholder="Valfritt"
+              disabled={!online || saving}
+            />
           </label>
           <Button className="secondary-button" onPress={save} isDisabled={!online || saving}>
             <Save aria-hidden="true" size={17} /> {saving ? "Sparar…" : "Spara leverantör"}
@@ -181,7 +234,10 @@ interface SupplierMatchEditorProps {
   details: SupplierMatchDetail[];
   online: boolean;
   onSave: (input: SaveSupplierProductMatchInput) => Promise<void>;
-  onApplyProposal: (proposal: ReadySupplierOrderProposal) => Promise<void>;
+  onApplyProposal: (
+    detail: SupplierMatchDetail,
+    proposal: ReadySupplierOrderProposal,
+  ) => Promise<void>;
 }
 
 export function SupplierMatchEditor({
@@ -192,7 +248,12 @@ export function SupplierMatchEditor({
   onSave,
   onApplyProposal,
 }: SupplierMatchEditorProps) {
-  const activeAccounts = useMemo(() => accounts.filter((account) => account.active), [accounts]);
+  const activeAccounts = useMemo(
+    () => accounts.filter((account) =>
+      account.active && !isIcaSicklaAccount(account)
+    ),
+    [accounts],
+  );
   const [supplierAccountId, setSupplierAccountId] = useState(activeAccounts[0]?.id ?? "");
   const [supplierArticleNumber, setSupplierArticleNumber] = useState("");
   const [displayName, setDisplayName] = useState(item.item_name);
@@ -286,7 +347,7 @@ export function SupplierMatchEditor({
     setApplyingProductId(detail.product.id);
     setMessage(null);
     try {
-      await onApplyProposal(proposal);
+      await onApplyProposal(detail, proposal);
       setMessage({ kind: "success", text: "Förslaget kopierades till beställningen. Det beräknade behovet ändrades inte." });
     } catch (caught) {
       setMessage({ kind: "error", text: userFacingError(caught, "Förslaget kunde inte användas.") });
@@ -329,7 +390,14 @@ export function SupplierMatchEditor({
                 <div className="supplier-proposal">
                   <Check aria-hidden="true" size={18} />
                   <span>
-                    <strong>Förslag: {proposal.purchaseUnits} {detail.product.purchase_unit}</strong>
+                    <strong>
+                      Köp {describeSupplierPurchaseQuantity(
+                        detail.product,
+                        proposal.purchaseUnits,
+                        detail.match.amount_per_purchase_unit,
+                        detail.match.required_unit,
+                      )}
+                    </strong>
                     {formatExactAmount(proposal.orderedAmount)} {item.required_unit} beställs · {formatExactAmount(proposal.surplusAmount)} {item.required_unit} över behovet
                   </span>
                   <Button className="secondary-button" onPress={() => apply(detail, proposal)} isDisabled={!online || applyingProductId !== null}>
@@ -346,7 +414,7 @@ export function SupplierMatchEditor({
           );
         })}
 
-        <details className="supplier-advanced-match">
+        {activeAccounts.length ? <details className="supplier-advanced-match">
           <summary>Avancerad manuell matchning</summary>
           <div className="supplier-match-form">
             <h3>{details.length ? "Lägg till eller uppdatera matchning" : "Ny artikelmatchning"}</h3>
@@ -410,7 +478,7 @@ export function SupplierMatchEditor({
               <Save aria-hidden="true" size={17} /> {saving ? "Sparar…" : "Spara artikelmatchning"}
             </Button>
           </div>
-        </details>
+        </details> : null}
         {message ? <p className={`inline-message inline-message--${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p> : null}
       </div>
     </details>

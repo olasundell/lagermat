@@ -10,6 +10,8 @@ export type SupplierCatalogueField =
   | "gtin"
   | "price"
   | "minimum_order_units"
+  | "inner_unit_count"
+  | "inner_unit_label"
   | "valid_from"
   | "valid_to"
   | "category"
@@ -46,6 +48,8 @@ export type SupplierCatalogueIssueCode =
   | "missing_gtin"
   | "invalid_price"
   | "invalid_minimum_order"
+  | "invalid_inner_unit_count"
+  | "incomplete_inner_packaging"
   | "invalid_date"
   | "invalid_validity_period"
   | "invalid_catch_weight"
@@ -74,6 +78,8 @@ export interface SupplierCataloguePreviewRow {
   gtin: string | null;
   price: number | null;
   minimumOrderUnits: number | null;
+  innerUnitCount: number | null;
+  innerUnitLabel: string | null;
   validFrom: string | null;
   validTo: string | null;
   category: string | null;
@@ -108,6 +114,8 @@ export const supplierCatalogueFieldLabels: Record<
   gtin: "GTIN",
   price: "Kundpris",
   minimum_order_units: "Minsta beställning",
+  inner_unit_count: "Antal innerförpackningar",
+  inner_unit_label: "Innerförpackning",
   valid_from: "Gäller från",
   valid_to: "Gäller till",
   category: "Kategori",
@@ -189,6 +197,20 @@ const aliases: Record<SupplierCatalogueField, readonly string[]> = {
     "ordermultipel",
     "minimum order",
     "minimum quantity",
+  ],
+  inner_unit_count: [
+    "antal innerforpackningar",
+    "innerforpackningar per kolli",
+    "antal per kolli",
+    "consumer units per purchase unit",
+    "inner unit count",
+  ],
+  inner_unit_label: [
+    "innerforpackning",
+    "innerenhet",
+    "konsumentenhet",
+    "consumer unit",
+    "inner unit",
   ],
   valid_from: [
     "galler fran",
@@ -627,6 +649,11 @@ function buildRow(
   const price = decimalFrom(rawPrice);
   const rawMinimumOrder = firstValue(rawRow, mapping, "minimum_order_units");
   const minimumOrder = decimalFrom(rawMinimumOrder);
+  const rawInnerUnitCount = firstValue(rawRow, mapping, "inner_unit_count");
+  const innerUnitCount = decimalFrom(rawInnerUnitCount);
+  const innerUnitLabel = compactValue(
+    firstValue(rawRow, mapping, "inner_unit_label"),
+  ) || null;
   const validFrom = isoDate(firstValue(rawRow, mapping, "valid_from"));
   const validTo = isoDate(firstValue(rawRow, mapping, "valid_to"));
   const catchWeight = catchWeightValue(firstValue(rawRow, mapping, "catch_weight"));
@@ -715,6 +742,42 @@ function buildRow(
     ));
   }
 
+  if (
+    compactValue(rawInnerUnitCount)
+    && (
+      !innerUnitCount
+      || !innerUnitCount.isInteger()
+      || !innerUnitCount.greaterThan(0)
+      || innerUnitCount.greaterThan(Number.MAX_SAFE_INTEGER)
+    )
+  ) {
+    issues.push(issue(
+      "error",
+      "invalid_inner_unit_count",
+      `Antal innerförpackningar måste vara ett positivt heltal på rad ${sourceRow}.`,
+      sourceRow,
+      "inner_unit_count",
+    ));
+  }
+  if (Boolean(compactValue(rawInnerUnitCount)) !== Boolean(innerUnitLabel)) {
+    issues.push(issue(
+      "warning",
+      "incomplete_inner_packaging",
+      `Ange både antal och namn för innerförpackningen på rad ${sourceRow}, till exempel "6" och "burkar".`,
+      sourceRow,
+      compactValue(rawInnerUnitCount) ? "inner_unit_label" : "inner_unit_count",
+    ));
+  }
+  if (innerUnitLabel && innerUnitLabel.length > 80) {
+    issues.push(issue(
+      "error",
+      "value_too_long",
+      `Innerförpackning är längre än 80 tecken på rad ${sourceRow}.`,
+      sourceRow,
+      "inner_unit_label",
+    ));
+  }
+
   if (!validFrom.valid) {
     issues.push(issue(
       "error",
@@ -771,6 +834,13 @@ function buildRow(
     price?.toString() ?? (compactValue(rawPrice) ? `invalid:${normalized(rawPrice)}` : ""),
     minimumOrder?.toString()
       ?? (compactValue(rawMinimumOrder) ? `invalid:${normalized(rawMinimumOrder)}` : ""),
+    innerUnitCount?.toString()
+      ?? (
+        compactValue(rawInnerUnitCount)
+          ? `invalid:${normalized(rawInnerUnitCount)}`
+          : ""
+      ),
+    normalized(innerUnitLabel),
     validFrom.valid
       ? (validFrom.value ?? "")
       : `invalid:${normalized(firstValue(rawRow, mapping, "valid_from"))}`,
@@ -797,6 +867,8 @@ function buildRow(
     gtin: gtin.valid ? gtin.value : null,
     price: price?.toNumber() ?? null,
     minimumOrderUnits: minimumOrder?.toNumber() ?? null,
+    innerUnitCount: innerUnitCount?.toNumber() ?? null,
+    innerUnitLabel,
     validFrom: validFrom.value,
     validTo: validTo.value,
     category,

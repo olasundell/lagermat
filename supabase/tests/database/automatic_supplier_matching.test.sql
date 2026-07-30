@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(50);
 
 -- 1
 select is(
@@ -30,7 +30,7 @@ select is(
       and (
         (
           table_name = 'supplier_accounts'
-          and column_name = 'account_key'
+          and column_name in ('account_key', 'provider_location_id')
         )
         or (
           table_name = 'supplier_products'
@@ -54,8 +54,8 @@ select is(
         )
       )
   ),
-  11,
-  'stable identities, searchable product metadata and approval snapshots are stored'
+  12,
+  'stable account and store identities, searchable product metadata and approval snapshots are stored'
 );
 
 -- 3
@@ -64,6 +64,13 @@ select has_index(
   'supplier_products',
   'supplier_products_catalogue_search_idx',
   'catalogue name searches have an organization/account/name index'
+);
+
+select has_index(
+  'public',
+  'supplier_accounts',
+  'supplier_accounts_org_provider_location_unique',
+  'one organization cannot create duplicate accounts for the same provider location'
 );
 
 -- 4
@@ -131,7 +138,12 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.save_supplier_account_identity(uuid,uuid,text,text,text)',
+    'public.ensure_ica_sickla_supplier_account(uuid)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'authenticated',
+    'public.save_supplier_account_identity(uuid,uuid,text,text,text,text)',
     'EXECUTE'
   )
   and has_function_privilege(
@@ -176,7 +188,12 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'public.save_supplier_account_identity(uuid,uuid,text,text,text)',
+    'public.ensure_ica_sickla_supplier_account(uuid)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon',
+    'public.save_supplier_account_identity(uuid,uuid,text,text,text,text)',
     'EXECUTE'
   )
   and not has_function_privilege(
@@ -201,7 +218,8 @@ select ok(
     )
     from pg_proc as procedure
     where procedure.oid in (
-      'public.save_supplier_account_identity(uuid,uuid,text,text,text)'::regprocedure,
+      'public.ensure_ica_sickla_supplier_account(uuid)'::regprocedure,
+      'public.save_supplier_account_identity(uuid,uuid,text,text,text,text)'::regprocedure,
       'public.save_supplier_import_column_profile(uuid,uuid,text,text,jsonb)'::regprocedure,
       'public.start_supplier_import(uuid,uuid,uuid,text,text,text)'::regprocedure,
       'public.stage_supplier_import_rows(uuid,uuid,uuid,jsonb)'::regprocedure,
@@ -225,9 +243,19 @@ select ok(
     'authenticated',
     'public.supplier_product_fingerprint(text,text,text,text,numeric,text,integer,boolean)',
     'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.supersede_older_supplier_match_candidates()',
+    'EXECUTE'
   ),
   'internal approval and fingerprint helpers are not Data API surfaces'
 );
+
+delete from public.supplier_accounts
+where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  and provider_key = 'ica'
+  and provider_location_id = '1004021';
 
 set local role authenticated;
 select set_config(
@@ -243,6 +271,7 @@ select set_config(
     'ca000000-0000-4000-8000-000000000001',
     'martin_servera',
     'Martin & Servera original',
+    null,
     null
   )::text,
   true
@@ -261,6 +290,7 @@ select set_config(
     'ca000000-0000-4000-8000-000000000001',
     'martin_servera',
     'Martin & Servera omdöpt',
+    null,
     null
   )::text,
   true
@@ -299,7 +329,9 @@ select set_config(
       {"index":3,"source":"Mängd","target":"total_amount"},
       {"index":4,"source":"Mängdenhet","target":"total_unit"},
       {"index":5,"source":"Varumärke","target":"brand"},
-      {"index":6,"source":"Viktvara","target":"catch_weight"}
+      {"index":6,"source":"Viktvara","target":"catch_weight"},
+      {"index":7,"source":"Antal innerförpackningar","target":"inner_unit_count"},
+      {"index":8,"source":"Innerförpackning","target":"inner_unit_label"}
     ]'::jsonb
   )::text,
   true
@@ -314,12 +346,17 @@ select ok(
 -- 15
 select is(
   (
-    select column_mapping -> 3 ->> 'target'
+    select concat_ws(
+      ',',
+      column_mapping -> 3 ->> 'target',
+      column_mapping -> 7 ->> 'target',
+      column_mapping -> 8 ->> 'target'
+    )
     from public.supplier_import_column_profiles
     where id = current_setting('scoutmat_test.column_profile_id')::uuid
   ),
-  'total_amount',
-  'the raw UI mapping is retained for reuse'
+  'total_amount,inner_unit_count,inner_unit_label',
+  'the raw UI mapping and inner package fields are retained for reuse'
 );
 
 -- 16
@@ -1062,6 +1099,15 @@ select throws_ok(
   'a signed-in non-member cannot start an import'
 );
 
+select throws_ok(
+  $$select public.ensure_ica_sickla_supplier_account(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+    )$$,
+  '42501',
+  'Active organization membership required',
+  'a signed-in non-member cannot provision the selected ICA store'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '11111111-1111-1111-1111-111111111111',
@@ -1087,6 +1133,294 @@ select ok(
       )
   ),
   'account, import, candidate and approval mutations leave an audit trail'
+);
+
+select set_config(
+  'scoutmat_test.ica_account_id',
+  public.ensure_ica_sickla_supplier_account(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  )::text,
+  true
+);
+
+select is(
+  public.ensure_ica_sickla_supplier_account(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  ),
+  current_setting('scoutmat_test.ica_account_id')::uuid,
+  'automatic ICA Sickla provisioning is idempotent'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.supplier_accounts
+    where id = current_setting('scoutmat_test.ica_account_id')::uuid
+      and organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+      and provider_key = 'ica'
+      and provider_location_id = '1004021'
+      and display_name = 'ICA Kvantum Sickla'
+      and active
+  )
+  and exists (
+    select 1
+    from public.audit_events
+    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+      and event_type = 'supplier_account_ica_sickla_enabled'
+      and entity_id =
+        current_setting('scoutmat_test.ica_account_id')::text
+  ),
+  'automatic provisioning creates the selected store and audits the mutation'
+);
+select set_config(
+  'scoutmat_test.ica_import_run',
+  public.start_supplier_import(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    current_setting('scoutmat_test.ica_account_id')::uuid,
+    null,
+    'ica-kvantum-sickla-1004021',
+    'api',
+    repeat('d', 64)
+  )::text,
+  true
+);
+select public.stage_supplier_import_rows(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  current_setting('scoutmat_test.ica_account_id')::uuid,
+  current_setting('scoutmat_test.ica_import_run')::uuid,
+  jsonb_build_array(jsonb_build_object(
+    'source_row', 1,
+    'raw_data', jsonb_build_object(
+      'retailer_product_id', '2141387',
+      'store_id', '1004021'
+    ),
+    'normalized_data', jsonb_build_object(
+      'supplier_article_number', '2141387',
+      'display_name', 'Krossade tomater 3-p 1170g ICA',
+      'purchase_unit', 'förpackning',
+      'package_amount', 1.17,
+      'package_unit', 'kg',
+      'minimum_order_units', 1,
+      'brand', 'ICA',
+      'catch_weight', false,
+      'metadata', jsonb_build_object(
+        'source', 'ica_public_webshop',
+        'store_id', '1004021'
+      ),
+      'packaging_metadata', jsonb_build_object(
+        'inner_unit_count', 3,
+        'inner_unit_label', 'stycken'
+      )
+    )
+  ))
+);
+select public.finalize_supplier_import(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  current_setting('scoutmat_test.ica_account_id')::uuid,
+  current_setting('scoutmat_test.ica_import_run')::uuid
+);
+
+-- 40
+select ok(
+  exists (
+    select 1
+    from public.supplier_products
+    where supplier_account_id =
+        current_setting('scoutmat_test.ica_account_id')::uuid
+      and supplier_article_number = '2141387'
+      and active
+      and product_data_source = 'import:api'
+      and source_metadata @> jsonb_build_object(
+        'source', 'ica_public_webshop',
+        'store_id', '1004021'
+      )
+  ),
+  'a store-scoped ICA API import publishes a genuine ICA product'
+);
+
+reset role;
+
+delete from public.supplier_import_runs
+where id = current_setting('scoutmat_test.import_run_3')::uuid;
+
+-- 41
+select ok(
+  exists (
+    select 1
+    from public.supplier_products
+    where id = current_setting('scoutmat_test.product_a_id')::uuid
+      and organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+      and supplier_account_id =
+        current_setting('scoutmat_test.supplier_account_id')::uuid
+      and latest_import_run_id is null
+  )
+  and not exists (
+    select 1
+    from public.supplier_import_rows
+    where import_run_id =
+      current_setting('scoutmat_test.import_run_3')::uuid
+  )
+  and not exists (
+    select 1
+    from public.supplier_match_candidates
+    where import_run_id =
+      current_setting('scoutmat_test.import_run_3')::uuid
+  ),
+  'deleting an import clears only nullable references and preserves product ownership'
+);
+
+-- 42
+select is(
+  public.normalized_supplier_match_name(
+    'Krossade tomater 3-p 1170g ICA',
+    'ICA'
+  ),
+  'krossade tomater',
+  'server-side safe matching removes verified ICA pack and brand tokens'
+);
+
+-- 43
+select isnt(
+  public.supplier_product_fingerprint(
+    '2141387',
+    'Krossade tomater 3-p 1170g ICA',
+    null,
+    'förpackning',
+    1.17,
+    'kg',
+    1,
+    false,
+    '{"inner_unit_count":3,"inner_unit_label":"stycken"}'::jsonb
+  ),
+  public.supplier_product_fingerprint(
+    '2141387',
+    'Krossade tomater 3-p 1170g ICA',
+    null,
+    'förpackning',
+    1.17,
+    'kg',
+    1,
+    false,
+    '{"inner_unit_count":6,"inner_unit_label":"stycken"}'::jsonb
+  ),
+  'a changed verified inner package invalidates the product fingerprint'
+);
+
+-- 44
+select throws_ok(
+  format(
+    $product$
+      insert into public.supplier_products (
+        organization_id,
+        supplier_account_id,
+        supplier_article_number,
+        display_name,
+        purchase_unit,
+        package_amount,
+        package_unit,
+        minimum_order_units,
+        active,
+        product_data_source,
+        source_updated_at,
+        source_metadata,
+        created_by
+      ) values (
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+        %L,
+        'FAKE-ICA',
+        'Generisk tomatkross',
+        'förpackning',
+        1,
+        'kg',
+        1,
+        true,
+        'manual',
+        now(),
+        '{}'::jsonb,
+        '11111111-1111-1111-1111-111111111111'
+      )
+    $product$,
+    current_setting('scoutmat_test.ica_account_id')::uuid
+  ),
+  '22023',
+  'ICA supplier products must come from the configured store catalogue',
+  'manual and generic products are rejected under an ICA account'
+);
+
+insert into public.supplier_match_candidates (
+  id,
+  organization_id,
+  supplier_account_id,
+  canonical_key,
+  supplier_product_id,
+  matcher_version,
+  status,
+  score,
+  signals,
+  product_fingerprint,
+  required_unit,
+  amount_per_purchase_unit,
+  generated_by
+) values (
+  'cc000000-0000-4000-8000-000000000001',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  current_setting('scoutmat_test.supplier_account_id')::uuid,
+  public.canonical_ingredient_key('Krossade tomater', 'kg'),
+  current_setting('scoutmat_test.product_a_id')::uuid,
+  'trigger-old',
+  'review',
+  100,
+  '{}'::jsonb,
+  current_setting('scoutmat_test.product_a_fingerprint'),
+  'kg',
+  15,
+  '11111111-1111-1111-1111-111111111111'
+);
+
+insert into public.supplier_match_candidates (
+  id,
+  organization_id,
+  supplier_account_id,
+  canonical_key,
+  supplier_product_id,
+  matcher_version,
+  status,
+  score,
+  signals,
+  product_fingerprint,
+  required_unit,
+  amount_per_purchase_unit,
+  generated_by
+) values (
+  'cc000000-0000-4000-8000-000000000002',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  current_setting('scoutmat_test.supplier_account_id')::uuid,
+  public.canonical_ingredient_key('Krossade tomater', 'kg'),
+  current_setting('scoutmat_test.product_a_id')::uuid,
+  'trigger-new',
+  'review',
+  100,
+  '{}'::jsonb,
+  current_setting('scoutmat_test.product_a_fingerprint'),
+  'kg',
+  15,
+  '11111111-1111-1111-1111-111111111111'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.supplier_match_candidates
+    where id = 'cc000000-0000-4000-8000-000000000001'
+      and status = 'superseded'
+  )
+  and exists (
+    select 1
+    from public.supplier_match_candidates
+    where id = 'cc000000-0000-4000-8000-000000000002'
+      and status = 'review'
+  ),
+  'publishing a new matcher version removes older open candidates from the queue'
 );
 
 select * from finish();

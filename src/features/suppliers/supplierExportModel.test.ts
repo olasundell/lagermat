@@ -8,6 +8,7 @@ const supplier: SupplierAccount = {
   account_key: "00000000-0000-4000-8000-000000000001",
   organization_id: "organization-1",
   provider_key: "menigo",
+  provider_location_id: null,
   display_name: "Menigo",
   customer_number: "KUND-42",
   active: true,

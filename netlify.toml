@@ -7,6 +7,10 @@
   PNPM_VERSION = "11.9.0"
   PNPM_FLAGS = "--frozen-lockfile"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 # Vite owns bundling and minification. The build script writes environment-specific
 # security and cache headers to dist/_headers after validating VITE_SUPABASE_URL.
 [build.processing]
@@ -20,7 +24,8 @@
 [context.branch-deploy]
   command = "node scripts/reject-netlify-preview.mjs"
 
-# Real files take precedence; all other paths are handled by the client router.
+# Function paths are registered in code. Real files take precedence; all other
+# paths are handled by the client router.
 [[redirects]]
   from = "/*"
   to = "/index.html"

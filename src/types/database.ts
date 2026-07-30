@@ -1265,6 +1265,7 @@ export type Database = {
           id: string
           organization_id: string
           provider_key: string
+          provider_location_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1277,6 +1278,7 @@ export type Database = {
           id?: string
           organization_id: string
           provider_key: string
+          provider_location_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1289,6 +1291,7 @@ export type Database = {
           id?: string
           organization_id?: string
           provider_key?: string
+          provider_location_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -2198,6 +2201,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      ensure_ica_sickla_supplier_account: {
+        Args: { p_organization_id: string }
+        Returns: string
+      }
       list_organization_members: {
         Args: { target_organization_id: string }
         Returns: {
@@ -2289,6 +2296,7 @@ export type Database = {
           p_display_name: string
           p_organization_id: string
           p_provider_key: string
+          p_provider_location_id: string
         }
         Returns: string
       }
@@ -2363,7 +2371,7 @@ export type Database = {
       }
       start_supplier_import: {
         Args: {
-          p_column_profile_id: string
+          p_column_profile_id: string | null
           p_organization_id: string
           p_source_fingerprint: string
           p_source_kind: string

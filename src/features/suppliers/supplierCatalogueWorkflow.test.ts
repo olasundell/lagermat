@@ -16,6 +16,7 @@ const account = {
   account_key: "00000000-0000-4000-8000-000000000001",
   organization_id: "00000000-0000-4000-8000-000000000002",
   provider_key: "demo",
+  provider_location_id: null,
   display_name: "Demo",
   customer_number: null,
   active: true,
@@ -87,7 +88,7 @@ describe("supplier catalogue workflow", () => {
       manufacturerArticleNumber: "168278",
     }]);
 
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0]?.normalized_data).toMatchObject({
       supplier_article_number: "MS-168278",
       display_name: "Gräddfil 3 dl",
@@ -97,6 +98,12 @@ describe("supplier catalogue workflow", () => {
     });
     expect(rows[0]?.normalized_data.metadata).toMatchObject({
       dabas_display_name: "Dabas namn",
+    });
+    expect(rows.find((row) =>
+      row.normalized_data.supplier_article_number === "DEMO-TOMAT-6"
+    )?.normalized_data.packaging_metadata).toMatchObject({
+      inner_unit_count: 6,
+      inner_unit_label: "burkar",
     });
   });
 

@@ -10,6 +10,7 @@ const account: SupplierAccount = {
   account_key: "00000000-0000-4000-8000-000000000001",
   organization_id: "organization-1",
   provider_key: "demo",
+  provider_location_id: null,
   display_name: "Demo-grossist",
   customer_number: null,
   active: true,
@@ -71,7 +72,7 @@ const candidate: SupplierCatalogueCandidateView = {
   status: "pending",
   classification: "safe",
   score: 100,
-  matcherVersion: "deterministic-v1",
+  matcherVersion: "deterministic-v2",
   amountPerPurchaseUnit: 10,
   requiredUnit: "kg",
   reasons: ["Exakt namn", "Samma mängdenhet", "Verifierad förpackning"],
@@ -108,18 +109,50 @@ describe("SupplierCataloguePanel", () => {
     await user.click(screen.getByRole("button", { name: "Prova med exempeldata" }));
 
     expect(screen.getByText("demo-leverantorskatalog.xlsx")).toBeInTheDocument();
-    expect(screen.getByText("1 kompletta")).toBeInTheDocument();
+    expect(screen.getByText("2 kompletta")).toBeInTheDocument();
     expect(screen.getByText("1 behöver granskas")).toBeInTheDocument();
     expect(screen.getByText("1 blockeras")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Importera 2 artiklar" }));
+    await user.click(screen.getByRole("button", { name: "Importera 3 artiklar" }));
 
     expect(onImport).toHaveBeenCalledWith(
       account.id,
       expect.objectContaining({ filename: "demo-leverantorskatalog.xlsx" }),
       expect.any(Array),
     );
-    expect(await screen.findByText("Dabas är inte konfigurerat", { exact: false })).toBeInTheDocument();
+    expect(await screen.findByText(
+      "2 artiklar importerades och 1 matchningsförslag skapades.",
+    )).toBeInTheDocument();
+  });
+
+  it("visar aldrig exempeldata för ett ICA-konto", () => {
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      syncPending: true,
+    });
+
+    expect(screen.queryByRole("button", { name: "Prova med exempeldata" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Välj CSV eller Excel"))
+      .not.toBeInTheDocument();
+    expect(screen.getByText("Ingen Dabas-nyckel eller ICA-inloggning behövs.", {
+      exact: false,
+    }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Automatiskt från ICA")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hämtas från ICA" }))
+      .toBeInTheDocument();
+    expect(screen.getByText(
+      "Du behöver inte söka eller matcha dem för hand.",
+      { exact: false },
+    )).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sök" }))
+      .not.toBeInTheDocument();
   });
 
   it("batchgodkänner bara väntande säkra förslag", async () => {
@@ -127,10 +160,46 @@ describe("SupplierCataloguePanel", () => {
     const onApproveSafe = vi.fn().mockResolvedValue(undefined);
     renderPanel({ candidates: [candidate], onApproveSafe });
 
-    expect(screen.getByText("2 säck täcker 20 kg.", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("2 säckar täcker 20 kg.", { exact: false })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Godkänn alla säkra" }));
 
     expect(onApproveSafe).toHaveBeenCalledWith(["candidate-1"]);
+  });
+
+  it("visar konsumentenheter i stället för ett decimalbehov när kollit är känt", () => {
+    const tomatoItem: SupplyItemRow = {
+      ...item,
+      id: "tomato-item",
+      canonical_key: "ingredient:krossade-tomater",
+      item_name: "Krossade tomater",
+      required_amount: 1.7373,
+    };
+    const tomatoProduct: SupplierProduct = {
+      ...product,
+      id: "tomato-product",
+      supplier_article_number: "DEMO-TOMAT-6",
+      display_name: "Krossade tomater",
+      purchase_unit: "kolli",
+      package_amount: 2.4,
+      packaging_metadata: {
+        inner_unit_count: 6,
+        inner_unit_label: "burkar",
+      },
+    };
+    const tomatoCandidate: SupplierCatalogueCandidateView = {
+      ...candidate,
+      id: "tomato-candidate",
+      canonicalKey: tomatoItem.canonical_key,
+      supplierProductId: tomatoProduct.id,
+      amountPerPurchaseUnit: 2.4,
+      product: tomatoProduct,
+    };
+
+    renderPanel({ items: [tomatoItem], candidates: [tomatoCandidate] });
+
+    expect(screen.getByText("6 burkar (1 kolli à 6 × 400 g) täcker 2,4 kg.", {
+      exact: false,
+    })).toBeInTheDocument();
   });
 
   it("låter granskaren godkänna eller avvisa ett enskilt förslag", async () => {

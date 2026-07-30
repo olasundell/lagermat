@@ -21,6 +21,10 @@ import type {
   SupplierOffer,
   SupplierProduct,
 } from "./supplierModel";
+import {
+  isIcaSicklaAccount,
+  isIcaSicklaCatalogueProduct,
+} from "./icaStore";
 
 export interface SupplierScope {
   organizationId: string;
@@ -40,6 +44,7 @@ export interface SupplierFoundationSnapshot {
 export interface SaveSupplierAccountInput {
   accountKey: string;
   providerKey: string;
+  providerLocationId: string | null;
   displayName: string;
   customerNumber: string | null;
 }
@@ -63,7 +68,7 @@ export interface SaveSupplierProductMatchInput {
   priceValidTo: string | null;
 }
 
-const ACCOUNT_COLUMNS = "id, organization_id, account_key, provider_key, display_name, customer_number, active, created_by, created_at, updated_at" as const;
+const ACCOUNT_COLUMNS = "id, organization_id, account_key, provider_key, provider_location_id, display_name, customer_number, active, created_by, created_at, updated_at" as const;
 const PRODUCT_COLUMNS = "id, organization_id, supplier_account_id, supplier_article_number, display_name, gtin, purchase_unit, package_amount, package_unit, minimum_order_units, active, product_data_source, source_updated_at, created_by, created_at, updated_at, source_metadata, normalized_search_name, brand, category, packaging_metadata, catch_weight, product_fingerprint, latest_import_run_id" as const;
 const OFFER_COLUMNS = "id, organization_id, supplier_product_id, price, currency, availability_status, valid_from, valid_to, fetched_at, created_at, updated_at" as const;
 const MATCH_COLUMNS = "id, organization_id, canonical_key, supplier_account_id, supplier_product_id, required_unit, amount_per_purchase_unit, approved_product_fingerprint, approved_by, approved_at, created_at, updated_at" as const;
@@ -186,6 +191,8 @@ const COLUMN_MAPPING_TARGETS = new Set<SupplierCatalogueColumnMapping["target"]>
   "gtin",
   "price",
   "minimum_order_units",
+  "inner_unit_count",
+  "inner_unit_label",
   "valid_from",
   "valid_to",
   "category",
@@ -440,10 +447,16 @@ export async function fetchSupplierFoundation(
   const matchIds = [...new Set(
     preferredMatches.map((preferred) => preferred.ingredient_supplier_match_id),
   )];
-  const [products, matches] = await Promise.all([
+  const [fetchedProducts, matches] = await Promise.all([
     fetchProductsByIds(client, scope.organizationId, productIds),
     fetchMatchesByIds(client, scope.organizationId, matchIds),
   ]);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const products = fetchedProducts.filter((product) => {
+    const account = accountsById.get(product.supplier_account_id);
+    return !isIcaSicklaAccount(account)
+      || isIcaSicklaCatalogueProduct(product);
+  });
   const currentPreferred = currentPreferredMatches(
     preferredMatches,
     matches,
@@ -480,6 +493,21 @@ export async function fetchSupplierFoundation(
   };
 }
 
+export async function ensureIcaSicklaSupplierAccount(
+  scope: SupplierScope,
+): Promise<string> {
+  const client = supplierClient();
+  requireOnline();
+  const { data, error } = await client.rpc(
+    "ensure_ica_sickla_supplier_account",
+    {
+      p_organization_id: scope.organizationId,
+    },
+  );
+  if (error) throw error;
+  return data;
+}
+
 export async function saveSupplierAccount(
   scope: SupplierScope,
   input: SaveSupplierAccountInput,
@@ -491,6 +519,7 @@ export async function saveSupplierAccount(
     p_organization_id: scope.organizationId,
     p_account_key: input.accountKey,
     p_provider_key: input.providerKey,
+    p_provider_location_id: input.providerLocationId ?? "",
     p_display_name: input.displayName,
     p_customer_number: input.customerNumber ?? "",
   });
@@ -503,6 +532,19 @@ export async function saveSupplierProductMatch(
 ): Promise<void> {
   const client = supplierClient();
   requireOnline();
+  const { data: account, error: accountError } = await client
+    .from("supplier_accounts")
+    .select(ACCOUNT_COLUMNS)
+    .eq("organization_id", scope.organizationId)
+    .eq("id", input.supplierAccountId)
+    .eq("active", true)
+    .single();
+  if (accountError) throw accountError;
+  if (isIcaSicklaAccount(account)) {
+    throw new Error(
+      "ICA-artiklar matchas från butikens hämtade sortiment och kan inte skrivas in manuellt.",
+    );
+  }
 
   const { error } = await client.rpc("save_supplier_product_match", {
     p_organization_id: scope.organizationId,

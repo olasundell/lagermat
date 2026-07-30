@@ -89,6 +89,8 @@ function sourceIdentity(row: SupplierCataloguePreviewRow): Record<string, unknow
     gtin: row.gtin,
     price: row.price,
     minimum_order_units: row.minimumOrderUnits,
+    inner_unit_count: row.innerUnitCount,
+    inner_unit_label: row.innerUnitLabel,
     valid_from: row.validFrom,
     valid_to: row.validTo,
     category: row.category,
@@ -108,6 +110,28 @@ export async function supplierCatalogueSourceFingerprint(
     version: "supplier-catalogue-file-v1",
     header_signature: preview.headerSignature,
     rows: importableRows,
+  }));
+}
+
+export async function supplierCatalogueApiSourceFingerprint(
+  adapter: string,
+  storeId: string,
+  rows: readonly StagedSupplierCatalogueRow[],
+): Promise<string> {
+  const products = rows
+    .map((row) => row.normalized_data)
+    .sort((left, right) =>
+      String(left.supplier_article_number ?? "").localeCompare(
+        String(right.supplier_article_number ?? ""),
+        "sv-SE",
+        { numeric: true },
+      )
+    );
+  return sha256Hex(stableJson({
+    version: "supplier-catalogue-api-v1",
+    adapter,
+    store_id: storeId,
+    products,
   }));
 }
 
@@ -149,6 +173,8 @@ export function buildStagedSupplierCatalogueRows(
           normalization_version: "supplier-import-v1",
           source_total_amount: row.totalAmount,
           source_total_unit: row.totalUnit,
+          inner_unit_count: row.innerUnitCount,
+          inner_unit_label: row.innerUnitLabel,
           dabas_package_description: enriched?.packageDescription,
         }),
         metadata: compactRecord({

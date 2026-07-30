@@ -67,7 +67,13 @@ export function SupplierOrderExportActions({
   return (
     <div className="supplier-export-actions" aria-label="Leverantörsanpassat underlag">
       <label>Leverantör
-        <select value={selectedSupplierAccountId} onChange={(event) => setSupplierAccountId(event.target.value)} disabled={disabled}>
+        <select
+          id="supplier-export-account"
+          name="supplier-export-account"
+          value={selectedSupplierAccountId}
+          onChange={(event) => setSupplierAccountId(event.target.value)}
+          disabled={disabled}
+        >
           {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.display_name}</option>)}
         </select>
       </label>

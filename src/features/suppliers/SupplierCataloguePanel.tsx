@@ -25,7 +25,12 @@ import {
   type SupplierCataloguePreview,
 } from "./catalogueImportModel";
 import { demoSupplierCatalogueTable } from "./demoSupplierCatalogue";
-import type { SupplierAccount, SupplierProduct } from "./supplierModel";
+import { ICA_KVANTUM_SICKLA, isIcaSicklaAccount } from "./icaStore";
+import {
+  describeSupplierPurchaseQuantity,
+  type SupplierAccount,
+  type SupplierProduct,
+} from "./supplierModel";
 
 export interface SupplierCatalogueCandidateView {
   id: string;
@@ -69,6 +74,8 @@ interface SupplierCataloguePanelProps {
   columnProfiles: SupplierCatalogueColumnProfileView[];
   online: boolean;
   loading: boolean;
+  syncWarning?: string | null;
+  syncPending?: boolean;
   onImport: (
     supplierAccountId: string,
     preview: SupplierCataloguePreview,
@@ -95,7 +102,12 @@ function candidateOrderSummary(
   const units = needed.isZero()
     ? new Decimal(0)
     : Decimal.max(needed.div(perUnit).ceil(), minimum);
-  return `${units.toString()} ${candidate.product.purchase_unit} täcker ${
+  return `${describeSupplierPurchaseQuantity(
+    candidate.product,
+    units.toString(),
+    perUnit.toString(),
+    candidate.requiredUnit,
+  )} täcker ${
     formatExactAmount(units.times(perUnit).toNumber())
   } ${candidate.requiredUnit}`;
 }
@@ -155,6 +167,8 @@ export function SupplierCataloguePanel({
   columnProfiles,
   online,
   loading,
+  syncWarning = null,
+  syncPending = false,
   onImport,
   onApproveSafe,
   onApprove,
@@ -167,6 +181,9 @@ export function SupplierCataloguePanel({
   const selectedAccountId = activeAccounts.some((account) => account.id === supplierAccountId)
     ? supplierAccountId
     : activeAccounts[0]?.id ?? "";
+  const selectedAccount = activeAccounts.find((account) => account.id === selectedAccountId);
+  const icaSicklaSelected = isIcaSicklaAccount(selectedAccount);
+  const icaSyncPending = icaSicklaSelected && syncPending;
   const [table, setTable] = useState<SupplierCatalogueImportTable | null>(null);
   const [mapping, setMapping] = useState<SupplierCatalogueColumnMapping[]>([]);
   const [preview, setPreview] = useState<SupplierCataloguePreview | null>(null);
@@ -267,13 +284,7 @@ export function SupplierCataloguePanel({
       setShowMapping(false);
       setMessage({
         kind: "success",
-        text: `${result.imported} artiklar importerades och ${result.matched} matchningsförslag skapades.${
-          result.dabasConfigured
-            ? " Produktdata berikades med Dabas."
-            : result.enrichmentSource === "fixture"
-              ? " Lokal fixture-berikning användes; inga externa anrop gjordes."
-              : " Dabas är inte konfigurerat; filens data användes."
-        }`,
+        text: `${result.imported} artiklar importerades och ${result.matched} matchningsförslag skapades.`,
       });
     } catch (caught) {
       setMessage({ kind: "error", text: userFacingError(caught, "Katalogen kunde inte importeras.") });
@@ -358,8 +369,16 @@ export function SupplierCataloguePanel({
       <div className="supplier-catalogue__heading">
         <div>
           <span className="eyebrow"><Sparkles aria-hidden="true" size={17} /> Automatisk artikelmatchning</span>
-          <h2 id="supplier-catalogue-heading">Importera katalogen – granska bara undantagen</h2>
-          <p>Scoutmat läser grossistens fil, räknar ut kollistorlekar och minns varje godkänd matchning.</p>
+          <h2 id="supplier-catalogue-heading">
+            {icaSicklaSelected
+              ? "ICA-sortimentet matchas automatiskt"
+              : "Importera katalogen – granska bara undantagen"}
+          </h2>
+          <p>
+            {icaSicklaSelected
+              ? "Scoutmat hämtar butikens verkliga artiklar och räknar om behovet till hela köpbara förpackningar."
+              : "Scoutmat läser grossistens fil, räknar ut kollistorlekar och minns varje godkänd matchning."}
+          </p>
         </div>
         <span className="supplier-foundation__safety">Ingen order skickas</span>
       </div>
@@ -369,12 +388,37 @@ export function SupplierCataloguePanel({
           <AlertTriangle aria-hidden="true" size={17} /> Katalogimport kräver nätanslutning.
         </p>
       ) : null}
+      {icaSicklaSelected ? (
+        <p className="supplier-foundation__notice">
+          <Check aria-hidden="true" size={17} />
+          <span>
+            Sortiment, ordinarie priser och förpackningsstorlekar kommer från{" "}
+            <a href={ICA_KVANTUM_SICKLA.storeUrl} target="_blank" rel="noreferrer">
+              {ICA_KVANTUM_SICKLA.name}
+            </a>
+            . Ingen Dabas-nyckel eller ICA-inloggning behövs.
+          </span>
+        </p>
+      ) : null}
+      {syncWarning ? (
+        <p className="inline-message inline-message--error" role="status">
+          <AlertTriangle aria-hidden="true" size={17} /> {syncWarning}
+        </p>
+      ) : null}
 
       <div className="supplier-catalogue__toolbar">
         <label>Leverantör
           <select
+            id="supplier-catalogue-account"
+            name="supplier-catalogue-account"
             value={selectedAccountId}
-            onChange={(event) => setSupplierAccountId(event.target.value)}
+            onChange={(event) => {
+              setSupplierAccountId(event.target.value);
+              setTable(null);
+              setMapping([]);
+              setPreview(null);
+              setMessage(null);
+            }}
             disabled={!online || loading || importing || !activeAccounts.length}
           >
             {activeAccounts.map((account) => (
@@ -382,29 +426,37 @@ export function SupplierCataloguePanel({
             ))}
           </select>
         </label>
-        <label className="supplier-file-button">
-          <Upload aria-hidden="true" size={18} />
-          {reading ? "Läser fil…" : "Välj CSV eller Excel"}
-          <input
-            type="file"
-            accept=".csv,.xls,.xlsx"
-            onChange={handleFile}
-            disabled={!online || reading || importing || !selectedAccountId}
-          />
-        </label>
-        <Button
-          className="secondary-button"
-          onPress={() => installTable(demoSupplierCatalogueTable)}
-          isDisabled={!online || importing || !selectedAccountId}
-        >
-          <FlaskConical aria-hidden="true" size={17} /> Prova med exempeldata
-        </Button>
+        {icaSicklaSelected ? (
+          <span className="supplier-foundation__safety">
+            {loading ? "Hämtar från ICA…" : "Automatiskt från ICA"}
+          </span>
+        ) : (
+          <label className="supplier-file-button">
+            <Upload aria-hidden="true" size={18} />
+            {reading ? "Läser fil…" : "Välj CSV eller Excel"}
+            <input
+              type="file"
+              accept=".csv,.xls,.xlsx"
+              onChange={handleFile}
+              disabled={!online || reading || importing || !selectedAccountId}
+            />
+          </label>
+        )}
+        {selectedAccount?.provider_key === "demo" ? (
+          <Button
+            className="secondary-button"
+            onPress={() => installTable(demoSupplierCatalogueTable)}
+            isDisabled={!online || importing || !selectedAccountId}
+          >
+            <FlaskConical aria-hidden="true" size={17} /> Prova med exempeldata
+          </Button>
+        ) : null}
       </div>
       {!activeAccounts.length ? (
         <p className="supplier-catalogue__empty">Lägg först till en leverantör ovan.</p>
       ) : null}
 
-      {preview ? (
+      {preview && !icaSicklaSelected ? (
         <div className="supplier-import-preview">
           <div className="supplier-import-preview__heading">
             <div>
@@ -522,9 +574,28 @@ export function SupplierCataloguePanel({
 
           <section aria-labelledby="no-suggestions-heading">
             <div className="supplier-review-section__heading">
-              <div><PackageSearch aria-hidden="true" size={20} /><span><h3 id="no-suggestions-heading">Ingen träff</h3><small>Sök i den importerade katalogen</small></span></div>
+              <div>
+                <PackageSearch aria-hidden="true" size={20} />
+                <span>
+                  <h3 id="no-suggestions-heading">
+                    {icaSyncPending ? "Hämtas från ICA" : "Ingen träff"}
+                  </h3>
+                  <small>
+                    {icaSyncPending
+                      ? "Scoutmat arbetar vidare automatiskt"
+                      : icaSicklaSelected
+                      ? "Sök bland hämtade artiklar från ICA Sickla"
+                      : "Sök i den importerade katalogen"}
+                  </small>
+                </span>
+              </div>
             </div>
-            {noMatchItems.length ? noMatchItems.map((item) => {
+            {icaSyncPending ? (
+              <p className="supplier-review-empty">
+                {noMatchItems.length} råvaror väntar fortfarande på ICA-katalogen.
+                Du behöver inte söka eller matcha dem för hand.
+              </p>
+            ) : noMatchItems.length ? noMatchItems.map((item) => {
               const query = alternativeSearch[item.canonical_key] ?? "";
               const alternatives = alternativeResults[item.canonical_key] ?? [];
               return (

@@ -10,6 +10,7 @@ const account: SupplierAccount = {
   account_key: "00000000-0000-4000-8000-000000000001",
   organization_id: "organization-1",
   provider_key: "menigo",
+  provider_location_id: null,
   display_name: "Menigo",
   customer_number: "12345",
   active: true,
@@ -94,7 +95,7 @@ const detail: SupplierMatchDetail = {
 };
 
 describe("SupplierAccountsPanel", () => {
-  it("förklarar säkerhetsgränsen och sparar organisationsspecifikt kundnummer", async () => {
+  it("förklarar säkerhetsgränsen och förväljer den beslutade ICA-butiken", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<SupplierAccountsPanel accounts={[]} online loading={false} onSave={onSave} />);
@@ -110,8 +111,9 @@ describe("SupplierAccountsPanel", () => {
       accountKey: expect.stringMatching(
         /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i,
       ),
-      providerKey: "menigo",
-      displayName: "Menigo",
+      providerKey: "ica",
+      providerLocationId: "1004021",
+      displayName: "ICA Kvantum Sickla",
       customerNumber: "9876",
     });
   });
@@ -157,17 +159,20 @@ describe("SupplierMatchEditor", () => {
     expect(onApplyProposal).not.toHaveBeenCalled();
     await user.click(screen.getByText("1 leverantörsmatchning"));
 
-    expect(screen.getByText("Förslag: 2 kolli")).toBeInTheDocument();
+    expect(screen.getByText("Köp 2 kolli")).toBeInTheDocument();
     expect(screen.getByText("6 kg beställs · 0,5 kg över behovet")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Använd förslaget" }));
 
-    expect(onApplyProposal).toHaveBeenCalledWith(expect.objectContaining({
-      status: "ready",
-      purchaseUnits: 2,
-      orderedAmount: 6,
-      surplusAmount: 0.5,
-    }));
+    expect(onApplyProposal).toHaveBeenCalledWith(
+      detail,
+      expect.objectContaining({
+        status: "ready",
+        purchaseUnits: 2,
+        orderedAmount: 6,
+        surplusAmount: 0.5,
+      }),
+    );
   });
 
   it("blockerar ett förslag när leverantören markerat artikeln som slut", async () => {

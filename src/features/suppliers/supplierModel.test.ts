@@ -10,6 +10,9 @@ function supplierMatchDetail(
     minimum_order_units?: number;
     purchase_unit?: string;
     required_unit?: string;
+    package_amount?: number;
+    package_unit?: string;
+    packaging_metadata?: SupplierMatchDetail["product"]["packaging_metadata"];
     account_active?: boolean;
     product_active?: boolean;
     availability_status?: string;
@@ -21,6 +24,7 @@ function supplierMatchDetail(
       account_key: "00000000-0000-4000-8000-000000000001",
       organization_id: "organization-1",
       provider_key: "menigo",
+      provider_location_id: null,
       display_name: "Menigo",
       customer_number: "12345",
       active: overrides.account_active ?? true,
@@ -36,15 +40,15 @@ function supplierMatchDetail(
       display_name: "Ris 3 kg",
       gtin: "07300000000000",
       purchase_unit: overrides.purchase_unit ?? "kolli",
-      package_amount: 3,
-      package_unit: "kg",
+      package_amount: overrides.package_amount ?? 3,
+      package_unit: overrides.package_unit ?? "kg",
       minimum_order_units: overrides.minimum_order_units ?? 1,
       brand: null,
       catch_weight: false,
       category: null,
       latest_import_run_id: null,
       normalized_search_name: "ris",
-      packaging_metadata: {},
+      packaging_metadata: overrides.packaging_metadata ?? {},
       product_fingerprint: "a".repeat(64),
       source_metadata: {},
       active: overrides.product_active ?? true,
@@ -109,6 +113,50 @@ describe("proposeSupplierOrder", () => {
     expect(proposal.purchaseUnits).toBe(3);
     expect(proposal.orderedAmount).toBe(9);
     expect(proposal.surplusAmount).toBe(3.5);
+  });
+
+  it("visar hela innerförpackningar när ett kolli består av sex burkar", () => {
+    const proposal = proposeSupplierOrder(
+      "1.7373",
+      "kg",
+      supplierMatchDetail({
+        amount_per_purchase_unit: 2.4,
+        package_amount: 2.4,
+        packaging_metadata: {
+          inner_unit_count: 6,
+          inner_unit_label: "burkar",
+        },
+      }),
+    );
+
+    expect(proposal.status).toBe("ready");
+    expect(proposal.purchaseUnits).toBe(1);
+    expect(proposal.orderedAmount).toBe(2.4);
+    expect(proposal.packageNote).toContain("6 burkar");
+    expect(proposal.packageNote).toContain("1 kolli");
+    expect(proposal.packageNote).toContain("6 × 400 g");
+  });
+
+  it("pluraliserar flera verifierade ICA-förpackningar utan att gissa behållare", () => {
+    const proposal = proposeSupplierOrder(
+      "1.7373",
+      "kg",
+      supplierMatchDetail({
+        purchase_unit: "förpackning",
+        amount_per_purchase_unit: 1.17,
+        package_amount: 1.17,
+        packaging_metadata: {
+          inner_unit_count: 3,
+          inner_unit_label: "stycken",
+        },
+      }),
+    );
+
+    expect(proposal.status).toBe("ready");
+    expect(proposal.purchaseUnits).toBe(2);
+    expect(proposal.packageNote).toContain(
+      "6 stycken (2 förpackningar à 3 × 390 g)",
+    );
   });
 
   it("normaliserar skiftläge och blanksteg men vägrar en faktisk enhetskonflikt", () => {

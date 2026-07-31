@@ -187,8 +187,8 @@ select ok(
 );
 select is(
   (select count(*)::integer from app_private.recipe_ingredient_templates),
-  245,
-  'the hosted catalogue contains every sanitised ingredient component'
+  238,
+  'the hosted catalogue contains every curated physical ingredient component'
 );
 select is(
   (select string_agg(mode::text || ':' || component_count, ',' order by mode::text)
@@ -197,7 +197,7 @@ select is(
      from app_private.recipe_ingredient_templates
      group by mode
    ) as distribution),
-  'fixed_once_per_camp:19,head:6,weighted_portion:220',
+  'fixed_once_per_camp:7,head:6,weighted_portion:225',
   'the hosted catalogue preserves the approved calculation modes'
 );
 select is(
@@ -207,7 +207,7 @@ select is(
      from app_private.recipe_ingredient_templates
      group by dietary_rule
    ) as distribution),
-  'exclude:76,only:40,standard:129',
+  'exclude:75,only:39,standard:124',
   'the hosted catalogue preserves the approved dietary rules'
 );
 select ok(
@@ -254,7 +254,7 @@ select is(
     ),
     'UTF8'
   ), 'sha256'), 'hex') from app_private.recipe_templates),
-  '9b1463da23eab396f3b8ae3946f7374be8698464b226bc145e6a433b1c204068',
+  '7ee4ba470ba34bd626bb9391746430a3ad8b6126c717e5485b939228f06725fd',
   'the hosted catalogue has the reviewed aggregate digest'
 );
 
@@ -305,21 +305,21 @@ select is(
 );
 select is(
   (select count(*)::integer from public.recipe_ingredients),
-  245,
+  238,
   'bootstrap clones every approved recipe ingredient'
 );
 select is(
   (select payload ->> 'recipe_catalogue_digest'
    from public.audit_events
    where event_type = 'first_organization_bootstrapped'),
-  '9b1463da23eab396f3b8ae3946f7374be8698464b226bc145e6a433b1c204068',
+  '7ee4ba470ba34bd626bb9391746430a3ad8b6126c717e5485b939228f06725fd',
   'bootstrap records the exact recipe catalogue digest in the audit trail'
 );
 select is(
   (select (payload ->> 'ingredient_count')::integer
    from public.audit_events
    where event_type = 'first_organization_bootstrapped'),
-  245,
+  238,
   'bootstrap records the installed ingredient count in the audit trail'
 );
 set local role service_role;

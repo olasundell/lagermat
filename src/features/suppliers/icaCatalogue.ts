@@ -1,8 +1,9 @@
 import Decimal from "decimal.js";
 import type { StagedSupplierCatalogueRow } from "./supplierCatalogueWorkflow";
+import type { SupplierProduct } from "./supplierModel";
+import { ICA_CATALOGUE_NORMALISATION_VERSION } from "./icaStore";
 
-export const ICA_CATALOGUE_NORMALISATION_VERSION =
-  "ica-public-catalogue-v1";
+export { ICA_CATALOGUE_NORMALISATION_VERSION } from "./icaStore";
 
 export type IcaPackageDimension = "mass" | "volume" | "count";
 
@@ -20,6 +21,7 @@ export type IcaCatalogueRejectionReason =
   | "invalid_name"
   | "missing_pack_size"
   | "invalid_pack_size"
+  | "conflicting_pack_size"
   | "conflicting_inner_count"
   | "conflicting_duplicate";
 
@@ -40,6 +42,17 @@ export interface IcaCatalogueNormalisationResult {
   rows: StagedSupplierCatalogueRow[];
   rejectedProducts: IcaCatalogueRejectedProduct[];
   duplicateCount: number;
+}
+
+export function hasCurrentIcaCataloguePackaging(
+  product: Pick<SupplierProduct, "packaging_metadata">,
+): boolean {
+  const metadata = product.packaging_metadata;
+  return metadata !== null
+    && typeof metadata === "object"
+    && !Array.isArray(metadata)
+    && (metadata as Record<string, unknown>).normalization_version
+      === ICA_CATALOGUE_NORMALISATION_VERSION;
 }
 
 interface IcaProductIdentity {
@@ -65,6 +78,12 @@ interface InnerPackaging {
   count: number | null;
   label: string | null;
   conflict: boolean;
+}
+
+interface ResolvedPackaging {
+  packaging: IcaCataloguePackaging;
+  description: string;
+  source: "pack_size_description" | "product_name";
 }
 
 const containerLabels: ReadonlyArray<readonly [RegExp, string]> = [
@@ -198,6 +217,96 @@ export function parseIcaPackSizeDescription(
 
   const amount = safeAmount(canonical);
   return amount === null ? null : { amount, unit, dimension };
+}
+
+function packagingEquals(
+  left: IcaCataloguePackaging,
+  right: IcaCataloguePackaging,
+): boolean {
+  return left.unit === right.unit
+    && left.dimension === right.dimension
+    && new Decimal(left.amount).equals(right.amount);
+}
+
+function packagingFromProductName(
+  name: string,
+): { packaging: IcaCataloguePackaging; description: string } | null {
+  const multiplicationMatches = [...name.matchAll(
+    /(\d{1,4})\s*(?:x|×)\s*(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|cl|dl)\b/giu,
+  )];
+  if (multiplicationMatches.length === 1) {
+    const description = multiplicationMatches[0]?.[0];
+    const packaging = parseIcaPackSizeDescription(description);
+    return description && packaging ? { packaging, description } : null;
+  }
+  if (multiplicationMatches.length > 1) return null;
+
+  const directMatches = [...name.matchAll(
+    /(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|cl|dl)\b/giu,
+  )].flatMap((match) => {
+    const description = match[0];
+    const packaging = parseIcaPackSizeDescription(description);
+    return packaging ? [{ packaging, description }] : [];
+  });
+  if (!directMatches.length) return null;
+  const unique = directMatches.filter((candidate, index) =>
+    directMatches.findIndex((other) =>
+      packagingEquals(candidate.packaging, other.packaging)
+    ) === index
+  );
+  return unique.length === 1 ? unique[0]! : null;
+}
+
+function resolvePackaging(
+  name: string,
+  rawDescription: string,
+  rawPackaging: IcaCataloguePackaging,
+): ResolvedPackaging | null {
+  const named = packagingFromProductName(name);
+  if (!named) {
+    return {
+      packaging: rawPackaging,
+      description: rawDescription,
+      source: "pack_size_description",
+    };
+  }
+
+  const nameCounts = countFromProductName(name);
+  if (nameCounts.length > 1) return null;
+  if (packagingEquals(named.packaging, rawPackaging)) {
+    return {
+      packaging: rawPackaging,
+      description: rawDescription,
+      source: "pack_size_description",
+    };
+  }
+
+  const count = nameCounts[0];
+  if (count !== undefined) {
+    const expandedAmount = safeAmount(
+      new Decimal(named.packaging.amount).times(count),
+    );
+    if (
+      expandedAmount !== null
+      && packagingEquals(
+        { ...named.packaging, amount: expandedAmount, innerCount: count },
+        rawPackaging,
+      )
+    ) {
+      return {
+        packaging: rawPackaging,
+        description: rawDescription,
+        source: "pack_size_description",
+      };
+    }
+    return null;
+  }
+
+  return {
+    packaging: named.packaging,
+    description: named.description,
+    source: "product_name",
+  };
 }
 
 function countFromProductName(name: string): number[] {
@@ -343,6 +452,45 @@ function rejection(
   return { ...candidate.identity, reason };
 }
 
+function productSearchMatches(
+  value: unknown,
+  completedQueries: readonly string[],
+): Array<{ query: string; rank: number }> {
+  if (!Array.isArray(value) || value.length > 10) return [];
+  const completedByKey = new Map(
+    completedQueries.map((query) => [
+      query.toLocaleLowerCase("sv-SE"),
+      query,
+    ]),
+  );
+  const matches = new Map<string, { query: string; rank: number }>();
+  for (const rawMatch of value) {
+    const match = record(rawMatch);
+    const query = boundedString(match?.query, 80);
+    const rank = match?.rank;
+    if (
+      !query
+      || typeof rank !== "number"
+      || !Number.isSafeInteger(rank)
+      || rank < 0
+      || rank >= 100
+    ) {
+      continue;
+    }
+    const queryKey = query.toLocaleLowerCase("sv-SE");
+    const verifiedQuery = completedByKey.get(queryKey);
+    if (!verifiedQuery) continue;
+    const previous = matches.get(queryKey);
+    if (!previous || rank < previous.rank) {
+      matches.set(queryKey, { query: verifiedQuery, rank });
+    }
+  }
+  return [...matches.values()].sort((left, right) =>
+    left.rank - right.rank
+    || left.query.localeCompare(right.query, "sv-SE")
+  );
+}
+
 function normaliseProduct(
   candidate: IcaProductCandidate,
   options: IcaCatalogueNormalisationOptions,
@@ -359,8 +507,11 @@ function normaliseProduct(
 
   const rawPackSize = compactString(product.packSizeDescription);
   if (!rawPackSize) return rejection(candidate, "missing_pack_size");
-  const packaging = parseIcaPackSizeDescription(rawPackSize);
-  if (!packaging) return rejection(candidate, "invalid_pack_size");
+  const rawPackaging = parseIcaPackSizeDescription(rawPackSize);
+  if (!rawPackaging) return rejection(candidate, "invalid_pack_size");
+  const resolvedPackaging = resolvePackaging(name, rawPackSize, rawPackaging);
+  if (!resolvedPackaging) return rejection(candidate, "conflicting_pack_size");
+  const packaging = resolvedPackaging.packaging;
 
   const inner = innerPackaging(name, packaging);
   if (inner.conflict) {
@@ -396,11 +547,17 @@ function normaliseProduct(
         completedQuery,
       ]),
   ).values()];
+  const searchMatches = productSearchMatches(
+    product.scoutmatSearchMatches,
+    completedQueries,
+  );
   const productId = boundedString(productIdentity.productId, 240);
 
   const packagingMetadata = compactRecord({
     normalization_version: ICA_CATALOGUE_NORMALISATION_VERSION,
     source_pack_size_description: rawPackSize,
+    effective_pack_size_description: resolvedPackaging.description,
+    package_size_source: resolvedPackaging.source,
     package_dimension: packaging.dimension,
     inner_unit_count: inner.count,
     inner_unit_label: inner.label,
@@ -409,8 +566,10 @@ function normaliseProduct(
     source: "ica_public_webshop",
     store_id: options.storeId,
     query,
+    ica_search_association_version: 1,
     ica_completed_searches:
       completedQueries.length ? completedQueries : null,
+    ica_search_matches: searchMatches.length ? searchMatches : null,
     ica_retailer_product_id: articleNumber,
     ica_product_id: productId,
     ica_unit_price: unitPrice,
@@ -443,11 +602,14 @@ function normaliseProduct(
     source_row: sourceRow,
     store_id: options.storeId,
     query,
+    scoutmat_search_matches: searchMatches.length ? searchMatches : null,
     retailer_product_id: articleNumber,
     product_id: productId,
     name,
     brand: compactString(product.brand),
     pack_size_description: rawPackSize,
+    effective_pack_size_description: resolvedPackaging.description,
+    package_size_source: resolvedPackaging.source,
     price: jsonValue(product.price),
     unit_price: unitPrice,
     available,
@@ -540,17 +702,29 @@ export function normaliseIcaCatalogueResponse(
 
   for (const duplicates of groups.values()) {
     duplicateCount += Math.max(0, duplicates.length - 1);
+    const combinedSearchMatches = duplicates.flatMap((candidate) =>
+      Array.isArray(candidate.product.scoutmatSearchMatches)
+        ? candidate.product.scoutmatSearchMatches
+        : []
+    );
     const normalised = duplicates.map((candidate) =>
-      normaliseProduct(candidate, { ...options, storeId })
+      normaliseProduct({
+        ...candidate,
+        product: {
+          ...candidate.product,
+          scoutmatSearchMatches: combinedSearchMatches,
+        },
+      }, { ...options, storeId })
     );
     const valid = normalised.filter(
       (candidate): candidate is NormalisedIcaProduct => !("reason" in candidate),
     );
+    const invalid = normalised.filter((candidate) => "reason" in candidate);
     const variants = new Map(
       valid.map((candidate) => [candidate.comparisonKey, candidate]),
     );
 
-    if (variants.size > 1) {
+    if (variants.size > 1 || (valid.length > 0 && invalid.length > 0)) {
       const first = duplicates[0]!;
       rejectedProducts.push(rejection(first, "conflicting_duplicate"));
       continue;

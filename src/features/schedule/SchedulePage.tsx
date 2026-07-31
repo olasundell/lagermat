@@ -27,6 +27,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { userFacingError } from "../../lib/userFacingError";
 import type { Json } from "../../types/database";
+import { practicalSupplyAmount } from "../supplies/supplyModel";
 import { useWorkspace } from "../workspace/WorkspaceContext";
 import {
   emptyReserveDrafts,
@@ -878,7 +879,10 @@ export function SchedulePage() {
                 <div className="meal-detail__heading"><div><h2 id="meal-detail-title">{selectedMeal.title}</h2><p>{dayHeading(selectedMeal.starts_at, activeCamp.timezone).weekday} · {timeLabel(selectedMeal.starts_at, activeCamp.timezone)} · {mealTypeLabels[selectedMeal.meal_type]}</p></div></div>
                 <div className="portion-count"><UsersRound aria-hidden="true" size={22} /><strong>{selectedMultiplier ? `Motsvarar ${decimal(Number(traceString(selectedMultiplier.line.trace, "multiplier")))} normalportioner` : "Inte beräknad"}</strong><span>Beräknat från deltagarnas portionsstorlek och närvaro</span></div>
                 <div className="detail-section"><div className="detail-section__title"><h3>Recept för måltiden</h3><ChevronRight aria-hidden="true" size={17} /></div><dl><div><dt>Recept</dt><dd>{selectedMeal.camp_recipe_copies?.name ?? "Saknas"}</dd></div><div><dt>Version</dt><dd>{selectedMeal.camp_recipe_copies?.recipe_versions ? `Version ${selectedMeal.camp_recipe_copies.recipe_versions.version_number}` : "Version saknas"}</dd></div><div><dt>Extra portioner</dt><dd>{selectedReserves.length > 0 ? selectedReserves.map((reserve) => `${reserve.portions} ${reserve.dietary_label}`).join(", ") : "Inga"}</dd></div></dl></div>
-                <div className="calculation-detail"><div className="detail-section__title"><h3>Beräknade mängder</h3><span>{selectedLines.length} {selectedLines.length === 1 ? "ingrediens" : "ingredienser"}</span></div>{selectedLines.length === 0 ? <p className="muted-copy">Räkna ut mängderna för att se ingredienserna här.</p> : <ul>{selectedLines.sort((left, right) => left.ingredient_name.localeCompare(right.ingredient_name, "sv-SE")).map((line) => <li key={line.id}><div><strong>{line.ingredient_name}</strong><span>{decimal(line.exact_amount)} {line.unit}</span></div><details><summary>Så räknades mängden ut</summary><p>{readableFormula(line.trace)}</p><p>{traceGroups(line.trace)} {traceGroups(line.trace) === 1 ? "grupp ingår" : "grupper ingår"}.</p></details></li>)}</ul>}</div>
+                <div className="calculation-detail"><div className="detail-section__title"><h3>Beräknade mängder</h3><span>{selectedLines.length} {selectedLines.length === 1 ? "ingrediens" : "ingredienser"}</span></div>{selectedLines.length === 0 ? <p className="muted-copy">Räkna ut mängderna för att se ingredienserna här.</p> : <ul>{selectedLines.sort((left, right) => left.ingredient_name.localeCompare(right.ingredient_name, "sv-SE")).map((line) => {
+                  const practical = practicalSupplyAmount(line.exact_amount, line.unit);
+                  return <li key={line.id}><div><strong>{line.ingredient_name}</strong><span>{practical.display}</span></div><details><summary>Så räknades mängden ut</summary><p>Exakt beräkning: {decimal(line.exact_amount)} {line.unit}.</p><p>{readableFormula(line.trace)}</p><p>{traceGroups(line.trace)} {traceGroups(line.trace) === 1 ? "grupp ingår" : "grupper ingår"}.</p></details></li>;
+                })}</ul>}</div>
               </>
             ) : selectedSlot ? (
               <div className="meal-action-panel">

@@ -112,10 +112,13 @@ describe("supplier order underlay", () => {
 
     const csv = createSupplierOrderCsv(underlay);
     expect(csv).toContain('"UNDERLAG – INGEN ORDER HAR SKICKATS"');
-    expect(csv).toContain('"5.5";"kg";"MATCHAD";"R-3000";"07300000000000"');
+    expect(csv).toContain(
+      '"5,5";"kg";"5.5";"kg";"MATCHAD";"R-3000";"07300000000000"',
+    );
     expect(csv).toContain('"2";"6";"0.5";"3";"kg";"199.5";"SEK"');
     expect(csv).not.toContain("specialkost");
     expect(underlay.lines[0]?.item.required_amount).toBe(5.5);
+    expect(underlay.lines[0]?.practicalRequirement.display).toBe("5,5 kg");
   });
 
   it("behåller omatchade råvaror synliga i stället för att tappa dem ur underlaget", () => {

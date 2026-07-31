@@ -49,14 +49,14 @@ vi.mock("../supplies/supplyApi", () => ({
 
 const items: SupplyItemRow[] = [
   { id: "1", item_key: "a", canonical_key: "ingredient:a", category: "Grönt", item_name: "Aubergine", required_amount: 5.7, required_unit: "st", ordered_amount: 3, ordered_unit: "kg", package_note: null, comment: null, completed: false, row_version: 1, source_present: true, manually_moved: false },
-  { id: "2", item_key: "b", canonical_key: "ingredient:b", category: "Kylvaror", item_name: "Bregott", required_amount: 10.86025, required_unit: "paket", ordered_amount: 11, ordered_unit: "paket", package_note: null, comment: null, completed: true, row_version: 1, source_present: true, manually_moved: false }
+  { id: "2", item_key: "b", canonical_key: "ingredient:b", category: "Kylvaror", item_name: "Bregott", required_amount: 3.441, required_unit: "kg", ordered_amount: 3.5, ordered_unit: "kg", package_note: null, comment: null, completed: true, row_version: 1, source_present: true, manually_moved: false }
 ];
 
 describe("delivery supply model", () => {
   it("filters remaining items and preserves exact decimal text", () => {
     expect(filterSupplyItems(items, "remaining", "").map((item) => item.item_name)).toEqual(["Aubergine"]);
     expect(formatExactAmount(items[0]!.required_amount)).toBe("5,7");
-    expect(formatExactAmount(items[1]!.required_amount)).toBe("10,86025");
+    expect(formatExactAmount(items[1]!.required_amount)).toBe("3,441");
   });
 
   it("flags unlike units without pretending to compare them", () => {
@@ -111,6 +111,24 @@ describe("delivery calculation guard", () => {
     expect(screen.getByRole("button", { name: "Testexport" })).toBeDisabled();
   });
 
+  it("asks to update the delivery list when a current calculation exists", async () => {
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [staleDelivery],
+      source: "server",
+      cachedAt: null,
+    });
+    renderPage();
+
+    expect(await screen.findByText(
+      /Datum saknas · 0 varor · listan behöver uppdateras/,
+    )).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Uppdatera" }))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/mängderna behöver räknas om/))
+      .not.toBeInTheDocument();
+  });
+
   it("creates deliveries when a current calculation exists", async () => {
     mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
     renderPage();
@@ -145,5 +163,95 @@ describe("delivery calculation guard", () => {
 
     expect(await screen.findByText("1 vara återstår")).toBeInTheDocument();
     expect(screen.getByText(/Datum saknas · 1 vara ·/)).toBeInTheDocument();
+  });
+
+  it("shows the allocated ICA package share on the delivery row", async () => {
+    const allocatedItem: SupplyItemRow = {
+      ...items[1]!,
+      ordered_amount: 3,
+      ordered_unit: "förpackning",
+      package_note: "3 av totalt 15 förpackningar · 0,14 kg/förpackning · Bacon skivat 140g (ICA 12345)",
+      order_source_kind: "supplier_purchase",
+      supplier_order_source_item_id: "purchase-item-1",
+      supplier_order_account_id: "ica-sickla",
+      supplier_order_product_id: "ica-bacon",
+      supplier_order_total_units: 15,
+      supplier_order_product_fingerprint: "a".repeat(64)
+    };
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [{ ...staleDelivery, supply_list_items: [allocatedItem] }],
+      source: "server",
+      cachedAt: null
+    });
+
+    renderPage();
+
+    expect(await screen.findByLabelText("Beställt för Bregott")).toHaveTextContent("3 förpackningar");
+    expect(screen.getByText(/3 av totalt 15 förpackningar/)).toBeInTheDocument();
+    expect(screen.getByText(/Bacon skivat 140g/)).toBeInTheDocument();
+  });
+
+  it("rounds each delivery's indivisible physical requirement upwards", async () => {
+    const purchase: SupplyListRow = {
+      ...staleDelivery,
+      id: "purchase",
+      list_key: "purchase",
+      kind: "purchase",
+      title: "Hela lägret",
+      supply_list_items: [{
+        ...items[0]!,
+        id: "purchase-bread",
+        canonical_key: "ingredient:bread",
+        item_name: "Mjukt bröd",
+        required_amount: 14.2,
+        required_unit: "skivor",
+      }],
+    };
+    const first: SupplyListRow = {
+      ...staleDelivery,
+      id: "delivery-a",
+      list_key: "delivery:a",
+      title: "Första leveransen",
+      range_start: "2026-07-20T08:00:00Z",
+      supply_list_items: [{
+        ...items[0]!,
+        id: "delivery-a-bread",
+        item_key: "bread",
+        canonical_key: "ingredient:bread",
+        item_name: "Mjukt bröd",
+        required_amount: 7.1,
+        required_unit: "skivor",
+      }],
+    };
+    const second: SupplyListRow = {
+      ...staleDelivery,
+      id: "delivery-b",
+      list_key: "delivery:b",
+      title: "Andra leveransen",
+      range_start: "2026-07-21T08:00:00Z",
+      supply_list_items: [{
+        ...items[0]!,
+        id: "delivery-b-bread",
+        item_key: "bread",
+        canonical_key: "ingredient:bread",
+        item_name: "Mjukt bröd",
+        required_amount: 7.1,
+        required_unit: "skivor",
+      }],
+    };
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [purchase, first, second],
+      source: "server",
+      cachedAt: null,
+    });
+    renderPage();
+
+    expect(await screen.findByText("Behov 8 skivor")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Leverans"), {
+      target: { value: second.id },
+    });
+    expect(await screen.findByText("Behov 8 skivor")).toBeInTheDocument();
   });
 });

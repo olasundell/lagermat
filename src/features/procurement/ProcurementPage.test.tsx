@@ -15,6 +15,11 @@ type SupplierTestData = SupplierFoundationSnapshot;
 
 const testState = vi.hoisted(() => ({
   lists: [] as SupplyListRow[],
+  currentCalculation: {
+    id: "calculation-1",
+    revision_number: 1,
+    status: "current",
+  } as { id: string; revision_number: number; status: string } | null,
   supplierData: {
     accounts: [],
     products: [],
@@ -48,7 +53,7 @@ vi.mock("@tanstack/react-query", () => ({
       };
     }
     return {
-      data: { id: "calculation-1", revision_number: 1, status: "current" },
+      data: testState.currentCalculation,
       error: null,
       isPending: false,
       isFetching: false,
@@ -56,6 +61,22 @@ vi.mock("@tanstack/react-query", () => ({
   },
   useQueryClient: () => ({ invalidateQueries: testState.invalidateQueries }),
 }));
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({
+      to,
+      children,
+      ...props
+    }: {
+      to: string;
+      children: React.ReactNode;
+      className?: string;
+    }) => <a href={to} {...props}>{children}</a>,
+  };
+});
 
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: "user-1" } }) }));
 
@@ -179,6 +200,22 @@ function purchaseList(item: SupplyItemRow): SupplyListRow {
   };
 }
 
+function distributionList(items: SupplyItemRow[]): SupplyListRow {
+  return {
+    id: "distribution-list-1",
+    list_key: "distribution:breakfast:elden",
+    kind: "distribution",
+    status: "active",
+    title: "Frukost · Matlag Elden",
+    range_start: "2026-07-20T06:00:00Z",
+    range_end: "2026-07-20T06:00:01Z",
+    version: 1,
+    source_present: true,
+    calculation_revisions: { revision_number: 1, status: "current" },
+    supply_list_items: items,
+  };
+}
+
 function supplierData(overrides: Partial<SupplierTestData> = {}): SupplierTestData {
   return {
     accounts: [],
@@ -195,6 +232,11 @@ function supplierData(overrides: Partial<SupplierTestData> = {}): SupplierTestDa
 
 beforeEach(() => {
   testState.lists = [];
+  testState.currentCalculation = {
+    id: "calculation-1",
+    revision_number: 1,
+    status: "current",
+  };
   testState.supplierData = supplierData();
   vi.clearAllMocks();
 });
@@ -214,6 +256,137 @@ describe("ProcurementPage", () => {
 
     expect(purchase).toHaveAttribute("aria-pressed", "false");
     expect(distribution).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows practical rounded quantities to the cooking team", async () => {
+    const user = userEvent.setup();
+    testState.lists = [distributionList([
+      tomatoItem({
+        id: "milk",
+        canonical_key: "ingredient:milk",
+        item_name: "Mjölk",
+        required_amount: 1.925,
+        required_unit: "l",
+      }),
+      tomatoItem({
+        id: "cheese",
+        canonical_key: "ingredient:cheese",
+        item_name: "Ost",
+        required_amount: 7.7,
+        required_unit: "skivor",
+      }),
+      tomatoItem({
+        id: "bread",
+        canonical_key: "ingredient:bread",
+        item_name: "Mjukt Bröd",
+        required_amount: 17.2,
+        required_unit: "skivor",
+      }),
+      tomatoItem({
+        id: "dairy-free-fat",
+        canonical_key: "ingredient:dairy-free-fat",
+        item_name: "Mjölkfritt matfett",
+        required_amount: 0.00225,
+        required_unit: "kg",
+      }),
+    ])];
+
+    render(<ProcurementPage />);
+    await user.click(screen.getByRole("button", {
+      name: "Per måltid och matlag",
+    }));
+
+    expect(screen.getByText(
+      "Varje matlag får en praktiskt avrundad mängd",
+      { exact: false },
+    )).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /^Mjölk2 l$/ }))
+      .getByText("2 l")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Ost/ }))
+      .getByText("8 skivor")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Mjukt Bröd/ }))
+      .getByText("18 skivor")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Mjölkfritt matfett/ }))
+      .getByText("10 g")).toBeInTheDocument();
+    expect(screen.queryByText("1,925 l")).not.toBeInTheDocument();
+    expect(screen.queryByText("7,7 skivor")).not.toBeInTheDocument();
+    expect(screen.queryByText("17,2 skivor")).not.toBeInTheDocument();
+    expect(screen.queryByText(/paket/)).not.toBeInTheDocument();
+  });
+
+  it("shows a practical whole-camp requirement while retaining the exact order input", () => {
+    testState.lists = [purchaseList(tomatoItem())];
+
+    render(<ProcurementPage />);
+
+    expect(screen.getByText("Beräknat behov 1,74 kg")).toBeInTheDocument();
+    expect(screen.queryByText("Beräknat behov 1,7373 kg")).not.toBeInTheDocument();
+  });
+
+  it("labels repeated meal and team options uniquely and chronologically", async () => {
+    const user = userEvent.setup();
+    const repeated = [4, 2, 5, 3].map((day, index): SupplyListRow => ({
+      ...distributionList([tomatoItem({ id: `item-${day}` })]),
+      id: `distribution-${day}`,
+      list_key: `distribution:breakfast:${day}:elden`,
+      title: "Frukost · Matlag Elden",
+      range_start: `2026-08-0${day}T06:00:00Z`,
+      range_end: `2026-08-0${day}T06:00:01Z`,
+      version: index + 1,
+    }));
+    testState.lists = repeated;
+
+    render(<ProcurementPage />);
+    await user.click(screen.getByRole("button", {
+      name: "Per måltid och matlag",
+    }));
+
+    const selector = screen.getByLabelText("Måltid och matlag");
+    const labels = within(selector).getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(labels).toEqual([
+      "sön 2 aug. 08:00 · Frukost · Matlag Elden",
+      "mån 3 aug. 08:00 · Frukost · Matlag Elden",
+      "tis 4 aug. 08:00 · Frukost · Matlag Elden",
+      "ons 5 aug. 08:00 · Frukost · Matlag Elden",
+    ]);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("asks to update stale lists when a newer current calculation already exists", () => {
+    testState.lists = [{
+      ...purchaseList(tomatoItem()),
+      calculation_revisions: { revision_number: 1, status: "stale" },
+    }];
+
+    render(<ProcurementPage />);
+
+    expect(screen.getByText(
+      "Listorna bygger på en äldre beräkning – uppdatera listorna",
+    )).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Uppdatera från beräkning",
+    })).toBeInTheDocument();
+    expect(screen.queryByText(
+      "Bygger på en äldre beräkning – räkna om mängderna",
+    )).not.toBeInTheDocument();
+  });
+
+  it("asks for recalculation only when no current calculation exists", () => {
+    testState.currentCalculation = null;
+    testState.lists = [{
+      ...purchaseList(tomatoItem()),
+      calculation_revisions: { revision_number: 1, status: "stale" },
+    }];
+
+    render(<ProcurementPage />);
+
+    expect(screen.getByText(
+      "Beräkningen är inaktuell – räkna om mängderna",
+    )).toBeInTheDocument();
+    expect(screen.getByRole("link", {
+      name: "Räkna ut mängder",
+    })).toHaveAttribute("href", "/matsedel");
   });
 
   it("writes a safe approved match to the order row in whole supplier packages", async () => {

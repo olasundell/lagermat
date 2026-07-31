@@ -395,6 +395,19 @@ deno_version = 2
 
 [edge_runtime.secrets]
 APP_ORIGIN = "env(APP_ORIGIN)"
+# Stable HMAC key for tenant-scoped Scoutnet source references. It is
+# server-only and must never use a VITE_ prefix.
+SCOUTNET_SOURCE_REFERENCE_SECRET = "env(SCOUTNET_SOURCE_REFERENCE_SECRET)"
+# Enables the deterministic reconciliation fixture only when the local wrapper
+# explicitly supplies `fixture`. Hosted configuration generation removes this
+# setting entirely.
+SCOUTNET_RECONCILIATION_MODE = "env(SCOUTNET_RECONCILIATION_MODE)"
+# DEMO_MODE is a non-secret server gate. The deployment validator requires
+# true only in staging and false everywhere else.
+DEMO_MODE = "env(DEMO_MODE)"
+# TURNSTILE_SECRET_KEY is supplied only through the local/hosted function
+# secret environment. Never expose it through a VITE_ variable or commit it.
+TURNSTILE_SECRET_KEY = "env(TURNSTILE_SECRET_KEY)"
 # DABAS_API_KEY is intentionally supplied through the hosted/local secret
 # environment and must never be committed to the repository.
 # Set DABAS_ADAPTER=fixture locally to exercise enrichment without an external
@@ -411,6 +424,18 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/supplier-catalogue/deno.json"
 entrypoint = "./functions/supplier-catalogue/index.ts"
+
+[functions.start-demo]
+enabled = true
+verify_jwt = true
+import_map = "./functions/start-demo/deno.json"
+entrypoint = "./functions/start-demo/index.ts"
+
+[functions.scoutnet-connection]
+enabled = true
+verify_jwt = true
+import_map = "./functions/scoutnet-connection/deno.json"
+entrypoint = "./functions/scoutnet-connection/index.ts"
 
 [analytics]
 enabled = false

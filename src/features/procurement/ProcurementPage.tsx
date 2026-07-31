@@ -9,7 +9,15 @@ import { useWorkspace } from "../workspace/WorkspaceContext";
 import { SupplyExportActions } from "../supplies/SupplyExportActions";
 import { SupplySyncStatus } from "../supplies/SupplySyncStatus";
 import { fetchCurrentCalculation, fetchSupplyLists, generateSupplyLists, saveSupplyItem, type SupplyItemPatch, type SupplyScope } from "../supplies/supplyApi";
-import { formatExactAmount, hasUnitMismatch, parseDecimalInput, type SupplyItemRow, type SupplyListRow } from "../supplies/supplyModel";
+import {
+  formatExactAmount,
+  hasUnitMismatch,
+  parseDecimalInput,
+  practicalSupplyAmount,
+  type PracticalSupplyAmount,
+  type SupplyItemRow,
+  type SupplyListRow,
+} from "../supplies/supplyModel";
 import { useOfflineSupplyState } from "../supplies/useOfflineSupplyState";
 import { SupplierAccountsPanel, SupplierMatchEditor } from "../suppliers/SupplierFoundationPanel";
 import {
@@ -39,6 +47,8 @@ import {
   type SupplierMatchDetail,
 } from "../suppliers/supplierModel";
 import { isIcaSicklaAccount } from "../suppliers/icaStore";
+import { useIcaCatalogueSync } from "../suppliers/useIcaCatalogueSync";
+import { createDistributionListOptions } from "./distributionListModel";
 import "../suppliers/suppliers.css";
 
 type Perspective = "purchase" | "distribution";
@@ -47,6 +57,7 @@ function OrderEditor({
   scope,
   listId,
   item,
+  practicalRequirement,
   supplierAccounts,
   supplierDetails,
   supplierWritable,
@@ -56,6 +67,7 @@ function OrderEditor({
   scope: SupplyScope;
   listId: string;
   item: SupplyItemRow;
+  practicalRequirement: PracticalSupplyAmount;
   supplierAccounts: SupplierAccount[];
   supplierDetails: SupplierMatchDetail[];
   supplierWritable: boolean;
@@ -111,7 +123,9 @@ function OrderEditor({
     <div className={`order-editor${item.source_present ? "" : " order-editor--missing"}`}>
       <div className="order-editor__identity">
         <strong>{item.item_name}</strong>
-        <span>Beräknat behov {formatExactAmount(item.required_amount)} {item.required_unit}</span>
+        <span className={practicalRequirement.issue ? "operational-amount--warning" : undefined}>
+          Beräknat behov {practicalRequirement.display}
+        </span>
         {verifiedSupplierOrder?.proposal.status === "ready" ? (
           <div className="order-editor__supplier-summary">
             <PackageCheck aria-hidden="true" size={17} />
@@ -196,6 +210,7 @@ export function ProcurementPage() {
   const networkWritable = offlineState.online && !cached && offlineState.pending === 0 && offlineState.conflicts.length === 0;
   const purchaseList = lists.find((list) => list.kind === "purchase") ?? null;
   const purchaseItems = itemsFor(purchaseList);
+  const icaSyncQuery = useIcaCatalogueSync(scope, purchaseList);
   const purchaseCanonicalKeys = purchaseItems
     .filter((item) => item.source_present)
     .map((item) => item.canonical_key);
@@ -205,6 +220,7 @@ export function ProcurementPage() {
       scope?.organizationId,
       purchaseList?.id,
       purchaseList?.version,
+      icaSyncQuery.dataUpdatedAt,
     ],
     enabled: Boolean(scope && purchaseList && offlineState.online && !cached),
     queryFn: async () => {
@@ -212,8 +228,9 @@ export function ProcurementPage() {
       let foundation = await fetchSupplierFoundation(scope!, purchaseCanonicalKeys);
       let generated = false;
       const catalogueWarnings: string[] = [];
-      let catalogueRetryAfterMs: number | null = null;
-      for (const account of foundation.accounts.filter((candidate) => candidate.active)) {
+      for (const account of foundation.accounts.filter((candidate) =>
+        candidate.active && !isIcaSicklaAccount(candidate)
+      )) {
         const outcome = await ensureSupplierCatalogueMatches(
           scope!,
           account.id,
@@ -221,44 +238,70 @@ export function ProcurementPage() {
         );
         generated ||= outcome.generated;
         if (outcome.warning) catalogueWarnings.push(outcome.warning);
-        if (outcome.retryAfterMs !== null) {
-          catalogueRetryAfterMs = catalogueRetryAfterMs === null
-            ? outcome.retryAfterMs
-            : Math.min(catalogueRetryAfterMs, outcome.retryAfterMs);
-        }
       }
       if (generated) {
         foundation = await fetchSupplierFoundation(scope!, purchaseCanonicalKeys);
       }
       return {
         ...foundation,
-        catalogueWarnings: [...new Set(catalogueWarnings)],
-        catalogueRetryAfterMs,
+        catalogueWarnings: [...new Set([
+          ...catalogueWarnings,
+          ...(icaSyncQuery.data?.warning ? [icaSyncQuery.data.warning] : []),
+        ])],
+        icaSyncProgress: icaSyncQuery.data?.icaSyncProgress ?? null,
       };
     },
-    refetchInterval: (query) => {
-      const retryAfterMs = query.state.data?.catalogueRetryAfterMs;
-      return typeof retryAfterMs === "number" ? retryAfterMs : false;
-    },
-    refetchIntervalInBackground: false,
   });
   const supplierAccounts = supplierQuery.data?.accounts ?? [];
   const supplierDetails = supplierQuery.data?.details ?? [];
   const supplierCandidates = supplierQuery.data?.candidates ?? [];
   const supplierColumnProfiles = supplierQuery.data?.columnProfiles ?? [];
   const approvedSupplierMatches = supplierQuery.data?.approvedMatches ?? [];
-  const distributionLists = lists.filter((list) => list.kind === "distribution");
-  const selectedDistribution = distributionLists.find((list) => list.id === selectedDistributionId) ?? distributionLists[0] ?? null;
-  const exportList = perspective === "purchase" ? purchaseList : selectedDistribution;
+  const distributionOptions = createDistributionListOptions(
+    lists,
+    activeCamp?.timezone ?? "Europe/Stockholm",
+  );
+  const distributionLists = distributionOptions.map(({ list }) => list);
+  const selectedDistributionOption = distributionOptions.find(({ list }) =>
+    list.id === selectedDistributionId
+  ) ?? distributionOptions[0] ?? null;
+  const selectedDistribution = selectedDistributionOption?.list ?? null;
+  const practicalPurchaseAmounts = new Map(purchaseItems.map((item) => [
+    item.id,
+    practicalSupplyAmount(item.required_amount, item.required_unit),
+  ]));
+  const practicalDistributionAmounts = new Map(
+    distributionLists.flatMap((list) =>
+      list.supply_list_items
+        .filter((item) => item.source_present)
+        .map((item) => [
+          item.id,
+          practicalSupplyAmount(item.required_amount, item.required_unit),
+        ] as const)
+    ),
+  );
+  const exportList = perspective === "purchase"
+    ? purchaseList
+    : selectedDistribution && selectedDistributionOption
+      ? { ...selectedDistribution, title: selectedDistributionOption.label }
+      : null;
   const calculation = purchaseList?.calculation_revisions ?? selectedDistribution?.calculation_revisions ?? null;
-  const hasCurrentCalculation = Boolean(currentCalculationQuery.data) || calculation?.status === "current";
+  const listUsesCurrentCalculation = calculation?.status === "current";
+  const hasCurrentCalculation = Boolean(currentCalculationQuery.data)
+    || listUsesCurrentCalculation;
+  const listsNeedSync = Boolean(
+    currentCalculationQuery.data
+    && calculation
+    && !listUsesCurrentCalculation,
+  );
   const checkingCurrentCalculation = offlineState.online && (currentCalculationQuery.isPending || currentCalculationQuery.isFetching);
   const calculationStatusUnavailable = !hasCurrentCalculation && (Boolean(currentCalculationQuery.error) || !offlineState.online);
 
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["supply-lists", scope?.organizationId, scope?.campId] }),
-      queryClient.invalidateQueries({ queryKey: ["current-calculation", scope?.organizationId, scope?.campId] })
+      queryClient.invalidateQueries({ queryKey: ["current-calculation", scope?.organizationId, scope?.campId] }),
+      queryClient.invalidateQueries({ queryKey: ["ica-sync-purchase-list", scope?.organizationId, scope?.campId] }),
     ]);
   }
 
@@ -347,7 +390,18 @@ export function ProcurementPage() {
         </div>
       ) : null}
       {scope ? <SupplySyncStatus scope={scope} state={offlineState} cached={cached} cachedAt={listsQuery.data?.cachedAt ?? null} onRefresh={refresh} /> : null}
-      {calculation ? <p className="revision-pill">{calculation.status === "current" ? <Check aria-hidden="true" size={16} /> : <AlertTriangle aria-hidden="true" size={16} />}{calculation.status === "current" ? "Bygger på den senaste beräkningen" : "Bygger på en äldre beräkning – räkna om mängderna"}</p> : null}
+      {calculation ? (
+        <p className="revision-pill">
+          {listUsesCurrentCalculation
+            ? <Check aria-hidden="true" size={16} />
+            : <AlertTriangle aria-hidden="true" size={16} />}
+          {listUsesCurrentCalculation
+            ? "Bygger på den senaste beräkningen"
+            : listsNeedSync
+              ? "Listorna bygger på en äldre beräkning – uppdatera listorna"
+              : "Beräkningen är inaktuell – räkna om mängderna"}
+        </p>
+      ) : null}
 
       <div className="perspective-tabs" aria-label="Listperspektiv">
         <Button aria-pressed={perspective === "purchase"} className={perspective === "purchase" ? "is-selected" : ""} onPress={() => setPerspective("purchase")}>Hela lägret</Button>
@@ -362,6 +416,9 @@ export function ProcurementPage() {
           campName={activeCamp.name}
           timeZone={activeCamp.timezone}
           disabled={!networkWritable}
+          practicalAmounts={perspective === "distribution"
+            ? practicalDistributionAmounts
+            : practicalPurchaseAmounts}
         />
       ) : null}
 
@@ -388,12 +445,19 @@ export function ProcurementPage() {
             approvedMatches={approvedSupplierMatches}
             columnProfiles={supplierColumnProfiles}
             online={networkWritable}
-            loading={supplierQuery.isPending || supplierQuery.isFetching}
-            syncWarning={supplierQuery.data?.catalogueWarnings?.join(" ") ?? null}
-            syncPending={
-              supplierQuery.data?.catalogueRetryAfterMs !== null
-              && supplierQuery.data?.catalogueRetryAfterMs !== undefined
+            loading={
+              supplierQuery.isPending
+              || supplierQuery.isFetching
+              || icaSyncQuery.isPending
+              || icaSyncQuery.isFetching
             }
+            syncWarning={supplierQuery.data?.catalogueWarnings?.join(" ") ?? null}
+            syncProgress={
+              icaSyncQuery.data?.icaSyncProgress
+              ?? supplierQuery.data?.icaSyncProgress
+              ?? null
+            }
+            onRetrySync={icaSyncQuery.retryNow}
             onImport={async (supplierAccountId, preview, mapping) => {
               const result = await importSupplierCatalogueAndMatch(
                 scope!,
@@ -469,6 +533,11 @@ export function ProcurementPage() {
             />
           ) : null}
           {supplierQuery.error ? <p className="inline-message inline-message--error" role="alert">{userFacingError(supplierQuery.error, "Leverantörsdata kunde inte läsas.")}</p> : null}
+          <p className="operational-rounding-note">
+            Behoven visas i praktiska inköpsmängder. Den exakta beräkningen
+            ligger kvar oförändrad och används när en faktisk artikel räknas
+            om till hela förpackningar.
+          </p>
           <div className="order-grid">
             {purchaseItems.map((item) => (
               <OrderEditor
@@ -476,6 +545,8 @@ export function ProcurementPage() {
                 scope={scope!}
                 listId={purchaseList.id}
                 item={item}
+                practicalRequirement={practicalPurchaseAmounts.get(item.id)
+                  ?? practicalSupplyAmount(item.required_amount, item.required_unit)}
                 supplierAccounts={supplierAccounts}
                 supplierDetails={supplierDetails.filter((detail) => detail.match.canonical_key === item.canonical_key)}
                 supplierWritable={networkWritable}
@@ -491,16 +562,32 @@ export function ProcurementPage() {
         <div className="distribution-view">
           <label className="field-label">Måltid och matlag
             <select name="distribution-list" value={selectedDistribution?.id ?? ""} onChange={(event) => setSelectedDistributionId(event.target.value)}>
-              {distributionLists.map((list) => <option key={list.id} value={list.id}>{list.title}</option>)}
+              {distributionOptions.map(({ list, label }) => (
+                <option key={list.id} value={list.id}>{label}</option>
+              ))}
             </select>
           </label>
-          <div className="distribution-table" role="table" aria-label={selectedDistribution?.title}>
-            {itemsFor(selectedDistribution).filter((item) => item.source_present).map((item) => (
-              <div className="distribution-row" role="row" key={item.id}>
-                <span role="cell">{item.item_name}</span>
-                <strong role="cell">{formatExactAmount(item.required_amount)} {item.required_unit}</strong>
-              </div>
-            ))}
+          <p className="distribution-rounding-note">
+            Varje matlag får en praktiskt avrundad mängd som går att använda.
+            Förpackningar räknas globalt först när en ICA-artikel väljs och
+            räknas om om varan byts.
+          </p>
+          <div className="distribution-table" role="table" aria-label={selectedDistributionOption?.label}>
+            {itemsFor(selectedDistribution).filter((item) => item.source_present).map((item) => {
+              const practical = practicalDistributionAmounts.get(item.id)
+                ?? practicalSupplyAmount(item.required_amount, item.required_unit);
+              return (
+                <div className="distribution-row" role="row" key={item.id}>
+                  <span role="cell">{item.item_name}</span>
+                  <strong
+                    className={practical.issue ? "distribution-amount--warning" : undefined}
+                    role="cell"
+                  >
+                    {practical.display}
+                  </strong>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}

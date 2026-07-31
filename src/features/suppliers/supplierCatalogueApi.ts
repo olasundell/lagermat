@@ -6,32 +6,44 @@ import type { SupplyItemRow } from "../supplies/supplyModel";
 import {
   CATALOGUE_MATCHER_VERSION,
   normalizeCatalogueText,
-  normalizeSupplierUnit,
 } from "./catalogueMatcher";
 import type {
   SupplierCatalogueColumnMapping,
   SupplierCataloguePreview,
 } from "./catalogueImportModel";
 import {
+  applySupplierSemanticReranks,
   buildManuallySelectedCandidatePayload,
+  buildIngredientContextsFromCalculationLines,
   buildStagedSupplierCatalogueRows,
-  buildSupplierMatchCandidatePayloads,
+  buildSupplierMatchGeneration,
   supplierCatalogueApiSourceFingerprint,
   supplierCatalogueSourceFingerprint,
   type SupplierCatalogueEnrichment,
   type SupplierCatalogueEnrichmentSource,
   type SupplierMatchCandidatePayload,
+  type SupplierSemanticMatchApplication,
 } from "./supplierCatalogueWorkflow";
 import {
+  SUPPLIER_SEMANTIC_MAX_GROUPS_PER_REQUEST,
+} from "./supplierSemanticMatch";
+import { fetchSupplierSemanticReranks } from "./supplierSemanticMatchClient";
+import {
+  hasCurrentIcaCataloguePackaging,
   normaliseIcaCatalogueResponse,
   type IcaCatalogueNormalisationResult,
 } from "./icaCatalogue";
 import { fetchIcaCatalogueBatch } from "./icaCatalogueClient";
 import {
+  ICA_CATALOGUE_NORMALISATION_VERSION,
   ICA_KVANTUM_SICKLA,
   isIcaSicklaAccount,
   isIcaSicklaCatalogueProduct,
 } from "./icaStore";
+import type {
+  IcaCatalogueSyncPhase,
+  IcaCatalogueSyncProgress,
+} from "./icaCatalogueSyncModel";
 import { selectCurrentOffers, type SupplierScope } from "./supplierApi";
 import type {
   IngredientSupplierMatch,
@@ -52,24 +64,20 @@ interface AutomaticIcaSyncState {
   completedQueryKeys: Set<string>;
   deferredQueryKeys: Set<string>;
   retryAt: number;
+  lastAttemptedAt: number | null;
   warning: string | null;
+  phase: Exclude<IcaCatalogueSyncPhase, "complete">;
 }
 const automaticIcaSyncStates = new Map<string, AutomaticIcaSyncState>();
 const ICA_SEARCH_BATCH_SIZE = 10;
 const ICA_MAX_AUTOMATIC_QUERIES = 80;
 const ICA_SYNC_PROGRESS_DELAY_MS = 15_000;
 const ICA_SYNC_LIMIT_DELAY_MS = 60_000;
-const ICA_MATCHABLE_UNITS = new Set([
-  "kg",
-  "g",
-  "mg",
-  "hg",
-  "l",
-  "dl",
-  "cl",
-  "ml",
-  "st",
-]);
+
+function isCurrentIcaCatalogueProduct(product: SupplierProduct): boolean {
+  return isIcaSicklaCatalogueProduct(product)
+    && hasCurrentIcaCataloguePackaging(product);
+}
 
 export interface SupplierCatalogueImportOutcome {
   imported: number;
@@ -141,22 +149,9 @@ export function buildIcaCatalogueQueries(
   items: readonly SupplyItemRow[],
 ): string[] {
   const queries = new Map<string, string>();
-  for (const item of items) {
-    if (
-      !item.source_present
-      || !ICA_MATCHABLE_UNITS.has(normalizeSupplierUnit(item.required_unit))
-    ) {
-      continue;
-    }
-    const query = item.item_name
-      .normalize("NFKC")
-      .replace(/[\p{Cc}\p{Cf}]/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80);
-    if (query.length < 2) continue;
-    const key = query.toLocaleLowerCase("sv-SE");
-    if (!queries.has(key)) queries.set(key, query);
+  for (const entry of buildIcaCatalogueSearchEntries(items)) {
+    const key = icaQueryKey(entry.query);
+    if (!queries.has(key)) queries.set(key, entry.query);
   }
   const ordered = [...queries.values()];
   if (ordered.length > ICA_MAX_AUTOMATIC_QUERIES) {
@@ -165,6 +160,98 @@ export function buildIcaCatalogueQueries(
     );
   }
   return ordered;
+}
+
+interface IcaCatalogueSearchEntry {
+  canonicalKey: string;
+  query: string;
+}
+
+function buildIcaCatalogueSearchEntries(
+  items: readonly SupplyItemRow[],
+): IcaCatalogueSearchEntry[] {
+  const queries = new Map<string, string>();
+  for (const item of items) {
+    if (!item.source_present) continue;
+    const query = item.item_name
+      .normalize("NFKC")
+      .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
+    if (query.length < 2) continue;
+    if (!queries.has(item.canonical_key)) {
+      queries.set(item.canonical_key, query);
+    }
+  }
+  return [...queries].map(([canonicalKey, query]) => ({
+    canonicalKey,
+    query,
+  }));
+}
+
+type IcaCatalogueSearchStatus =
+  | "pending"
+  | "syncing"
+  | "retrying"
+  | "complete"
+  | "error";
+
+interface PersistedIcaCatalogueSearchState {
+  canonical_key: string;
+  search_query: string;
+  search_date: string;
+  status: IcaCatalogueSearchStatus;
+}
+
+async function recordIcaCatalogueSearchStates(
+  client: SupabaseClient<Database>,
+  scope: SupplierScope,
+  supplierAccountId: string,
+  entries: readonly IcaCatalogueSearchEntry[],
+  status: IcaCatalogueSearchStatus,
+  searchDate: string,
+  retryAt: number | null = null,
+  lastError: string | null = null,
+): Promise<void> {
+  if (!scope.campId || entries.length === 0) return;
+  const { error } = await client.rpc("record_supplier_catalogue_search_states", {
+    p_organization_id: scope.organizationId,
+    p_camp_id: scope.campId,
+    p_supplier_account_id: supplierAccountId,
+    p_states: json(entries.map((entry) => ({
+      canonical_key: entry.canonicalKey,
+      search_query: entry.query,
+      search_date: searchDate,
+      status,
+      retry_at: retryAt === null ? null : new Date(retryAt).toISOString(),
+      last_error: lastError,
+    }))),
+  });
+  if (error) throw error;
+}
+
+async function fetchIcaCatalogueSearchStates(
+  client: SupabaseClient<Database>,
+  scope: SupplierScope,
+  supplierAccountId: string,
+): Promise<PersistedIcaCatalogueSearchState[]> {
+  if (!scope.campId) return [];
+  const { data, error } = await client
+    .from("supplier_catalogue_search_states")
+    .select("canonical_key, search_query, search_date, status")
+    .eq("organization_id", scope.organizationId)
+    .eq("camp_id", scope.campId)
+    .eq("supplier_account_id", supplierAccountId);
+  if (error) throw error;
+  return (data ?? []) as PersistedIcaCatalogueSearchState[];
+}
+
+function entriesForQueryKeys(
+  entries: readonly IcaCatalogueSearchEntry[],
+  queryKeys: ReadonlySet<string>,
+): IcaCatalogueSearchEntry[] {
+  return entries.filter((entry) => queryKeys.has(icaQueryKey(entry.query)));
 }
 
 interface IcaCatalogueRowsOutcome extends IcaCatalogueNormalisationResult {
@@ -360,6 +447,41 @@ async function fetchRejectedFingerprints(
   return byCanonicalKey;
 }
 
+async function fetchIngredientContexts(
+  client: SupabaseClient<Database>,
+  scope: SupplierScope,
+  canonicalKeys: readonly string[],
+) {
+  if (!scope.campId || !canonicalKeys.length) return new Map();
+
+  const { data: revision, error: revisionError } = await client
+    .from("calculation_revisions")
+    .select("id")
+    .eq("organization_id", scope.organizationId)
+    .eq("camp_id", scope.campId)
+    .eq("status", "current")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (revisionError) throw revisionError;
+  if (!revision) return new Map();
+
+  const lines = await collectPages(async (offset, pageSize) => {
+    const { data, error } = await client
+      .from("calculation_lines")
+      .select("canonical_key, trace")
+      .eq("organization_id", scope.organizationId)
+      .eq("camp_id", scope.campId!)
+      .eq("calculation_revision_id", revision.id)
+      .in("canonical_key", [...new Set(canonicalKeys)])
+      .order("id")
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    return data ?? [];
+  }, 500);
+  return buildIngredientContextsFromCalculationLines(lines);
+}
+
 async function replaceCandidates(
   client: SupabaseClient<Database>,
   scope: SupplierScope,
@@ -401,7 +523,7 @@ async function generateCandidates(
     .single();
   if (accountResult.error) throw accountResult.error;
   const account = accountResult.data;
-  const [allProducts, approvedMatches, rejectedFingerprints] =
+  const [allProducts, approvedMatches, rejectedFingerprints, ingredientContexts] =
     await Promise.all([
       fetchProductsForAccount(client, scope, supplierAccountId),
       fetchApprovedMatches(
@@ -416,9 +538,10 @@ async function generateCandidates(
         supplierAccountId,
         canonicalKeys,
       ),
+      fetchIngredientContexts(client, scope, canonicalKeys),
     ]);
   const products = isIcaSicklaAccount(account)
-    ? allProducts.filter(isIcaSicklaCatalogueProduct)
+    ? allProducts.filter(isCurrentIcaCatalogueProduct)
     : allProducts;
   const offers = await fetchOffersForProducts(
     client,
@@ -430,7 +553,7 @@ async function generateCandidates(
     return product
       && match.approved_product_fingerprint === product.product_fingerprint;
   });
-  const candidates = buildSupplierMatchCandidatePayloads({
+  const generation = buildSupplierMatchGeneration({
     organizationId: scope.organizationId,
     supplierAccountId,
     items,
@@ -439,8 +562,52 @@ async function generateCandidates(
     offers,
     approvedMatches: currentApprovedMatches,
     rejectedFingerprintsByCanonicalKey: rejectedFingerprints,
+    ingredientContextsByCanonicalKey: ingredientContexts,
     asOfDate: dateInStockholm(),
   });
+  if (!scope.campId || !isIcaSicklaAccount(account)) {
+    return replaceCandidates(
+      client,
+      scope,
+      supplierAccountId,
+      generation.payloads,
+    );
+  }
+  const semanticApplications: SupplierSemanticMatchApplication[] = [];
+  for (
+    const batch of chunks(
+      generation.semanticGroups,
+      SUPPLIER_SEMANTIC_MAX_GROUPS_PER_REQUEST,
+    )
+  ) {
+    try {
+      const response = await fetchSupplierSemanticReranks(
+        client,
+        scope.organizationId,
+        scope.campId,
+        supplierAccountId,
+        batch,
+      );
+      if (
+        response.configured
+        && response.adapter !== "none"
+        && response.model
+      ) {
+        semanticApplications.push({
+          adapter: response.adapter,
+          model: response.model,
+          results: response.results,
+        });
+      }
+    } catch {
+      // Semantic assistance is advisory. Deterministic, safety-filtered
+      // candidates remain available when the model or its cache is unavailable.
+    }
+  }
+  const candidates = applySupplierSemanticReranks(
+    generation,
+    semanticApplications,
+  );
   return replaceCandidates(client, scope, supplierAccountId, candidates);
 }
 
@@ -456,7 +623,7 @@ async function publishIcaCatalogueRows(
     );
   }
   const sourceFingerprint = await supplierCatalogueApiSourceFingerprint(
-    "ica-public-webshop-v1",
+    ICA_CATALOGUE_NORMALISATION_VERSION,
     ICA_KVANTUM_SICKLA.id,
     rows,
   );
@@ -465,7 +632,9 @@ async function publishIcaCatalogueRows(
     {
       p_organization_id: scope.organizationId,
       p_supplier_account_id: supplierAccountId,
-      p_column_profile_id: null,
+      // Postgres accepts SQL NULL here, but generated RPC types cannot express
+      // nullable function arguments.
+      p_column_profile_id: null as unknown as string,
       p_source_name: `ica-kvantum-sickla-${ICA_KVANTUM_SICKLA.id}`,
       p_source_kind: "api",
       p_source_fingerprint: sourceFingerprint,
@@ -529,9 +698,12 @@ function completedIcaQueriesFromProducts(
   for (const product of products) {
     const metadata = product.source_metadata;
     if (
-      !metadata
+      !isCurrentIcaCatalogueProduct(product)
+      || !metadata
       || typeof metadata !== "object"
       || Array.isArray(metadata)
+      || (metadata as Record<string, Json | undefined>)
+          .ica_search_association_version !== 1
     ) {
       continue;
     }
@@ -552,6 +724,27 @@ function completedIcaQueriesFromProducts(
 interface IcaCatalogueSyncOutcome {
   warning: string | null;
   retryAfterMs: number | null;
+  progress: IcaCatalogueSyncProgress;
+}
+
+function icaSyncProgress(
+  queries: readonly string[],
+  completedQueryKeys: ReadonlySet<string>,
+  phase: IcaCatalogueSyncPhase,
+  retryAfterMs: number | null,
+  retryAt: number | null,
+  lastAttemptedAt: number | null,
+): IcaCatalogueSyncProgress {
+  return {
+    phase,
+    completedQueries: queries.filter((query) =>
+      completedQueryKeys.has(icaQueryKey(query))
+    ),
+    totalQueries: queries.length,
+    retryAfterMs,
+    retryAt,
+    lastAttemptedAt,
+  };
 }
 
 async function syncIcaCatalogue(
@@ -559,41 +752,105 @@ async function syncIcaCatalogue(
   scope: SupplierScope,
   supplierAccountId: string,
   items: SupplyItemRow[],
+  force = false,
 ): Promise<IcaCatalogueSyncOutcome> {
+  const entries = buildIcaCatalogueSearchEntries(items);
   const queries = buildIcaCatalogueQueries(items);
-  if (!queries.length) return { warning: null, retryAfterMs: null };
+  const searchDate = dateInStockholm();
+  if (!queries.length) {
+    return {
+      warning: null,
+      retryAfterMs: null,
+      progress: {
+        phase: "complete",
+        completedQueries: [],
+        totalQueries: 0,
+        retryAfterMs: null,
+        retryAt: null,
+        lastAttemptedAt: null,
+      },
+    };
+  }
+  await recordIcaCatalogueSearchStates(
+    client,
+    scope,
+    supplierAccountId,
+    entries,
+    "pending",
+    searchDate,
+  );
   const signature = [
     scope.organizationId,
     supplierAccountId,
-    dateInStockholm(),
+    searchDate,
     queries.join("\u001f"),
   ].join(":");
   let state = automaticIcaSyncStates.get(signature);
   if (!state) {
-    const existingProducts = await fetchProductsForAccount(
-      client,
-      scope,
-      supplierAccountId,
+    const [existingProducts, persistedStates] = await Promise.all([
+      fetchProductsForAccount(client, scope, supplierAccountId),
+      fetchIcaCatalogueSearchStates(client, scope, supplierAccountId),
+    ]);
+    const completedFromProducts = completedIcaQueriesFromProducts(
+      existingProducts.filter(isIcaSicklaCatalogueProduct),
+      queries,
+    );
+    const completedFromState = persistedStates.flatMap((persisted) => {
+      const entry = entries.find((candidate) =>
+        candidate.canonicalKey === persisted.canonical_key
+      );
+      return persisted.status === "complete"
+          && persisted.search_date === searchDate
+          && entry
+          && icaQueryKey(entry.query) === icaQueryKey(persisted.search_query)
+        ? [entry.query]
+        : [];
+    });
+    const completedQueryKeys = new Set(
+      [...completedFromProducts, ...completedFromState].map(icaQueryKey),
     );
     state = {
-      completedQueryKeys: new Set(
-        completedIcaQueriesFromProducts(
-          existingProducts.filter(isIcaSicklaCatalogueProduct),
-          queries,
-        ).map(icaQueryKey),
-      ),
+      completedQueryKeys,
       deferredQueryKeys: new Set(),
       retryAt: 0,
+      lastAttemptedAt: null,
       warning: null,
+      phase: "syncing",
     };
     automaticIcaSyncStates.set(signature, state);
+    if (completedQueryKeys.size > 0) {
+      await recordIcaCatalogueSearchStates(
+        client,
+        scope,
+        supplierAccountId,
+        entriesForQueryKeys(entries, completedQueryKeys),
+        "complete",
+        searchDate,
+      );
+    }
+  }
+
+  if (force) {
+    state.retryAt = 0;
+    state.deferredQueryKeys.clear();
+    state.warning = null;
+    state.phase = "syncing";
   }
 
   const now = Date.now();
   if (state.retryAt > now) {
+    const retryAfterMs = Math.max(1_000, state.retryAt - now);
     return {
       warning: state.warning,
-      retryAfterMs: Math.max(1_000, state.retryAt - now),
+      retryAfterMs,
+      progress: icaSyncProgress(
+        queries,
+        state.completedQueryKeys,
+        state.phase,
+        retryAfterMs,
+        state.retryAt,
+        state.lastAttemptedAt,
+      ),
     };
   }
 
@@ -619,23 +876,80 @@ async function syncIcaCatalogue(
   if (!batch.length) {
     state.warning = null;
     state.retryAt = 0;
-    return { warning: null, retryAfterMs: null };
+    return {
+      warning: null,
+      retryAfterMs: null,
+      progress: icaSyncProgress(
+        queries,
+        state.completedQueryKeys,
+        "complete",
+        null,
+        null,
+        state.lastAttemptedAt,
+      ),
+    };
   }
 
-  const normalized = await fetchIcaCatalogueRows(client, scope, batch);
-  if (normalized.rows.length) {
-    await publishIcaCatalogueRows(
+  const batchKeys = new Set(batch.map(icaQueryKey));
+  state.lastAttemptedAt = Date.now();
+  await recordIcaCatalogueSearchStates(
+    client,
+    scope,
+    supplierAccountId,
+    entriesForQueryKeys(entries, batchKeys),
+    "syncing",
+    searchDate,
+  );
+
+  let normalized: IcaCatalogueRowsOutcome;
+  try {
+    normalized = await fetchIcaCatalogueRows(client, scope, batch);
+    if (normalized.rows.length) {
+      await publishIcaCatalogueRows(
+        client,
+        scope,
+        supplierAccountId,
+        normalized.rows,
+      );
+    }
+  } catch (error) {
+    const retryAfterMs = ICA_SYNC_LIMIT_DELAY_MS;
+    state.retryAt = Date.now() + retryAfterMs;
+    state.phase = "error";
+    state.warning =
+      "ICA:s sortiment kunde inte hämtas just nu. Scoutmat försöker igen automatiskt.";
+    const incompleteKeys = new Set(queries
+      .map(icaQueryKey)
+      .filter((key) => !state!.completedQueryKeys.has(key)));
+    await recordIcaCatalogueSearchStates(
       client,
       scope,
       supplierAccountId,
-      normalized.rows,
+      entriesForQueryKeys(entries, incompleteKeys),
+      "error",
+      searchDate,
+      state.retryAt,
+      error instanceof Error ? error.message.slice(0, 500) : "Okänt fel",
     );
+    throw error;
   }
+
   for (const query of normalized.completedQueries) {
     const key = icaQueryKey(query);
     state.completedQueryKeys.add(key);
     state.deferredQueryKeys.delete(key);
   }
+  const newlyCompletedKeys = new Set(
+    normalized.completedQueries.map(icaQueryKey),
+  );
+  await recordIcaCatalogueSearchStates(
+    client,
+    scope,
+    supplierAccountId,
+    entriesForQueryKeys(entries, newlyCompletedKeys),
+    "complete",
+    searchDate,
+  );
   if (!normalized.complete) {
     const firstIncompleteQuery = batch.find((query) =>
       !state!.completedQueryKeys.has(icaQueryKey(query))
@@ -651,27 +965,64 @@ async function syncIcaCatalogue(
   if (completedCount === queries.length) {
     state.warning = null;
     state.retryAt = 0;
-    return { warning: null, retryAfterMs: null };
+    return {
+      warning: null,
+      retryAfterMs: null,
+      progress: icaSyncProgress(
+        queries,
+        state.completedQueryKeys,
+        "complete",
+        null,
+        null,
+        state.lastAttemptedAt,
+      ),
+    };
   }
 
   const retryAfterMs = normalized.complete
     ? ICA_SYNC_PROGRESS_DELAY_MS
     : ICA_SYNC_LIMIT_DELAY_MS;
   state.retryAt = Date.now() + retryAfterMs;
+  state.phase = normalized.complete ? "syncing" : "rate_limited";
   state.warning = normalized.complete
     ? `Scoutmat hämtar ICA-sortimentet stegvis. ${completedCount} av ${queries.length} råvarusökningar är klara; nästa steg körs automatiskt.`
     : `ICA begränsade kataloghämtningen tillfälligt. ${completedCount} av ${queries.length} råvarusökningar är klara; den blockerade sökningen läggs sist och Scoutmat fortsätter automatiskt om en stund. Endast riktiga artiklar från ICA Kvantum Sickla används.`;
-  return { warning: state.warning, retryAfterMs };
+  const incompleteKeys = new Set(queries
+    .map(icaQueryKey)
+    .filter((key) => !state!.completedQueryKeys.has(key)));
+  await recordIcaCatalogueSearchStates(
+    client,
+    scope,
+    supplierAccountId,
+    entriesForQueryKeys(entries, incompleteKeys),
+    normalized.complete ? "syncing" : "retrying",
+    searchDate,
+    state.retryAt,
+  );
+  return {
+    warning: state.warning,
+    retryAfterMs,
+    progress: icaSyncProgress(
+      queries,
+      state.completedQueryKeys,
+      state.phase,
+      retryAfterMs,
+      state.retryAt,
+      state.lastAttemptedAt,
+    ),
+  };
 }
 
 export async function ensureSupplierCatalogueMatches(
   scope: SupplierScope,
   supplierAccountId: string,
   items: SupplyItemRow[],
+  options: { forceIcaSync?: boolean } = {},
 ): Promise<{
   generated: boolean;
   warning: string | null;
   retryAfterMs: number | null;
+  icaSyncProgress: IcaCatalogueSyncProgress | null;
 }> {
   const client = catalogueClient();
   requireOnline();
@@ -687,6 +1038,7 @@ export async function ensureSupplierCatalogueMatches(
   const icaAccount = isIcaSicklaAccount(account);
   let warning: string | null = null;
   let retryAfterMs: number | null = null;
+  let icaProgress: IcaCatalogueSyncProgress | null = null;
   if (icaAccount) {
     try {
       const outcome = await syncIcaCatalogue(
@@ -694,9 +1046,11 @@ export async function ensureSupplierCatalogueMatches(
         scope,
         supplierAccountId,
         items,
+        options.forceIcaSync === true,
       );
       warning = outcome.warning;
       retryAfterMs = outcome.retryAfterMs;
+      icaProgress = outcome.progress;
     } catch {
       const existingProducts = await fetchProductsForAccount(
         client,
@@ -707,6 +1061,19 @@ export async function ensureSupplierCatalogueMatches(
         ? "ICA:s sortiment kunde inte uppdateras just nu. Senast hämtade riktiga ICA-artiklar används."
         : "ICA:s sortiment kunde inte hämtas just nu. Inga reservartiklar visas; försök igen senare.";
       retryAfterMs = ICA_SYNC_LIMIT_DELAY_MS;
+      const queries = buildIcaCatalogueQueries(items);
+      const completedQueries = completedIcaQueriesFromProducts(
+        existingProducts.filter(isIcaSicklaCatalogueProduct),
+        queries,
+      );
+      icaProgress = {
+        phase: "error",
+        completedQueries,
+        totalQueries: queries.length,
+        retryAfterMs,
+        retryAt: Date.now() + retryAfterMs,
+        lastAttemptedAt: Date.now(),
+      };
     }
   }
 
@@ -722,6 +1089,9 @@ export async function ensureSupplierCatalogueMatches(
       .contains("source_metadata", {
         source: "ica_public_webshop",
         store_id: ICA_KVANTUM_SICKLA.id,
+      })
+      .contains("packaging_metadata", {
+        normalization_version: ICA_CATALOGUE_NORMALISATION_VERSION,
       });
   }
   const { data: productState, count, error } = await stateQuery
@@ -730,16 +1100,43 @@ export async function ensureSupplierCatalogueMatches(
   if (error) throw error;
 
   if ((count ?? 0) === 0) {
-    return { generated: false, warning, retryAfterMs };
+    return {
+      generated: false,
+      warning,
+      retryAfterMs,
+      icaSyncProgress: icaProgress,
+    };
+  }
+
+  let calculationRevisionId = "";
+  if (scope.campId) {
+    const { data: revision, error: revisionError } = await client
+      .from("calculation_revisions")
+      .select("id")
+      .eq("organization_id", scope.organizationId)
+      .eq("camp_id", scope.campId)
+      .eq("status", "current")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (revisionError) throw revisionError;
+    calculationRevisionId = revision?.id ?? "";
   }
 
   const canonicalSignature = [...new Set(
     items
       .filter((item) => item.source_present)
-      .map((item) => `${item.canonical_key}:${item.required_unit}`),
+      .map((item) => [
+        item.canonical_key,
+        item.required_unit,
+        item.category,
+        item.comment ?? "",
+      ].join(":")),
   )].sort().join("|");
   const signature = [
     scope.organizationId,
+    scope.campId ?? "",
+    calculationRevisionId,
     supplierAccountId,
     count,
     productState?.[0]?.updated_at ?? "",
@@ -747,7 +1144,12 @@ export async function ensureSupplierCatalogueMatches(
     canonicalSignature,
   ].join(":");
   if (automaticMatchSignatures.has(signature)) {
-    return { generated: false, warning, retryAfterMs };
+    return {
+      generated: false,
+      warning,
+      retryAfterMs,
+      icaSyncProgress: icaProgress,
+    };
   }
 
   automaticMatchSignatures.add(signature);
@@ -757,7 +1159,12 @@ export async function ensureSupplierCatalogueMatches(
     automaticMatchSignatures.delete(signature);
     throw error;
   }
-  return { generated: true, warning, retryAfterMs };
+  return {
+    generated: true,
+    warning,
+    retryAfterMs,
+    icaSyncProgress: icaProgress,
+  };
 }
 
 export async function importSupplierCatalogueAndMatch(

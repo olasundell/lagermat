@@ -3,6 +3,14 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(30);
 
+update public.participant_dietary_needs
+set review_status = 'unreviewed',
+    reviewed_by = null,
+    reviewed_at = null
+where id = 'f2000000-0000-0000-0000-000000000004'
+  and organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  and camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1';
+
 select is(
   (select count(*)::integer
    from public.meals
@@ -358,13 +366,19 @@ select ok(
 );
 
 select is(
-  (select can_finalize
+  (select
+     unplanned_slots::text || '|' ||
+     unresolved_dietary_needs::text || '|' ||
+     meals_without_recipe::text || '|' ||
+     calculation_stale::text || '|' ||
+     procurement_ready::text || '|' ||
+     can_finalize::text
    from public.get_camp_readiness(
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
    )),
-  true,
-  'the same readiness gate becomes complete after every issue is resolved'
+  '0|0|0|false|true|true',
+  'meal readiness is complete before current purchase rows are generated'
 );
 
 select public.generate_supply_lists(
@@ -384,7 +398,7 @@ select set_config(
   true
 );
 
-select lives_ok(
+select throws_ok(
   $$select public.set_supply_list_status(
     (select id from public.supply_lists
      where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
@@ -400,7 +414,9 @@ select lives_ok(
      limit 1),
     'complete'
   )$$,
-  'the server permits final status after the shared readiness gate passes'
+  '22023',
+  'Camp readiness must be complete before final status',
+  'checking purchase rows alone cannot bypass unresolved procurement'
 );
 
 select * from finish();

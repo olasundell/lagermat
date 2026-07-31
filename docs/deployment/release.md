@@ -12,9 +12,22 @@
 1. Merge the reviewed revision to protected `main`.
 2. `Verify` rebuilds and tests the exact commit.
 3. `Deploy hosted` dry-runs and applies Supabase staging migrations, pushes Auth/SMTP configuration, sets the exact Edge Function origin and deploys all versioned functions.
-4. The same commit is built for staging, inspected and deployed to its fixed Netlify site. Non-destructive smoke tests check the SPA fallback, CSP, security/cache headers, hashed assets and Supabase Auth health.
-5. The production job waits for the `production` environment reviewer. The reviewer confirms a visible recent backup, provider status, approved privacy state and the staging result.
-6. The workflow repeats the backend-first sequence against production and runs the same non-destructive smoke tests.
+4. For staging, the generated configuration enables anonymous
+   Turnstile-protected Auth, disables email/SMTP and gates invitations. The
+   same commit is built and inspected in demo mode.
+5. The fixed Netlify staging site is uploaded only as a static artefact with
+   `--dir=dist --functions=.tmp/netlify-static-functions --no-build`.
+   Non-destructive smoke tests check the SPA fallback, mode-specific CSP,
+   security/cache headers, hashed assets, Auth provider state and zero
+   functions.
+6. The production job waits for the `production` environment reviewer. The reviewer confirms a visible recent backup, provider status, approved privacy state and the staging result.
+7. Production is built with both demo switches false, no Turnstile values,
+   anonymous Auth off and private email/SMTP on.
+
+The current protected deploy workflow predates this environment split and is
+intentionally not executable for it yet. Do not “fix forward” by supplying
+missing values interactively. Wiring the protected environments and changing
+the external deploy command requires separate explicit approval.
 
 The workflow must never be edited to pass `--include-seed`. If a migration dry-run is unexpected, reject the production approval and fix it in a new commit.
 

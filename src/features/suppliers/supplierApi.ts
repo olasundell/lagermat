@@ -21,6 +21,8 @@ import type {
   SupplierOffer,
   SupplierProduct,
 } from "./supplierModel";
+import { CATALOGUE_MATCHER_VERSION } from "./catalogueMatcher";
+import { hasCurrentIcaCataloguePackaging } from "./icaCatalogue";
 import {
   isIcaSicklaAccount,
   isIcaSicklaCatalogueProduct,
@@ -28,6 +30,7 @@ import {
 
 export interface SupplierScope {
   organizationId: string;
+  campId?: string;
 }
 
 export interface SupplierFoundationSnapshot {
@@ -328,21 +331,48 @@ function currentPreferredMatches(
   });
 }
 
-function candidateReasons(candidate: SupplierMatchCandidate): string[] {
+function signalRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+export function supplierCandidateReasons(signalsValue: unknown): string[] {
   if (
-    !candidate.signals
-    || typeof candidate.signals !== "object"
-    || Array.isArray(candidate.signals)
+    !signalsValue
+    || typeof signalsValue !== "object"
+    || Array.isArray(signalsValue)
   ) {
     return [];
   }
-  const explanations = (candidate.signals as Record<string, unknown>).explanations;
-  if (!Array.isArray(explanations)) return [];
-  return explanations.flatMap((entry) => {
+  const signals = signalsValue as Record<string, unknown>;
+  const semanticExplanation =
+    signalRecord(signals.semantic_rerank)?.explanation;
+  const marginExplanation =
+    signals.resolution_reason === "safe_margin_not_met"
+      && typeof signals.margin_to_next === "number"
+    ? `Bara ${signals.margin_to_next} poäng skiljer till nästa möjliga artikel; minst 8 krävs för en säker träff.`
+    : null;
+  const explanations = signals.explanations;
+  const deterministicReasons = Array.isArray(explanations)
+    ? explanations.flatMap((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const message = (entry as Record<string, unknown>).message;
     return typeof message === "string" && message.trim() ? [message.trim()] : [];
-  });
+      })
+    : [];
+  return [...new Set([
+    ...(typeof semanticExplanation === "string"
+        && semanticExplanation.trim()
+      ? [semanticExplanation.trim()]
+      : []),
+    ...(marginExplanation ? [marginExplanation] : []),
+    ...deterministicReasons,
+  ])];
+}
+
+function candidateReasons(candidate: SupplierMatchCandidate): string[] {
+  return supplierCandidateReasons(candidate.signals);
 }
 
 function candidateViews(
@@ -367,6 +397,10 @@ function candidateViews(
       amountPerPurchaseUnit: candidate.amount_per_purchase_unit,
       requiredUnit: candidate.required_unit,
       reasons: candidateReasons(candidate),
+      semanticAssisted:
+        signalRecord(
+          signalRecord(candidate.signals)?.semantic_rerank,
+        )?.adapter === "netlify-ai-gateway",
       product,
     }];
   });
@@ -432,6 +466,7 @@ export async function fetchSupplierFoundation(
         .select(CANDIDATE_COLUMNS)
         .eq("organization_id", scope.organizationId)
         .in("canonical_key", uniqueCanonicalKeys)
+        .eq("matcher_version", CATALOGUE_MATCHER_VERSION)
         .in("status", ["safe", "review"])
         .order("canonical_key")
         .order("id")
@@ -455,7 +490,10 @@ export async function fetchSupplierFoundation(
   const products = fetchedProducts.filter((product) => {
     const account = accountsById.get(product.supplier_account_id);
     return !isIcaSicklaAccount(account)
-      || isIcaSicklaCatalogueProduct(product);
+      || (
+        isIcaSicklaCatalogueProduct(product)
+        && hasCurrentIcaCataloguePackaging(product)
+      );
   });
   const currentPreferred = currentPreferredMatches(
     preferredMatches,

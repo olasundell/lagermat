@@ -1,0 +1,123 @@
+{
+  "object": {
+    "forms": {
+      "7701": {
+        "title": "Syntetiskt sommarläger",
+        "id": 7701,
+        "form_type": "individual",
+        "endpoint_url": "https://example.invalid/scoutnet-fixture/form/7701"
+      }
+    },
+    "form": {
+      "title": "Syntetiskt sommarläger",
+      "id": 7701,
+      "form_type": "individual",
+      "endpoint_url": "https://example.invalid/scoutnet-fixture/form/7701"
+    },
+    "questions": {
+      "1101": {
+        "question": "Ankomst 1",
+        "description": "Första syntetiska närvarointervallets start.",
+        "tab_id": 7101,
+        "section_id": 7201,
+        "default_value": "",
+        "type": "datetime",
+        "choices": {}
+      },
+      "1102": {
+        "question": "Avresa 1",
+        "description": "Första syntetiska närvarointervallets slut.",
+        "tab_id": 7101,
+        "section_id": 7201,
+        "default_value": "",
+        "type": "datetime",
+        "choices": {}
+      },
+      "1103": {
+        "question": "Ankomst 2",
+        "description": "Andra syntetiska närvarointervallets start.",
+        "tab_id": 7101,
+        "section_id": 7201,
+        "default_value": "",
+        "type": "datetime",
+        "choices": {}
+      },
+      "1104": {
+        "question": "Avresa 2",
+        "description": "Andra syntetiska närvarointervallets slut.",
+        "tab_id": 7101,
+        "section_id": 7201,
+        "default_value": "",
+        "type": "datetime",
+        "choices": {}
+      },
+      "1201": {
+        "question": "Specialkost",
+        "description": "Helt syntetisk fritext för test av dataminimering.",
+        "tab_id": 7101,
+        "section_id": 7202,
+        "default_value": "",
+        "type": "textarea",
+        "choices": {}
+      },
+      "1301": {
+        "question": "Avdelning",
+        "description": "Syntetisk avdelningsfråga.",
+        "tab_id": 7101,
+        "section_id": 7203,
+        "default_value": "",
+        "type": "select",
+        "choices": {
+          "1": {
+            "value": 1,
+            "option": "Testavdelning Alfa",
+            "description": "Syntetiskt alternativ."
+          },
+          "2": {
+            "value": 2,
+            "option": "Testavdelning Beta",
+            "description": "Syntetiskt alternativ."
+          }
+        }
+      }
+    },
+    "tabs": {
+      "7101": {
+        "id": 7101,
+        "title": "Syntetiska deltagaruppgifter",
+        "description": "Fixtureflik utan verkliga personuppgifter."
+      }
+    },
+    "sections": {
+      "7201": {
+        "id": 7201,
+        "title": "Närvaro"
+      },
+      "7202": {
+        "id": 7202,
+        "title": "Mat"
+      },
+      "7203": {
+        "id": 7203,
+        "title": "Grupp"
+      }
+    },
+    "messages": []
+  },
+  "emptyArray": {
+    "forms": [],
+    "form": null,
+    "questions": [],
+    "tabs": [],
+    "sections": [],
+    "messages": []
+  },
+  "null": {
+    "forms": null,
+    "form": null,
+    "questions": null,
+    "tabs": null,
+    "sections": null,
+    "messages": null
+  }
+}

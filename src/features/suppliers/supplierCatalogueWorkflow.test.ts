@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { SupplyItemRow } from "../supplies/supplyModel";
 import { demoSupplierCataloguePreview } from "./demoSupplierCatalogue";
 import {
+  applySupplierSemanticReranks,
+  buildIngredientContextsFromCalculationLines,
+  buildSupplierMatchGeneration,
   buildStagedSupplierCatalogueRows,
   buildSupplierMatchCandidatePayloads,
   supplierCatalogueSourceFingerprint,
@@ -71,6 +74,45 @@ const product = {
 } satisfies SupplierProduct;
 
 describe("supplier catalogue workflow", () => {
+  it("samlar stabil recept- och specialkostkontext från den aktuella beräkningen", () => {
+    const contexts = buildIngredientContextsFromCalculationLines([
+      {
+        canonical_key: "a".repeat(64),
+        trace: {
+          recipe_name: "Tacos",
+          dietary_rule: "standard",
+          dietary_tag_label: null,
+        },
+      },
+      {
+        canonical_key: "a".repeat(64),
+        trace: {
+          recipe_name: "Pastasallad med pesto",
+          dietary_rule: "exclude",
+          dietary_tag_label: "Gluten",
+        },
+      },
+      {
+        canonical_key: "a".repeat(64),
+        trace: {
+          recipe_name: "Tacos",
+          dietary_rule: "only",
+          dietary_tag_label: "Gluten",
+        },
+      },
+      {
+        canonical_key: null,
+        trace: { recipe_name: "Ignoreras" },
+      },
+    ]);
+
+    expect(contexts.get("a".repeat(64))).toEqual({
+      recipe_names: ["Pastasallad med pesto", "Tacos"],
+      dietary_rules: ["exclude", "only"],
+      dietary_labels: ["Gluten"],
+    });
+  });
+
   it("skapar ett stabilt SHA-256-fingeravtryck av importens semantiska innehåll", async () => {
     const first = await supplierCatalogueSourceFingerprint(demoSupplierCataloguePreview);
     const second = await supplierCatalogueSourceFingerprint(demoSupplierCataloguePreview);
@@ -129,6 +171,86 @@ describe("supplier catalogue workflow", () => {
       product_fingerprint: "b".repeat(64),
       required_unit: "l",
       amount_per_purchase_unit: 3.6,
+    });
+  });
+
+  it("skapar ett säkerhetsfiltrerat kandidatfält och gör en semantisk träff granskningspliktig", () => {
+    const dressingItem = {
+      ...item,
+      canonical_key: "c".repeat(64),
+      item_name: "Dressing",
+      required_unit: "kg",
+    };
+    const hamburgerDressing = {
+      ...product,
+      id: "00000000-0000-4000-8000-000000000006",
+      supplier_article_number: "ICA-HAMBURGER",
+      display_name: "Hamburgerdressing 230g ICA",
+      brand: "ICA",
+      package_amount: 0.23,
+      package_unit: "kg",
+      category: "Skafferi > Såser > Hamburgerdressing",
+      product_fingerprint: "c".repeat(64),
+    };
+    const hotDogDressing = {
+      ...product,
+      id: "00000000-0000-4000-8000-000000000007",
+      supplier_article_number: "ICA-HOT-DOG",
+      display_name: "Hot dog Dressing 230g Kavli",
+      brand: "Kavli",
+      package_amount: 0.23,
+      package_unit: "kg",
+      category: "Skafferi > Såser > Dressing",
+      product_fingerprint: "d".repeat(64),
+    };
+    const generation = buildSupplierMatchGeneration({
+      organizationId: account.organization_id,
+      supplierAccountId: account.id,
+      items: [dressingItem],
+      accounts: [account],
+      products: [hotDogDressing, hamburgerDressing],
+      offers: [],
+      approvedMatches: [],
+      rejectedFingerprintsByCanonicalKey: new Map(),
+      ingredientContextsByCanonicalKey: new Map([[
+        dressingItem.canonical_key,
+        { recipe_names: ["Hamburgare"] },
+      ]]),
+      asOfDate: "2026-07-29",
+    });
+
+    expect(generation.semanticGroups[0]?.candidates.map((candidate) =>
+      candidate.productId
+    )).toEqual([
+      hamburgerDressing.id,
+      hotDogDressing.id,
+    ]);
+
+    const payloads = applySupplierSemanticReranks(generation, [{
+      adapter: "fixture",
+      model: "fixture-v1",
+      results: [{
+        canonicalKey: dressingItem.canonical_key,
+        decision: "match",
+        selectedProductId: hamburgerDressing.id,
+        confidence: 0.92,
+        explanation: "Hamburgerdressing passar receptet Hamburgare.",
+        cached: false,
+      }],
+    }]);
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({
+      canonical_key: dressingItem.canonical_key,
+      supplier_product_id: hamburgerDressing.id,
+      status: "review",
+      signals: {
+        resolution_reason: "semantic_rerank",
+        semantic_rerank: {
+          adapter: "fixture",
+          review_only: true,
+        },
+      },
     });
   });
 });

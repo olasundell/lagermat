@@ -14,6 +14,12 @@ importers:
       '@fontsource/libre-franklin':
         specifier: ^5.2.8
         version: 5.2.8
+      '@marsidev/react-turnstile':
+        specifier: 1.5.4
+        version: 1.5.4(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@scouterna/scoutnet':
+        specifier: 0.3.26
+        version: 0.3.26
       '@supabase/supabase-js':
         specifier: ^2.110.7
         version: 2.110.7
@@ -63,6 +69,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@scouterna/scoutnet-openapi':
+        specifier: 0.4.1
+        version: 0.4.1
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))
@@ -1162,6 +1171,12 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  '@marsidev/react-turnstile@1.5.4':
+    resolution: {integrity: sha512-2+ulBzQPYcC5jZ4Pghlcc6a6+CQ6L0cgTxtbavZbcHcG5/wSQsTAM+vDudF94L9AUPG4uSNQF1kotmvx0Ns/QA==}
+    peerDependencies:
+      react: ^17.0.2 || ^18.0.0 || ^19.0
+      react-dom: ^17.0.2 || ^18.0.0 || ^19.0
+
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
     peerDependencies:
@@ -1681,6 +1696,12 @@ packages:
     resolution: {integrity: sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA==}
     cpu: [x64]
     os: [win32]
+
+  '@scouterna/scoutnet-openapi@0.4.1':
+    resolution: {integrity: sha512-lW+q0CErlJqhy+pMViwth4DNFcPqVnsw6l47or8teV/hrXIHorLpQlDQHAc4jMFpdnllDpmwv/BWc6H3eg9Yyw==}
+
+  '@scouterna/scoutnet@0.3.26':
+    resolution: {integrity: sha512-ecmN5qpl85qQa1oqBxMzkGCP5ubpEvw5sgYJb6pYqlXBycrAnpGIzDFsc5utXihP0MJVW987HECf5Xb7IqbGHA==}
 
   '@so-ric/colorspace@1.1.6':
     resolution: {integrity: sha512-/KiKkpHNOBgkFJwu9sh48LkHSMYGyuTcSFK/qMBdnOAlrRJzRSXAOFB5qwzaVQuDl8wAvHVMkaASQDReTahxuw==}
@@ -3876,6 +3897,12 @@ packages:
   onetime@6.0.0:
     resolution: {integrity: sha512-1FlR+gjXK7X+AsAHso35MnyN5KqGwJRi/31ft6x0M194ht7S+rWAvd7PHss9xSKMzE0asv1pyIHaJYq+BbacAQ==}
     engines: {node: '>=12'}
+
+  openapi-fetch@0.17.0:
+    resolution: {integrity: sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==}
+
+  openapi-typescript-helpers@0.1.0:
+    resolution: {integrity: sha512-OKTGPthhivLw/fHz6c3OPtg72vi86qaMlqbJuVJ23qOvQ+53uw1n7HdmkJFibloF7QEjDrDkzJiOJuockM/ljw==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -6111,6 +6138,11 @@ snapshots:
       - encoding
       - supports-color
 
+  '@marsidev/react-turnstile@1.5.4(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
       '@emnapi/core': 1.11.1
@@ -6734,6 +6766,12 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
+
+  '@scouterna/scoutnet-openapi@0.4.1': {}
+
+  '@scouterna/scoutnet@0.3.26':
+    dependencies:
+      openapi-fetch: 0.17.0
 
   '@so-ric/colorspace@1.1.6':
     dependencies:
@@ -9047,6 +9085,12 @@ snapshots:
   onetime@6.0.0:
     dependencies:
       mimic-fn: 4.0.0
+
+  openapi-fetch@0.17.0:
+    dependencies:
+      openapi-typescript-helpers: 0.1.0
+
+  openapi-typescript-helpers@0.1.0: {}
 
   optionator@0.9.4:
     dependencies:

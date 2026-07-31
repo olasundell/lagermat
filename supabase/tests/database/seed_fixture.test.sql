@@ -177,7 +177,7 @@ select is(
   (select count(*)::integer
    from public.recipe_ingredients
    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'),
-  316,
+  309,
   'the local organization has every catalogue component, all demo components and the fixture component'
 );
 

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { activeParticipantListFilter } from "./participantLifecycle";
 import { ParticipantsPage } from "./ParticipantsPage";
 
 const participantData = {
@@ -33,6 +34,13 @@ vi.mock("../workspace/WorkspaceContext", () => ({
 }));
 
 describe("ParticipantsPage filtering", () => {
+  it("uses the canonical participant lifecycle field for the active list", () => {
+    expect(activeParticipantListFilter).toEqual({
+      column: "lifecycle_status",
+      value: "active"
+    });
+  });
+
   it("searches names and group names and filters by division", async () => {
     const user = userEvent.setup();
     render(<ParticipantsPage />);

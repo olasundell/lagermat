@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectCurrentOffers } from "./supplierApi";
+import {
+  selectCurrentOffers,
+  supplierCandidateReasons,
+} from "./supplierApi";
 import type { SupplierOffer } from "./supplierModel";
 
 function offer(overrides: Partial<SupplierOffer> = {}): SupplierOffer {
@@ -42,5 +45,20 @@ describe("selectCurrentOffers", () => {
 
     expect(selectCurrentOffers([untilJuly29], new Date("2026-07-29T21:30:00Z"))).toHaveLength(1);
     expect(selectCurrentOffers([untilJuly29], new Date("2026-07-29T22:30:00Z"))).toHaveLength(0);
+  });
+});
+
+describe("supplierCandidateReasons", () => {
+  it("förklarar när en hög poäng ändå saknar säker marginal", () => {
+    expect(supplierCandidateReasons({
+      resolution_reason: "safe_margin_not_met",
+      margin_to_next: 5,
+      explanations: [{
+        message: "Exakt normaliserat produktnamn.",
+      }],
+    })).toEqual([
+      "Bara 5 poäng skiljer till nästa möjliga artikel; minst 8 krävs för en säker träff.",
+      "Exakt normaliserat produktnamn.",
+    ]);
   });
 });

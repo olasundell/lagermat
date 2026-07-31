@@ -1,5 +1,8 @@
 import type { SupplierAccount, SupplierProduct } from "./supplierModel";
 
+export const ICA_CATALOGUE_NORMALISATION_VERSION =
+  "ica-public-catalogue-v2";
+
 export const ICA_KVANTUM_SICKLA = {
   id: "1004021",
   name: "ICA Kvantum Sickla",

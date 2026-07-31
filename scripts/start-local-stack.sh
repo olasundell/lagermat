@@ -10,6 +10,12 @@ export SMTP_USER="${SMTP_USER:-local}"
 export SMTP_PASS="${SMTP_PASS:-local-not-a-secret}"
 export SMTP_FROM_ADDRESS="${SMTP_FROM_ADDRESS:-local@example.invalid}"
 export SMTP_FROM_NAME="${SMTP_FROM_NAME:-Lägermat local}"
+# Clearly synthetic and local-only. Hosted private environments must inject a
+# stable independent value through the protected server-secret boundary.
+export SCOUTNET_SOURCE_REFERENCE_SECRET="${SCOUTNET_SOURCE_REFERENCE_SECRET:-scoutmat-local-synthetic-source-reference-secret-v1}"
+# Reconciliation is deliberately fixture-only until a separate external-data
+# approval enables and verifies a live server adapter.
+export SCOUTNET_RECONCILIATION_MODE="${SCOUTNET_RECONCILIATION_MODE:-fixture}"
 export DO_NOT_TRACK="${DO_NOT_TRACK:-1}"
 
 # Supabase's pgTAP runner expects this exact project-scoped network name.
@@ -24,4 +30,8 @@ if ! docker network inspect "$network_name" >/dev/null 2>&1; then
     "$network_name" >/dev/null
 fi
 
-exec ./node_modules/.bin/supabase start --network-id "$network_name"
+# The CLI prints disposable local credentials after startup. They are not
+# useful for this wrapper's health output and must not leak into CI/agent logs.
+./node_modules/.bin/supabase start --network-id "$network_name" 2>&1 |
+  sed -E \
+    's/^([[:space:]]*"([^"]*(KEY|SECRET|TOKEN|PASSWORD)[^"]*|DB_URL)":).*/\1 "[redacted]",/'

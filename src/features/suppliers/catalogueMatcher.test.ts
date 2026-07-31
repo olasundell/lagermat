@@ -161,6 +161,7 @@ describe("deterministic catalogue matching", () => {
         ...ingredient,
         canonical_key: "ingredient-krossade-tomater",
         display_name: "Krossade tomater",
+        category: "Grönt",
       },
       products: [product({
         display_name: "Krossade tomater 3-p 1170g ICA",
@@ -172,6 +173,48 @@ describe("deterministic catalogue matching", () => {
 
     expect(result.status).toBe("safe");
     expect(result.selected?.score.total).toBe(100);
+  });
+
+  it("klassar den exakta ICA-artikeln som säker framför en finkrossad variant", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-krossade-tomater",
+        display_name: "Krossade tomater",
+        category: "Grönt",
+      },
+      products: [
+        product({
+          id: "exact",
+          supplier_article_number: "2141387",
+          display_name: "Krossade tomater 3-p 1170g ICA",
+          brand: "ICA",
+          package_amount: 1.17,
+          package_unit: "kg",
+          category: "Tomatkonserver",
+        }),
+        product({
+          id: "finely-crushed",
+          supplier_article_number: "2154590",
+          display_name: "Finkrossade tomater 390g Cirio",
+          brand: "Cirio",
+          package_amount: 0.39,
+          package_unit: "kg",
+          category: "Tomatkonserver",
+        }),
+      ],
+    }));
+
+    expect(result.status).toBe("safe");
+    expect(result.reason).toBe("unique_safe_candidate");
+    expect(result.selected?.product.id).toBe("exact");
+    expect(result.margin_to_next).toBeGreaterThanOrEqual(8);
+    expect(result.candidates[1]?.explanations).toContainEqual(
+      expect.objectContaining({
+        code: "extra_product_modifier",
+        kind: "warning",
+      }),
+    );
   });
 
   it("gör exakta mass- och volymkonverteringar med Decimal", () => {
@@ -196,6 +239,88 @@ describe("deterministic catalogue matching", () => {
     }));
     expect(volume.status).toBe("safe");
     expect(volume.selected?.amount_per_purchase_unit).toBe(0.5);
+  });
+
+  it("använder uttryckligt innerantal för styckvaror men infererar aldrig styck från enbart vikt", () => {
+    const counted = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Hamburgare (90g)",
+        unit: "st",
+      },
+      products: [product({
+        display_name: "Hamburgare 90g 6-p Scan",
+        brand: "Scan",
+        package_amount: 0.54,
+        package_unit: "kg",
+        packaging_metadata: {
+          inner_unit_count: 6,
+          inner_unit_label: "stycken",
+        },
+      })],
+    }));
+    expect(counted.status).toBe("safe");
+    expect(counted.selected?.amount_per_purchase_unit).toBe(6);
+    expect(counted.selected?.explanations).toContainEqual(
+      expect.objectContaining({ code: "verified_inner_count" }),
+    );
+
+    const uncounted = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Hamburgare (90g)",
+        unit: "st",
+      },
+      products: [product({
+        display_name: "Hamburgare 540g Scan",
+        brand: "Scan",
+        package_amount: 0.54,
+        package_unit: "kg",
+      })],
+    }));
+    expect(uncounted.status).toBe("no_match");
+    expect(uncounted.candidates[0]?.explanations).toContainEqual(
+      expect.objectContaining({ code: "incompatible_unit" }),
+    );
+
+    const unlabelled = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Hamburgare (90g)",
+        unit: "st",
+      },
+      products: [product({
+        display_name: "Hamburgare 90g 6-p Scan",
+        brand: "Scan",
+        package_amount: 0.54,
+        package_unit: "kg",
+        packaging_metadata: {
+          inner_unit_count: 6,
+        },
+      })],
+    }));
+    expect(unlabelled.status).toBe("no_match");
+    expect(unlabelled.candidates[0]?.explanations).toContainEqual(
+      expect.objectContaining({ code: "incompatible_unit" }),
+    );
+  });
+
+  it("konverterar matskedar och teskedar som exakta volymenheter", () => {
+    const tablespoons = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Sötsur sås",
+        unit: "msk",
+      },
+      products: [product({
+        display_name: "Sötsur sås 300ml ICA",
+        brand: "ICA",
+        package_amount: 0.3,
+        package_unit: "l",
+      })],
+    }));
+    expect(tablespoons.status).toBe("safe");
+    expect(tablespoons.selected?.amount_per_purchase_unit).toBe(20);
   });
 
   it("kan ge en säker synonymträff men lämnar en konverterad synonym till granskning", () => {
@@ -225,13 +350,41 @@ describe("deterministic catalogue matching", () => {
     expect(convertedUnit.candidates[0]?.score.total).toBe(93);
   });
 
-  it("kräver åtta poängs marginal och sorterar lika kandidater stabilt", () => {
+  it("kräver åtta poängs marginal mellan verkligt olika produktmatchningar", () => {
     const products = [
-      product({ id: "product-b", supplier_article_number: "B-200" }),
-      product({ id: "product-a", supplier_article_number: "A-100" }),
+      product({
+        id: "product-b",
+        supplier_article_number: "B-200",
+        display_name: "Solrosolja 1 l",
+        package_amount: 1,
+        package_unit: "l",
+      }),
+      product({
+        id: "product-a",
+        supplier_article_number: "A-100",
+        display_name: "Rapsolja 1 l",
+        package_amount: 1,
+        package_unit: "l",
+      }),
     ];
-    const result = matchSupplierCatalogue(input({ products }));
-    const reversed = matchSupplierCatalogue(input({ products: [...products].reverse() }));
+    const matcherInput = {
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-matolja",
+        display_name: "Matolja",
+        unit: "l",
+      },
+      products,
+      synonyms: [
+        { ingredient_name: "matolja", supplier_name: "rapsolja" },
+        { ingredient_name: "matolja", supplier_name: "solrosolja" },
+      ],
+    };
+    const result = matchSupplierCatalogue(input(matcherInput));
+    const reversed = matchSupplierCatalogue(input({
+      ...matcherInput,
+      products: [...products].reverse(),
+    }));
 
     expect(result.status).toBe("review");
     expect(result.reason).toBe("safe_margin_not_met");
@@ -244,6 +397,92 @@ describe("deterministic catalogue matching", () => {
       "product-a",
       "product-b",
     ]);
+  });
+
+  it.each([
+    ["Havregryn", "ingredient-havregryn"],
+    ["Tacosalsa (medium)", "ingredient-tacosalsa-medium"],
+    ["Jasminris", "ingredient-jasminris"],
+    ["Äppelmos", "ingredient-appelmos"],
+  ])(
+    "auto-matchar likvärdiga ICA-varianter av %s och väljer bästa verifierade erbjudandet",
+    (ingredientName, canonicalKey) => {
+      const smallId = `${canonicalKey}-small`;
+      const largeId = `${canonicalKey}-large`;
+      const result = matchSupplierCatalogue(input({
+        ingredient: {
+          ...ingredient,
+          canonical_key: canonicalKey,
+          display_name: ingredientName,
+        },
+        accounts: [account({
+          provider_key: "ica",
+          provider_location_id: "1004021",
+          display_name: "ICA Kvantum Sickla",
+        })],
+        products: [
+          product({
+            id: smallId,
+            supplier_article_number: `${canonicalKey}-500`,
+            display_name: `ICA Basic ${ingredientName} 500 g`,
+            brand: "ICA Basic",
+            package_amount: 0.5,
+          }),
+          product({
+            id: largeId,
+            supplier_article_number: `${canonicalKey}-1000`,
+            display_name: `${ingredientName} 1 kg ICA`,
+            brand: "ICA",
+            package_amount: 1,
+          }),
+        ],
+        offers: [
+          offer({
+            id: `${smallId}-offer`,
+            supplier_product_id: smallId,
+            price: 15,
+          }),
+          offer({
+            id: `${largeId}-offer`,
+            supplier_product_id: largeId,
+            price: 25,
+          }),
+        ],
+      }));
+
+      expect(result.status).toBe("safe");
+      expect(result.reason).toBe("unique_safe_candidate");
+      expect(result.margin_to_next).toBeNull();
+      expect(result.selected?.product.id).toBe(largeId);
+      expect(result.selected?.score.total).toBe(100);
+    },
+  );
+
+  it("behåller en exakt Tacosalsa-träff säker när receptkontexten inte tillför någon poäng", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-tacosalsa-medium",
+        display_name: "Tacosalsa (medium)",
+        recipe_names: ["Tacos"],
+      },
+      accounts: [account({
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      })],
+      products: [product({
+        display_name: "Tacosalsa Medium 230g ICA",
+        brand: "ICA",
+        package_amount: 0.23,
+      })],
+    }));
+
+    expect(result.status).toBe("safe");
+    expect(result.selected?.score.total).toBe(100);
+    expect(result.candidates[0]?.explanations).not.toContainEqual(
+      expect.objectContaining({ code: "context_assumption" }),
+    );
   });
 
   it("ger fuzzy tokenlikhet till granskning men avvisar orelaterade namn", () => {
@@ -273,6 +512,278 @@ describe("deterministic catalogue matching", () => {
     expect(result.status).toBe("no_match");
     expect(result.reason).toBe("confidence_below_review_threshold");
     expect(result.candidates[0]?.score.name).toBe(0);
+  });
+
+  it("använder ett verifierat ICA-sökresultat för högre recall men aldrig som en säker träff", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Köttfärs",
+      },
+      products: [product({
+        display_name: "Nötfärs Färsk 12% 1kg ICA",
+        brand: "ICA",
+        source_metadata: {
+          source: "ica_public_webshop",
+          store_id: "1004021",
+          ica_search_matches: [{ query: "Köttfärs", rank: 0 }],
+        },
+      })],
+    }));
+
+    expect(result.status).toBe("review");
+    expect(result.candidates[0]?.score.total).toBeGreaterThanOrEqual(70);
+    expect(result.candidates[0]?.score.total).toBeLessThan(96);
+    expect(result.candidates[0]?.explanations).toContainEqual(
+      expect.objectContaining({ code: "ica_search_result" }),
+    );
+
+    const unverified = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Köttfärs",
+      },
+      products: [product({
+        display_name: "Nötfärs Färsk 12% 1kg ICA",
+        brand: "ICA",
+        source_metadata: {
+          source: "ica_public_webshop",
+          store_id: "1009999",
+          ica_search_matches: [{ query: "Köttfärs", rank: 0 }],
+        },
+      })],
+    }));
+    expect(unverified.status).toBe("no_match");
+
+    const unrelatedRunnerUp = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Gurka",
+        category: "Grönt",
+      },
+      products: [product({
+        display_name: "Morötter 2kg Klass 1 ICA",
+        package_amount: 2,
+        brand: "ICA",
+        category: "Frukt & Grönt > Rotfrukter > Morötter",
+        source_metadata: {
+          source: "ica_public_webshop",
+          store_id: "1004021",
+          ica_search_matches: [{ query: "Gurka", rank: 1 }],
+        },
+      })],
+    }));
+    expect(unrelatedRunnerUp.status).toBe("no_match");
+    expect(unrelatedRunnerUp.candidates[0]?.score.total).toBeLessThan(70);
+  });
+
+  it("avvisar majs i majskakor som en annan produkttyp", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-majs",
+        display_name: "Majs",
+        recipe_names: ["Tacos"],
+      },
+      products: [product({
+        display_name: "Majskakor Paprika 125g Friggs",
+        package_amount: 0.125,
+        category: "Bröd & Kakor > Knäckebröd & Skorpor > Riskakor",
+      })],
+    }));
+
+    expect(result.status).toBe("no_match");
+    expect(result.reason).toBe("no_eligible_candidate");
+    expect(result.candidates[0]?.explanations).toContainEqual(
+      expect.objectContaining({
+        kind: "blocker",
+        code: "conflicting_product_kind",
+      }),
+    );
+  });
+
+  it("förstår svenska sammansättningar och använder receptet för rätt sorts dressing", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-dressing",
+        display_name: "Dressing",
+        recipe_names: ["Hamburgare"],
+      },
+      products: [
+        product({
+          id: "hot-dog-dressing",
+          supplier_article_number: "ICA-HOT-DOG",
+          display_name: "Hot dog Dressing 230g Kavli",
+          brand: "Kavli",
+          package_amount: 0.23,
+          package_unit: "kg",
+          category: "Skafferi > Såser > Dressing",
+        }),
+        product({
+          id: "hamburger-dressing",
+          supplier_article_number: "ICA-HAMBURGER",
+          display_name: "Hamburgerdressing 230g ICA",
+          brand: "ICA",
+          package_amount: 0.23,
+          package_unit: "kg",
+          category: "Skafferi > Såser > Hamburgerdressing",
+        }),
+      ],
+    }));
+
+    expect(result.status).toBe("review");
+    expect(result.candidates[0]?.product.id).toBe("hamburger-dressing");
+    expect(result.candidates[0]?.explanations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "compound_name" }),
+      expect.objectContaining({ code: "recipe_context_match" }),
+    ]));
+  });
+
+  it("föredrar konserverad majs framför fryst majs för tacos och sallad utan att auto-godkänna antagandet", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-majs",
+        display_name: "Majs",
+        recipe_names: ["Pastasallad med pesto"],
+      },
+      products: [
+        product({
+          id: "frozen-corn",
+          supplier_article_number: "ICA-FROZEN-CORN",
+          display_name: "Majs 500g Apetit",
+          brand: "Apetit",
+          package_amount: 0.5,
+          package_unit: "kg",
+          category: "Fryst > Frysta grönsaker > Frysta grönsaker",
+        }),
+        product({
+          id: "canned-corn",
+          supplier_article_number: "ICA-CANNED-CORN",
+          display_name: "Majs 3p 450g ICA",
+          brand: "ICA",
+          package_amount: 0.45,
+          package_unit: "kg",
+          category: "Skafferi > Grönsakskonserver > Majs",
+        }),
+      ],
+    }));
+
+    expect(result.status).toBe("review");
+    expect(result.candidates[0]?.product.id).toBe("canned-corn");
+    expect(result.candidates[0]?.explanations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "context_assumption", kind: "warning" }),
+    ]));
+    expect(result.candidates[1]?.explanations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "category_context_conflict" }),
+    ]));
+  });
+
+  it("blockerar sammansättningar som egentligen är andra rätter eller produkttyper", () => {
+    const cases = [
+      ["Köttfärs", "Köttfärspaj 240g Dafgårds"],
+      ["Peppar", "Örtte Pepparmynta 25-p Friggs"],
+      ["Tomat", "Tomatpuré 360g ICA"],
+      ["Hamburgare", "Hamburgerficka Barbeque 24-p ICA"],
+      ["Hamburgare (90g)", "Hamburgerficka Barbeque 24-p ICA"],
+      ["Morot", "Kål- och Morotsmix 250g ICA"],
+      ["Tacokrydda", "Taco Tubs 145g Santa Maria"],
+      ["isbergssallad", "Salladsost Tärnad i olja 300g ICA Basic"],
+    ] as const;
+
+    for (const [ingredientName, productName] of cases) {
+      const result = matchSupplierCatalogue(input({
+        ingredient: {
+          ...ingredient,
+          display_name: ingredientName,
+          category: ingredientName === "Tomat" ? "Frukt & Grönt" : null,
+        },
+        products: [product({
+          display_name: productName,
+          package_amount: 1,
+          package_unit: "kg",
+        })],
+      }));
+
+      expect(result.status, `${ingredientName} → ${productName}`).toBe("no_match");
+    }
+  });
+
+  it("kräver receptstöd när en generell råvara bara är suffix i produktnamnet", () => {
+    const salad = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Sallad",
+        recipe_names: ["Tacos"],
+      },
+      products: [product({ display_name: "Gurksallad 200g ICA" })],
+    }));
+    expect(salad.status).toBe("no_match");
+    expect(salad.candidates[0]?.explanations).toContainEqual(
+      expect.objectContaining({ code: "conflicting_product_kind" }),
+    );
+
+    const saladCheese = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Sallad",
+        recipe_names: ["Tacos"],
+      },
+      products: [product({ display_name: "Salladsost 200g ICA Basic" })],
+    }));
+    expect(saladCheese.status).toBe("no_match");
+
+    const dressing = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        display_name: "Dressing",
+        recipe_names: ["Hamburgare"],
+      },
+      products: [product({ display_name: "Hamburgerdressing 230g ICA" })],
+    }));
+    expect(dressing.status).toBe("review");
+    expect(dressing.candidates[0]?.explanations).not.toContainEqual(
+      expect.objectContaining({ code: "conflicting_product_kind" }),
+    );
+  });
+
+  it("använder inköpskategorin för att föredra färska tomater framför tomatkonserv", () => {
+    const result = matchSupplierCatalogue(input({
+      ingredient: {
+        ...ingredient,
+        canonical_key: "ingredient-tomater",
+        display_name: "Tomater",
+        category: "Frukt & Grönt",
+        recipe_names: ["Tacos"],
+      },
+      products: [
+        product({
+          id: "canned-tomatoes",
+          supplier_article_number: "ICA-CANNED-TOMATOES",
+          display_name: "Tomater hela 390g ICA",
+          brand: "ICA",
+          package_amount: 0.39,
+          package_unit: "kg",
+          category: "Skafferi > Grönsakskonserver > Tomatkonserver",
+        }),
+        product({
+          id: "fresh-tomatoes",
+          supplier_article_number: "ICA-FRESH-TOMATOES",
+          display_name: "Tomater 500g ICA",
+          brand: "ICA",
+          package_amount: 0.5,
+          package_unit: "kg",
+          category: "Frukt & Grönt > Grönsaker > Tomat",
+        }),
+      ],
+    }));
+
+    expect(result.status).toBe("review");
+    expect(result.candidates[0]?.product.id).toBe("fresh-tomatoes");
+    expect(result.candidates[1]?.explanations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "category_context_conflict" }),
+    ]));
   });
 
   it("blockerar inkompatibla dimensioner trots exakt namn", () => {
@@ -439,7 +950,7 @@ describe("deterministic catalogue matching", () => {
     expect(cheap.selected?.score).toEqual(expensive.selected?.score);
   });
 
-  it("använder lager och pris enbart som stabil utslagsgivare", () => {
+  it("använder lager och pris enbart som stabil utslagsgivare mellan likvärdiga artiklar", () => {
     const products = [
       product({ id: "expensive", supplier_article_number: "EXP" }),
       product({ id: "cheap", supplier_article_number: "CHEAP" }),
@@ -452,7 +963,9 @@ describe("deterministic catalogue matching", () => {
       ],
     }));
 
-    expect(result.status).toBe("review");
+    expect(result.status).toBe("safe");
+    expect(result.selected?.product.id).toBe("cheap");
+    expect(result.margin_to_next).toBeNull();
     expect(result.candidates.map((candidate) => candidate.product.id)).toEqual([
       "cheap",
       "expensive",
@@ -502,8 +1015,8 @@ describe("deterministic catalogue matching", () => {
       ],
     }));
 
-    expect(result.status).toBe("review");
-    expect(result.margin_to_next).toBe(0);
+    expect(result.status).toBe("safe");
+    expect(result.margin_to_next).toBeNull();
     expect(result.candidates[0]?.product.id).toBe("three-pack");
     expect(result.candidates[0]?.score).toEqual(result.candidates[1]?.score);
   });

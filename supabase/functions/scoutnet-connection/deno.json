@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "@scouterna/scoutnet": "npm:@scouterna/scoutnet@0.3.26",
+    "@supabase/functions-js": "jsr:@supabase/functions-js@2.111.0",
+    "@supabase/server": "npm:@supabase/server@1.4.1"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}

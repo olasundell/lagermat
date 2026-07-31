@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(50);
+select plan(65);
 
 -- 1
 select is(
@@ -1422,6 +1422,444 @@ select ok(
   ),
   'publishing a new matcher version removes older open candidates from the queue'
 );
+
+update public.calculation_revisions
+set status = 'superseded'
+where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  and camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  and status = 'current';
+
+insert into public.calculation_revisions (
+  id,
+  organization_id,
+  camp_id,
+  revision_number,
+  status,
+  input_digest,
+  problem_summary,
+  calculated_by
+) values (
+  'ca000000-0000-4000-8000-000000000001',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  (
+    select coalesce(max(revision_number), 0) + 1
+    from public.calculation_revisions
+    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+      and camp_id = 'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+  ),
+  'current',
+  repeat('c', 64),
+  '{}'::jsonb,
+  '11111111-1111-1111-1111-111111111111'
+);
+
+insert into public.calculation_lines (
+  id,
+  organization_id,
+  camp_id,
+  calculation_revision_id,
+  meal_id,
+  ingredient_name,
+  exact_amount,
+  unit,
+  trace,
+  line_key,
+  camp_recipe_copy_id,
+  ingredient_key
+) values
+  (
+    'ca100000-0000-4000-8000-000000000001',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca000000-0000-4000-8000-000000000001',
+    'a2000000-0000-0000-0000-000000000019',
+    'Krossade tomater',
+    1,
+    'kg',
+    jsonb_build_object(
+      'recipe_name', 'Tacos',
+      'dietary_rule', 'exclude',
+      'dietary_tag_label', 'Laktos'
+    ),
+    'semantic-context:exclude',
+    'a4000000-0000-0000-0000-000000000004',
+    'semantic-context:krossade-tomater'
+  ),
+  (
+    'ca100000-0000-4000-8000-000000000002',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca000000-0000-4000-8000-000000000001',
+    'a2000000-0000-0000-0000-000000000019',
+    'Krossade tomater',
+    0.5,
+    'kg',
+    jsonb_build_object(
+      'recipe_name', 'Tacos',
+      'dietary_rule', 'only',
+      'dietary_tag_label', 'Gluten'
+    ),
+    'semantic-context:only',
+    'a4000000-0000-0000-0000-000000000004',
+    'semantic-context:krossade-tomater'
+  );
+
+insert into public.supply_list_items (
+  id,
+  organization_id,
+  camp_id,
+  supply_list_id,
+  category,
+  item_name,
+  required_amount,
+  required_unit,
+  ordered_amount,
+  ordered_unit,
+  package_note,
+  comment,
+  completed,
+  updated_by,
+  item_key,
+  source_line_keys,
+  source_present,
+  manually_moved
+) values (
+  'ca200000-0000-4000-8000-000000000001',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'a2000000-0000-0000-0000-000000000006',
+  'Konserver',
+  'Krossade tomater',
+  1.5,
+  'kg',
+  null,
+  null,
+  null,
+  'Köp på burk',
+  false,
+  '11111111-1111-1111-1111-111111111111',
+  'semantic-context:krossade-tomater',
+  '["semantic-context:exclude", "semantic-context:only"]'::jsonb,
+  true,
+  false
+);
+
+-- 51
+select ok(
+  (
+    select relation.relrowsecurity
+    from pg_class as relation
+    join pg_namespace as namespace
+      on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname = 'supplier_semantic_match_cache'
+  )
+  and not has_table_privilege(
+    'authenticated',
+    'public.supplier_semantic_match_cache',
+    'SELECT,INSERT,UPDATE,DELETE'
+  ),
+  'the semantic match cache is protected by RLS and has no direct Data API privileges'
+);
+
+-- 52
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.save_supplier_semantic_match_cache(uuid,uuid,text,text,text,text,text,text,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.get_supplier_semantic_match_cache(uuid,uuid,text,text,text,text)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'authenticated',
+    'public.get_supplier_semantic_match_context(uuid,uuid,text[])',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon',
+    'public.get_supplier_semantic_match_context(uuid,uuid,text[])',
+    'EXECUTE'
+  ),
+  'browser sessions can read trusted context but cannot read or poison the semantic cache'
+);
+
+-- 53
+select ok(
+  (
+    select bool_and(
+      procedure.prosecdef
+      and 'search_path=""' = any(procedure.proconfig)
+    )
+    from pg_proc as procedure
+    where procedure.oid in (
+      'public.get_supplier_semantic_match_cache(uuid,uuid,text,text,text,text)'::regprocedure,
+      'public.save_supplier_semantic_match_cache(uuid,uuid,text,text,text,text,text,text,jsonb)'::regprocedure,
+      'public.get_supplier_semantic_match_context(uuid,uuid,text[])'::regprocedure
+    )
+  ),
+  'semantic support RPCs are security-definer functions with empty search paths'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '11111111-1111-1111-1111-111111111111',
+  true
+);
+
+-- 54
+select is(
+  public.get_supplier_semantic_match_context(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+  ) -> 0 ->> 'displayName',
+  'Krossade tomater',
+  'trusted semantic context uses the canonical server-side ingredient name'
+);
+
+-- 55
+select is(
+  public.get_supplier_semantic_match_context(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+  ) -> 0 ->> 'requiredUnit',
+  'kg',
+  'trusted semantic context uses the canonical server-side unit'
+);
+
+-- 56
+select is(
+  public.get_supplier_semantic_match_context(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+  ) -> 0 -> 'recipeNames',
+  '["Tacos"]'::jsonb,
+  'trusted semantic context includes current calculation recipe names'
+);
+
+-- 57
+select is(
+  public.get_supplier_semantic_match_context(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+  ) -> 0 -> 'dietaryLabels',
+  '["Gluten"]'::jsonb,
+  'only-alternative dietary labels are requirements while exclusions are not'
+);
+
+-- 58
+select ok(
+  (
+    public.get_supplier_semantic_match_context(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      'caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+    ) -> 0
+  ) @> jsonb_build_object(
+    'category', 'Konserver',
+    'comment', 'Köp på burk'
+  ),
+  'trusted semantic context includes the current supply-list category and comment'
+);
+
+-- 59
+select throws_ok(
+  $query$
+    select *
+    from public.supplier_semantic_match_cache
+  $query$,
+  '42501',
+  'permission denied for table supplier_semantic_match_cache',
+  'authenticated callers cannot read semantic cache rows directly'
+);
+
+-- 60
+select throws_ok(
+  $query$
+    select public.get_supplier_semantic_match_context(
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2',
+      'cbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2',
+      array[public.canonical_ingredient_key('Krossade tomater', 'kg')]
+    )
+  $query$,
+  '42501',
+  'Active organization membership required',
+  'a member cannot read semantic context through another organisation'
+);
+
+-- 61
+select throws_ok(
+  $query$
+    select public.save_supplier_semantic_match_cache(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      '11111111-1111-4111-8111-111111111111',
+      repeat('a', 64),
+      repeat('b', 64),
+      repeat('c', 64),
+      'supplier-product-rerank-v1',
+      'gpt-5-mini',
+      'netlify-ai-gateway',
+      jsonb_build_object(
+        'decision', 'ambiguous',
+        'selectedProductId', null,
+        'confidence', 0.5,
+        'explanation', 'Kandidaterna måste granskas.'
+      )
+    )
+  $query$,
+  '42501',
+  'permission denied for function save_supplier_semantic_match_cache',
+  'authenticated browser sessions cannot write semantic cache entries'
+);
+
+reset role;
+
+-- 62
+select is(
+  public.supplier_product_expected_amount(
+    0.32,
+    'kg',
+    '{"inner_unit_count":8,"inner_unit_label":"stycken"}'::jsonb,
+    'st'
+  ),
+  8::numeric,
+  'an explicit labelled inner count is a server-verifiable count'
+);
+
+-- 63
+select is(
+  public.supplier_product_expected_amount(
+    0.32,
+    'kg',
+    '{"inner_unit_count":8}'::jsonb,
+    'st'
+  ),
+  null::numeric,
+  'the server never treats an unlabelled count or package mass as pieces'
+);
+
+insert into public.canonical_ingredients (
+  organization_id,
+  canonical_key,
+  display_name,
+  unit
+) values (
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  public.canonical_ingredient_key('Tortillabröd', 'st'),
+  'Tortillabröd',
+  'st'
+) on conflict do nothing;
+
+insert into public.supplier_products (
+  id,
+  organization_id,
+  supplier_account_id,
+  supplier_article_number,
+  display_name,
+  purchase_unit,
+  package_amount,
+  package_unit,
+  minimum_order_units,
+  active,
+  product_data_source,
+  source_updated_at,
+  packaging_metadata,
+  created_by
+) values (
+  'ca300000-0000-4000-8000-000000000001',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  current_setting('scoutmat_test.supplier_account_id')::uuid,
+  'INNER-COUNT-8',
+  'Tortillabröd 8-p 320g',
+  'förpackning',
+  0.32,
+  'kg',
+  1,
+  true,
+  'supplier_import',
+  now(),
+  '{"inner_unit_count":8,"inner_unit_label":"stycken"}'::jsonb,
+  '11111111-1111-1111-1111-111111111111'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '11111111-1111-1111-1111-111111111111',
+  true
+);
+
+-- 64
+select is(
+  (
+    public.replace_supplier_match_candidates(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      current_setting('scoutmat_test.supplier_account_id')::uuid,
+      'deterministic-inner-count-test',
+      jsonb_build_array(jsonb_build_object(
+        'canonical_key',
+          public.canonical_ingredient_key('Tortillabröd', 'st'),
+        'supplier_product_id',
+          'ca300000-0000-4000-8000-000000000001',
+        'status', 'safe',
+        'score', 100,
+        'signals', '{}'::jsonb,
+        'product_fingerprint',
+          (
+            select product_fingerprint
+            from public.supplier_products
+            where id = 'ca300000-0000-4000-8000-000000000001'
+          ),
+        'required_unit', 'st',
+        'amount_per_purchase_unit', 8
+      ))
+    ) ->> 'inserted_candidates'
+  )::integer,
+  1,
+  'safe candidate replacement revalidates an explicit eight-pack'
+);
+
+select set_config(
+  'scoutmat_test.inner_count_candidate_id',
+  (
+    select id::text
+    from public.supplier_match_candidates
+    where supplier_product_id =
+      'ca300000-0000-4000-8000-000000000001'
+      and matcher_version = 'deterministic-inner-count-test'
+      and status = 'safe'
+  ),
+  true
+);
+
+-- 65
+select is(
+  (
+    public.approve_safe_supplier_match_candidates(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      current_setting('scoutmat_test.supplier_account_id')::uuid,
+      'deterministic-inner-count-test',
+      array[
+        current_setting(
+          'scoutmat_test.inner_count_candidate_id'
+        )::uuid
+      ]
+    ) ->> 'approved_candidates'
+  )::integer,
+  1,
+  'safe batch approval preserves the explicit eight-piece purchase quantity'
+);
+
+reset role;
 
 select * from finish();
 rollback;

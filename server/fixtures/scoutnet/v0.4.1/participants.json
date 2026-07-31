@@ -1,0 +1,242 @@
+{
+  "object": {
+    "participants": {
+      "990001": {
+        "attended": true,
+        "cancelled": false,
+        "confirmed": true,
+        "confirmed_at": "2026-06-01T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990001,
+        "group_registration": false,
+        "first_name": "Testperson",
+        "last_name": "Alfa",
+        "registration_date": "2026-05-01T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "patrol_id": 8801,
+          "patrol_name": "Testpatrullen",
+          "troop_id": 8701,
+          "troop_name": "Testavdelning Alfa",
+          "group_id": 8601,
+          "group_name": "Syntetiska scoutkåren",
+          "district_id": 8501,
+          "district_name": "Testdistriktet",
+          "region_id": 8401,
+          "region_name": "Testregionen",
+          "organisation_id": 8301,
+          "organisation_name": "Syntetiska organisationen"
+        },
+        "group_registration_info": [],
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-05T18:00:00+02:00",
+          "1103": null,
+          "1104": null,
+          "1201": null,
+          "1301": "1"
+        }
+      },
+      "990002": {
+        "attended": false,
+        "cancelled": true,
+        "confirmed": true,
+        "confirmed_at": "2026-06-02T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990002,
+        "group_registration": false,
+        "first_name": "Testperson",
+        "last_name": "Avbokad",
+        "registration_date": "2026-05-02T09:00:00+02:00",
+        "cancelled_date": "2026-07-01T14:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "patrol_id": 8801,
+          "patrol_name": "Testpatrullen",
+          "troop_id": 8701,
+          "troop_name": "Testavdelning Alfa",
+          "group_id": 8601,
+          "group_name": "Syntetiska scoutkåren"
+        },
+        "group_registration_info": [],
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-05T18:00:00+02:00",
+          "1201": null
+        }
+      },
+      "990003": {
+        "attended": false,
+        "cancelled": false,
+        "confirmed": false,
+        "member_status": 1,
+        "member_no": 990003,
+        "group_registration": false,
+        "first_name": "Testperson",
+        "last_name": "Obekräftad",
+        "registration_date": "2026-05-03T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "troop_id": 8702,
+          "troop_name": "Testavdelning Beta",
+          "group_id": 8601,
+          "group_name": "Syntetiska scoutkåren"
+        },
+        "group_registration_info": [],
+        "questions": {
+          "1101": "2026-08-03T08:00:00+02:00",
+          "1102": "2026-08-05T18:00:00+02:00",
+          "1201": null
+        }
+      },
+      "990004": {
+        "attended": false,
+        "cancelled": false,
+        "confirmed": true,
+        "confirmed_at": "2026-06-04T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990004,
+        "group_registration": true,
+        "first_name": "Testperson",
+        "last_name": "Gruppfallback",
+        "registration_date": "2026-05-04T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": [],
+        "group_registration_info": {
+          "group_id": 8602,
+          "patrol_id": 8802,
+          "group_name": "Syntetiska gästkåren",
+          "org_id": 8302,
+          "org_name": "Syntetiska gästorganisationen",
+          "district_id": 8502,
+          "district_name": "Gästdistriktet",
+          "patrol_name": "Gästpatrullen"
+        },
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-04T18:00:00+02:00",
+          "1201": null,
+          "1301": "2"
+        }
+      },
+      "990005": {
+        "attended": false,
+        "cancelled": false,
+        "confirmed": true,
+        "confirmed_at": "2026-06-05T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990005,
+        "group_registration": false,
+        "first_name": "Testperson",
+        "last_name": "Tvåintervall",
+        "registration_date": "2026-05-05T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "patrol_id": 8801,
+          "patrol_name": "Testpatrullen",
+          "troop_id": 8701,
+          "troop_name": "Testavdelning Alfa",
+          "group_id": 8601,
+          "group_name": "Syntetiska scoutkåren"
+        },
+        "group_registration_info": [],
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-03T12:00:00+02:00",
+          "1103": "2026-08-04T08:00:00+02:00",
+          "1104": "2026-08-05T18:00:00+02:00",
+          "1201": null
+        }
+      },
+      "990006": {
+        "attended": false,
+        "cancelled": false,
+        "confirmed": true,
+        "confirmed_at": "2026-06-06T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990006,
+        "group_registration": false,
+        "first_name": "Testperson",
+        "last_name": "Specialkost",
+        "registration_date": "2026-05-06T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "troop_id": 8702,
+          "troop_name": "Testavdelning Beta",
+          "group_id": 8601,
+          "group_name": "Syntetiska scoutkåren"
+        },
+        "group_registration_info": [],
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-05T18:00:00+02:00",
+          "1201": "Syntetiskt testvärde: gluten och mjölkprotein"
+        }
+      },
+      "990007": {
+        "attended": false,
+        "cancelled": false,
+        "confirmed": true,
+        "confirmed_at": "2026-06-07T10:00:00+02:00",
+        "member_status": 1,
+        "member_no": 990007,
+        "group_registration": true,
+        "first_name": "Testperson",
+        "last_name": "Gruppprioritet",
+        "registration_date": "2026-05-07T09:00:00+02:00",
+        "fee_id": 1,
+        "primary_membership_info": {
+          "patrol_id": 8899,
+          "patrol_name": "Primärpatrullen som inte ska användas",
+          "troop_id": 8799,
+          "troop_name": "Primäravdelningen som inte ska användas",
+          "group_id": 8699,
+          "group_name": "Primärkåren som inte ska användas"
+        },
+        "group_registration_info": {
+          "group_id": 8603,
+          "patrol_id": 8803,
+          "group_name": "Syntetiska projektkåren",
+          "org_id": 8303,
+          "org_name": "Syntetiska projektorganisationen",
+          "district_id": 8503,
+          "district_name": "Projektdistriktet",
+          "patrol_name": "Projektpatrullen"
+        },
+        "questions": {
+          "1101": "2026-08-02T08:00:00+02:00",
+          "1102": "2026-08-05T18:00:00+02:00",
+          "1201": null
+        }
+      }
+    },
+    "labels": {
+      "member_status": {
+        "1": "Aktiv"
+      },
+      "sex": {},
+      "project_fee": {
+        "1": "Hela det syntetiska lägret"
+      },
+      "contact_type": {}
+    },
+    "pc_courses": {
+      "89": "Syntetisk trygghetskurs"
+    }
+  },
+  "emptyArray": {
+    "participants": [],
+    "labels": {
+      "member_status": {},
+      "sex": {},
+      "project_fee": {},
+      "contact_type": {}
+    },
+    "pc_courses": {}
+  },
+  "null": {
+    "participants": null,
+    "labels": null,
+    "pc_courses": null
+  }
+}

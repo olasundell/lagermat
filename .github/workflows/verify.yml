@@ -58,16 +58,33 @@ jobs:
       - name: Check repository hygiene and secrets
         run: node scripts/check-repository-secrets.mjs
       - name: Check deployment configuration
-        run: node scripts/verify-deployment-config.mjs && node scripts/verify-privacy-controls.mjs
+        run: |
+          node scripts/verify-deployment-config.mjs
+          node scripts/verify-hosted-environment-boundaries.mjs
+          node scripts/verify-privacy-controls.mjs
+      - name: Check locked Scoutnet contract and synthetic fixtures
+        run: pnpm scoutnet:contract:check
       - name: Type-check and lint
         run: pnpm check
       - name: Run unit tests
         run: pnpm test
-      - name: Build the hosted PWA and inspect its bundle
+      - name: Build and inspect the production-mode hosted PWA
         run: node scripts/build-netlify.mjs
         env:
+          DEMO_MODE: "false"
+          DEPLOYMENT_ENVIRONMENT: production
+          VITE_DEMO_MODE: "false"
           VITE_SUPABASE_URL: https://abcdefghijklmnopqrst.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      - name: Build and inspect the staging demo PWA
+        run: node scripts/build-netlify.mjs
+        env:
+          DEMO_MODE: "true"
+          DEPLOYMENT_ENVIRONMENT: staging
+          VITE_DEMO_MODE: "true"
+          VITE_SUPABASE_URL: https://abcdefghijklmnopqrst.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
 
   integration:
     name: Database and browser integration

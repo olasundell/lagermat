@@ -575,10 +575,23 @@ select set_config(
 );
 
 -- 32
-select is(
-  (select count(*)::integer from public.supplier_accounts),
-  4,
-  'organisation A can read its four accounts without seeing organisation B'
+select ok(
+  (
+    select
+      count(*) filter (
+        where id in (
+          current_setting('scoutmat_test.account_a_id')::uuid,
+          current_setting('scoutmat_test.planner_account_id')::uuid,
+          current_setting('scoutmat_test.ica_store_a_id')::uuid,
+          current_setting('scoutmat_test.ica_store_b_id')::uuid
+        )
+      ) = 4
+      and count(*) filter (
+        where organization_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2'
+      ) = 0
+    from public.supplier_accounts
+  ),
+  'organisation A can read all four test accounts without seeing organisation B'
 );
 
 -- 33

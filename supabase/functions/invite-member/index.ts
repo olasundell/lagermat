@@ -20,6 +20,7 @@ const secretKey = defaultHostedKey("SUPABASE_SECRET_KEYS")
   ?? Deno.env.get("SUPABASE_SECRET_KEY")
   ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const appOrigin = Deno.env.get("APP_ORIGIN")?.replace(/\/$/, "");
+const demoMode = Deno.env.get("DEMO_MODE");
 
 type OrganizationRole = "admin" | "planner";
 
@@ -92,12 +93,26 @@ async function apiFetch(path: string, init: RequestInit, apiKey: string): Promis
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
 
-  if (!supabaseUrl || !publishableKey || !secretKey || !appOrigin) {
+  if (
+    !supabaseUrl
+    || !publishableKey
+    || !secretKey
+    || !appOrigin
+    || (demoMode !== "true" && demoMode !== "false")
+  ) {
     return jsonResponse({ error: "Serverkonfigurationen är ofullständig." }, 500, origin);
   }
 
   if (origin !== appOrigin) {
     return jsonResponse({ error: "Anropet kommer från en otillåten webbplats." }, 403, origin);
+  }
+
+  if (demoMode === "true") {
+    return jsonResponse(
+      { error: "Inbjudningar är avstängda i demoläget." },
+      404,
+      origin
+    );
   }
 
   if (request.method === "OPTIONS") {

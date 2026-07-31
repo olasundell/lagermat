@@ -9,6 +9,7 @@ const ready = {
   no_service_slots: 0,
   unresolved_dietary_needs: 0,
   meals_without_recipe: 0,
+  zero_attendance_slots: 0,
   calculation_stale: false,
   can_finalize: true
 };
@@ -78,6 +79,24 @@ describe("schedule empty and reserve states", () => {
       "choose_meal_recipe",
       "calculate"
     ]);
+  });
+
+  it("never marks a planned meal with no present sources as ready", () => {
+    const zeroAttendance = {
+      ...ready,
+      zero_attendance_slots: 1,
+      can_finalize: false,
+    };
+
+    expect(scheduleIssueParts(zeroAttendance)).toContain("1 måltid saknar närvarande deltagare eller reserver");
+    expect(scheduleNextAction(zeroAttendance)).toEqual({
+      kind: "review_zero_attendance",
+      title: "1 planerad måltid saknar deltagare",
+      description: "Kontrollera närvaron eller markera tillfället som ingen servering innan underlaget används.",
+      label: "Kontrollera måltiden"
+    });
+    expect(scheduleNextAction({ ...zeroAttendance, calculation_stale: true })?.kind)
+      .toBe("review_zero_attendance");
   });
 
   it("builds every inclusive camp date independently of planned meals", () => {

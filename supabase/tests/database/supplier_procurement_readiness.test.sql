@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(36);
 
 insert into public.camps (
   id,
@@ -98,6 +98,41 @@ insert into public.meals (
   'lunch',
   'Supplier readiness lunch',
   'ready'
+);
+
+-- Keep this fixture focused on supplier readiness. The shared readiness gate
+-- now correctly rejects planned meals without either an active attendee or a
+-- positive reserve, so give the test meal one in-scope participant.
+insert into public.participants (
+  id,
+  organization_id,
+  camp_id,
+  display_name,
+  lifecycle_status
+) values (
+  'ca910000-0000-4000-8000-000000000020',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  'Supplier readiness participant',
+  'active'
+);
+
+insert into public.participant_attendance (
+  organization_id,
+  camp_id,
+  participant_id,
+  starts_at,
+  ends_at,
+  active,
+  source
+) values (
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  'ca910000-0000-4000-8000-000000000020',
+  '2026-09-01 08:00:00+02',
+  '2026-09-01 18:00:00+02',
+  true,
+  'local'
 );
 
 insert into public.calculation_revisions (
@@ -710,6 +745,341 @@ select is(
 );
 
 reset role;
+
+insert into public.supply_lists (
+  id, organization_id, camp_id, calculation_revision_id, kind, status,
+  title, range_start, range_end, list_key, source_present
+) values
+  (
+    'ca910000-0000-4000-8000-000000000020',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000005',
+    'delivery', 'active', 'Manual allocation delivery 1',
+    '2026-09-03 08:00:00+02', '2026-09-04 08:00:00+02',
+    'delivery:manual-allocation-test:1', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000021',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000005',
+    'delivery', 'active', 'Manual allocation delivery 2',
+    '2026-09-04 08:00:00+02', '2026-09-05 08:00:00+02',
+    'delivery:manual-allocation-test:2', true
+  );
+
+insert into public.supply_list_items (
+  id, organization_id, camp_id, supply_list_id, item_key, category, item_name,
+  required_amount, required_unit, source_present
+) values
+  (
+    'ca910000-0000-4000-8000-000000000022',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000006',
+    'purchase:manual-milk', 'Test', 'Manual allocation milk', 45, 'l', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000023',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000020',
+    'delivery:manual-milk:1', 'Test', 'Manual allocation milk', 17.3, 'l', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000024',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000021',
+    'delivery:manual-milk:2', 'Test', 'Manual allocation milk', 27.7, 'l', true
+  );
+
+set local role authenticated;
+
+-- 23
+select is(
+  public.apply_supply_item_mutation(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000022',
+    'ca910000-0000-4000-8000-000000000031',
+    1,
+    '{"ordered_amount":null,"ordered_unit":null,"package_note":null,"comment":null,"completed":false}'::jsonb,
+    '{"ordered_amount":45,"ordered_unit":"l"}'::jsonb
+  ) ->> 'server_version',
+  '2',
+  'an offline-capable whole-camp litre order becomes a manual source'
+);
+
+-- 24
+select is(
+  (
+    select string_agg(trim_scale(ordered_amount)::text, '|' order by id)
+      || '|' || trim_scale(sum(ordered_amount))::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024'
+    )
+  ),
+  '17|28|45',
+  '45 l is allocated once across deliveries with stable largest remainder'
+);
+
+-- 25
+select is(
+  (
+    select count(*) filter (
+      where order_source_kind = 'manual_purchase'
+        and manual_order_source_item_id = 'ca910000-0000-4000-8000-000000000022'
+        and manual_order_total_amount = 45
+        and manual_order_unit = 'l'
+    )::text || '|' || count(*)::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024'
+    )
+  ),
+  '2|2',
+  'manual delivery allocations retain the exact global-order provenance'
+);
+
+-- A new delivery row is what regeneration produces after the source order exists.
+reset role;
+
+insert into public.supply_lists (
+  id, organization_id, camp_id, calculation_revision_id, kind, status,
+  title, range_start, range_end, list_key, source_present
+) values (
+  'ca910000-0000-4000-8000-000000000025',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  'ca910000-0000-4000-8000-000000000005',
+  'delivery', 'active', 'Manual allocation regenerated delivery',
+  '2026-09-05 08:00:00+02', '2026-09-06 08:00:00+02',
+  'delivery:manual-allocation-test:regenerated', true
+);
+
+insert into public.supply_list_items (
+  id, organization_id, camp_id, supply_list_id, item_key, category, item_name,
+  required_amount, required_unit, source_present
+) values (
+  'ca910000-0000-4000-8000-000000000026',
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  'ca910000-0000-4000-8000-000000000025',
+  'delivery:manual-milk:regenerated', 'Test', 'Manual allocation milk', 5, 'l', true
+);
+
+set local role authenticated;
+
+-- 26
+select is(
+  (
+    select string_agg(trim_scale(ordered_amount)::text, '|' order by id)
+      || '|' || trim_scale(sum(ordered_amount))::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024',
+      'ca910000-0000-4000-8000-000000000026'
+    )
+  ),
+  '16|25|4|45',
+  'a regenerated delivery row reuses the global order without changing its total'
+);
+
+select set_config(
+  'scoutmat_test.manual_allocation_idempotence',
+  (select string_agg(id::text || ':' || row_version::text, '|' order by id)
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024',
+      'ca910000-0000-4000-8000-000000000026'
+    ))
+    || '|audit:' || (select count(*)::text
+      from public.audit_events
+      where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+        and event_type = 'manual_purchase_allocated_to_deliveries'),
+  true
+);
+
+reset role;
+
+-- 27
+select lives_ok(
+  $$select public.sync_manual_purchase_delivery_allocations(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    null
+  )$$,
+  'a second manual allocation sync is permitted'
+);
+
+-- 28
+select is(
+  (select string_agg(id::text || ':' || row_version::text, '|' order by id)
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024',
+      'ca910000-0000-4000-8000-000000000026'
+    ))
+    || '|audit:' || (select count(*)::text
+      from public.audit_events
+      where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+        and event_type = 'manual_purchase_allocated_to_deliveries'),
+  current_setting('scoutmat_test.manual_allocation_idempotence'),
+  'a repeated sync does not change allocated delivery row versions or create another audit event'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '11111111-1111-1111-1111-111111111111',
+  true
+);
+
+-- 29
+select is(
+  public.update_supply_item(
+    'ca910000-0000-4000-8000-000000000023', 3, 10, 'l', '', '', false
+  ),
+  4::bigint,
+  'a delivery can override its assigned share manually'
+);
+
+-- 30
+select is(
+  (
+    select string_agg(trim_scale(ordered_amount)::text, '|' order by id)
+      || '|' || trim_scale(sum(ordered_amount))::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000023',
+      'ca910000-0000-4000-8000-000000000024',
+      'ca910000-0000-4000-8000-000000000026'
+    )
+  ),
+  '10|30|5|45',
+  'a manual delivery override is deducted before the remaining global order is allocated'
+);
+
+-- 31
+select is(
+  public.update_supply_item(
+    'ca910000-0000-4000-8000-000000000022', 2, 45, 'paket', '', '', false
+  ),
+  3::bigint,
+  'a source order can be changed to an incompatible package unit'
+);
+
+-- 32
+select is(
+  (
+    select count(*) filter (where ordered_amount is null)::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000024',
+      'ca910000-0000-4000-8000-000000000026'
+    )
+  ),
+  '2',
+  'incompatible package-to-volume conversion clears automatic shares instead of inventing quantities'
+);
+
+-- 33
+select ok(
+  exists (
+    select 1
+    from public.audit_events
+    where organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
+      and event_type = 'manual_purchase_allocated_to_deliveries'
+      and entity_id = 'ca910000-0000-4000-8000-000000000001'
+  ),
+  'manual allocation changes are audited'
+);
+
+reset role;
+
+insert into public.supply_list_items (
+  id, organization_id, camp_id, supply_list_id, item_key, category, item_name,
+  required_amount, required_unit, source_present
+) values
+  (
+    'ca910000-0000-4000-8000-000000000027',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000006',
+    'purchase:manual-package-mismatch', 'Test', 'Manual package mismatch', 6, 'kg', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000028',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000020',
+    'delivery:manual-package-mismatch', 'Test', 'Manual package mismatch', 6, 'kg', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000029',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000006',
+    'purchase:manual-count-mismatch', 'Test', 'Manual count mismatch', 6, 'burk', true
+  ),
+  (
+    'ca910000-0000-4000-8000-000000000030',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+    'ca910000-0000-4000-8000-000000000001',
+    'ca910000-0000-4000-8000-000000000021',
+    'delivery:manual-count-mismatch', 'Test', 'Manual count mismatch', 6, 'burk', true
+  );
+
+set local role authenticated;
+
+-- 34
+select is(
+  public.update_supply_item(
+    'ca910000-0000-4000-8000-000000000027', 1, 6, 'paket', '', '', false
+  ),
+  2::bigint,
+  'a package order for a weight requirement remains a manual global source'
+);
+
+-- 35
+select is(
+  public.update_supply_item(
+    'ca910000-0000-4000-8000-000000000029', 1, 6, 'flaska', '', '', false
+  ),
+  2::bigint,
+  'a bottle order for a tin requirement remains a manual global source'
+);
+
+-- 36
+select is(
+  (
+    select
+      count(*) filter (
+        where order_source_kind = 'manual'
+          and ordered_amount = 6
+          and ordered_unit in ('paket', 'flaska')
+      )::text
+      || '|'
+      || count(*) filter (where ordered_amount is null)::text
+    from public.supply_list_items
+    where id in (
+      'ca910000-0000-4000-8000-000000000027',
+      'ca910000-0000-4000-8000-000000000028',
+      'ca910000-0000-4000-8000-000000000029',
+      'ca910000-0000-4000-8000-000000000030'
+    )
+  ),
+  '2|2',
+  'package-to-weight and bottle-to-tin mismatches do not create automatic delivery quantities'
+);
 
 select * from finish();
 rollback;

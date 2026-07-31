@@ -12,6 +12,14 @@ describe("special-diet summary", () => {
   });
 
   it("only calls the gate clear when at least one need was reviewed", () => {
-    expect(specialDietSummary(2, 0).kind).toBe("clear");
+    expect(specialDietSummary(2, 0)).toMatchObject({
+      kind: "clear",
+      nextStep: { to: "/matsedel", label: "Fortsätt till matsedeln" }
+    });
+  });
+
+  it("labels the final hand-off as recalculation when the review made quantities stale", () => {
+    expect(specialDietSummary(2, 0, true).nextStep)
+      .toEqual({ to: "/matsedel", label: "Räkna om mängder" });
   });
 });

@@ -29,6 +29,7 @@ import { userFacingError } from "../../lib/userFacingError";
 import type { Json } from "../../types/database";
 import { practicalSupplyAmount } from "../supplies/supplyModel";
 import { useWorkspace } from "../workspace/WorkspaceContext";
+import { recurringExtraMealPreview } from "./recurringExtraMealModel";
 import {
   emptyReserveDrafts,
   inclusiveCampDates,
@@ -40,7 +41,7 @@ import {
 } from "./scheduleViewModel";
 
 type MealType = "breakfast" | "lunch" | "dinner" | "evening" | "other";
-type MealStatus = "missing_recipe" | "diet" | "clear";
+type MealStatus = "missing_recipe" | "diet" | "no_attendance" | "clear";
 
 interface MealReserveRow {
   id: string;
@@ -122,6 +123,7 @@ interface MealDraft {
   mealType: MealType;
   recipeVersionId: string;
   reserves: ReserveDraft[];
+  repeatDates: string[];
 }
 
 const mealTypes: MealType[] = ["breakfast", "lunch", "dinner", "evening", "other"];
@@ -197,6 +199,7 @@ function traceGroups(trace: Json): number {
 
 function MealStatusIcon({ status }: { status: MealStatus }) {
   if (status === "missing_recipe") return <CircleAlert className="meal-status meal-status--missing" aria-label="Recept saknas" size={18} fill="currentColor" />;
+  if (status === "no_attendance") return <CircleAlert className="meal-status meal-status--missing" aria-label="Ingen närvarande deltagare eller reserv" size={18} fill="currentColor" />;
   if (status === "diet") return <Circle className="meal-status meal-status--diet" aria-label="Har specialkostreserver" size={13} fill="currentColor" />;
   return <Leaf className="meal-status meal-status--clear" aria-label="Recept klart" size={17} />;
 }
@@ -233,8 +236,8 @@ export function SchedulePage() {
     queryKey: ["camp-schedule", scope?.organizationId, scope?.campId],
     enabled: Boolean(scope && supabase),
     queryFn: async () => {
-      if (!scope || !supabase) return { meals: [], slots: [], recipes: [], revision: null, readiness: null };
-      const [mealResult, slotResult, recipeResult, revisionResult, readinessResult] = await Promise.all([
+      if (!scope || !supabase) return { meals: [], slots: [], recipes: [], revision: null, readiness: null, zeroAttendance: [] };
+      const [mealResult, slotResult, recipeResult, revisionResult, readinessResult, zeroAttendanceResult] = await Promise.all([
         supabase
           .from("meals")
           .select("id, meal_slot_id, starts_at, meal_type, title, status, camp_recipe_copy_id, camp_recipe_copies(id, name, source_recipe_version_id, version_key, recipe_versions(version_number)), meal_reserves(id, dietary_label, portions)")
@@ -265,16 +268,19 @@ export function SchedulePage() {
           .maybeSingle(),
         supabase
           .rpc("get_camp_readiness", { p_organization_id: scope.organizationId, p_camp_id: scope.campId })
-          .maybeSingle()
+          .maybeSingle(),
+        supabase
+          .rpc("get_zero_attendance_meals", { p_organization_id: scope.organizationId, p_camp_id: scope.campId })
       ]);
-      const error = mealResult.error ?? slotResult.error ?? recipeResult.error ?? revisionResult.error ?? readinessResult.error;
+      const error = mealResult.error ?? slotResult.error ?? recipeResult.error ?? revisionResult.error ?? readinessResult.error ?? zeroAttendanceResult.error;
       if (error) throw error;
       return {
         meals: (mealResult.data ?? []) as unknown as MealRow[],
         slots: (slotResult.data ?? []) as MealSlotRow[],
         recipes: (recipeResult.data ?? []) as RecipeOptionRow[],
         revision: revisionResult.data as unknown as CalculationRevisionRow | null,
-        readiness: readinessResult.data as ReadinessRow | null
+        readiness: readinessResult.data as ReadinessRow | null,
+        zeroAttendance: (zeroAttendanceResult.data ?? []) as { meal_id: string; meal_slot_id: string }[]
       };
     }
   });
@@ -284,6 +290,7 @@ export function SchedulePage() {
   const recipes = scheduleQuery.data?.recipes ?? [];
   const revision = scheduleQuery.data?.revision ?? null;
   const readiness = scheduleQuery.data?.readiness ?? null;
+  const zeroAttendanceMealIds = new Set((scheduleQuery.data?.zeroAttendance ?? []).map((meal) => meal.meal_id));
   const versionOptions = recipes.flatMap((recipe) => recipe.recipe_versions
     .filter((version) => version.status === "published")
     .map((version) => ({ id: version.id, label: `${recipe.name} · version ${version.version_number}` }))
@@ -319,14 +326,14 @@ export function SchedulePage() {
   // once in the banner, so it must not stamp an identical warning on every meal.
   function statusForMeal(meal: MealRow): MealStatus {
     if (!meal.camp_recipe_copy_id) return "missing_recipe";
+    if (zeroAttendanceMealIds.has(meal.id)) return "no_attendance";
     const hasSpecialReserve = visibleReserves(meal.meal_reserves)
       .some((reserve) => !["standard", "standardkost"].includes(reserve.dietary_label.toLocaleLowerCase("sv-SE")));
     return hasSpecialReserve ? "diet" : "clear";
   }
 
   function openNewMeal(slot?: MealSlotRow) {
-    const firstVersion = versionOptions[0];
-    if (!firstVersion) return;
+    if (versionOptions.length === 0) return;
     setSelectedId(null);
     setSelectedSlotId(slot?.id ?? null);
     setEditingMealId(null);
@@ -335,8 +342,9 @@ export function SchedulePage() {
       title: "",
       startsAt: slot ? dateTimeInputValue(slot.starts_at) : `${activeCamp?.startsOn ?? ""}T12:00`,
       mealType: slot?.meal_type ?? "lunch",
-      recipeVersionId: firstVersion?.id ?? "",
-      reserves: emptyReserveDrafts()
+      recipeVersionId: "",
+      reserves: emptyReserveDrafts(),
+      repeatDates: []
     });
     setMessage(null);
   }
@@ -351,16 +359,16 @@ export function SchedulePage() {
       title: meal.title,
       startsAt: dateTimeInputValue(meal.starts_at),
       mealType: meal.meal_type,
-      recipeVersionId: meal.camp_recipe_copies?.source_recipe_version_id ?? versionOptions[0]?.id ?? "",
+      recipeVersionId: meal.camp_recipe_copies?.source_recipe_version_id ?? "",
       reserves: visibleReserves(meal.meal_reserves)
-        .map((reserve) => ({ id: reserve.id, dietaryLabel: reserve.dietary_label, portions: String(reserve.portions) }))
+        .map((reserve) => ({ id: reserve.id, dietaryLabel: reserve.dietary_label, portions: String(reserve.portions) })),
+      repeatDates: []
     });
     setMessage(null);
   }
 
   function openExtraMeal(date: string, mealType: MealType) {
-    const firstVersion = versionOptions[0];
-    if (!firstVersion) return;
+    if (versionOptions.length === 0) return;
     setSelectedId(null);
     setSelectedSlotId(null);
     setEditingMealId(null);
@@ -369,8 +377,9 @@ export function SchedulePage() {
       title: "",
       startsAt: `${date}T${defaultMealTimes[mealType]}`,
       mealType,
-      recipeVersionId: firstVersion.id,
-      reserves: emptyReserveDrafts()
+      recipeVersionId: "",
+      reserves: emptyReserveDrafts(),
+      repeatDates: [date]
     });
     setMessage(null);
   }
@@ -419,6 +428,12 @@ export function SchedulePage() {
   async function saveMeal() {
     if (!supabase || !scope || !draft || !draft.title.trim() || !draft.recipeVersionId) return;
     const targetSlotId = editingSlotId;
+    const isRepeatingExtraMeal = editingMealId === null && editingSlotId === null;
+    const repeatDates = [...new Set(draft.repeatDates)].filter(Boolean).sort();
+    if (isRepeatingExtraMeal && repeatDates.length === 0) {
+      setMessage({ kind: "error", text: "Välj minst en dag för det återkommande målet." });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     const parsedStartsAt = new Date(draft.startsAt);
@@ -442,7 +457,17 @@ export function SchedulePage() {
           p_recipe_version_id: draft.recipeVersionId,
           p_reserves: reserves
         })
-      : await supabase.rpc("save_meal", {
+      : isRepeatingExtraMeal
+        ? await supabase.rpc("save_repeating_extra_meals", {
+            p_camp_id: scope.campId,
+            p_service_dates: repeatDates,
+            p_start_time: draft.startsAt.slice(11, 16),
+            p_meal_type: draft.mealType,
+            p_title: draft.title.trim(),
+            p_recipe_version_id: draft.recipeVersionId,
+            p_reserves: reserves
+          })
+        : await supabase.rpc("save_meal", {
           p_meal_id: (editingMealId ?? null) as unknown as string,
           p_camp_id: scope.campId,
           p_starts_at: parsedStartsAt.toISOString(),
@@ -462,12 +487,12 @@ export function SchedulePage() {
       queryClient.invalidateQueries({ queryKey: ["camp-overview"] }),
       queryClient.invalidateQueries({ queryKey: ["recipe-library"] })
     ]);
-    setSelectedId(data);
+    setSelectedId(typeof data === "string" ? data : null);
     setSelectedSlotId(targetSlotId);
     setEditingMealId(undefined);
     setEditingSlotId(null);
     setDraft(null);
-    setMessage({ kind: "success", text: "Måltiden sparades. Beräkningen behöver köras om." });
+    setMessage({ kind: "success", text: isRepeatingExtraMeal ? "Extra måltider sparades. Beräkningen behöver köras om." : "Måltiden sparades. Beräkningen behöver köras om." });
     setSaving(false);
   }
 
@@ -578,6 +603,13 @@ export function SchedulePage() {
       if (mealWithoutRecipe) openMealEditor(mealWithoutRecipe);
       return;
     }
+    if (kind === "review_zero_attendance") {
+      const affectedMealId = scheduleQuery.data?.zeroAttendance[0]?.meal_id;
+      const affectedMeal = affectedMealId ? meals.find((meal) => meal.id === affectedMealId) : null;
+      const affectedSlot = affectedMeal ? slotsById.get(affectedMeal.meal_slot_id) : null;
+      if (affectedMeal && affectedSlot) selectSlot(affectedSlot, affectedMeal);
+      return;
+    }
     if (kind === "calculate") void calculate();
   }
 
@@ -607,6 +639,18 @@ export function SchedulePage() {
     </>
   ) : null;
   const selectedReserves = selectedMeal ? visibleReserves(selectedMeal.meal_reserves) : [];
+  const isRepeatingExtraMeal = Boolean(draft && editingMealId === null && editingSlotId === null);
+  const recurringPreview = draft && isRepeatingExtraMeal
+    ? recurringExtraMealPreview({
+        dates: draft.repeatDates,
+        mealType: draft.mealType,
+        time: draft.startsAt.slice(11, 16),
+        slots,
+        plannedSlotIds: new Set(meals.map((meal) => meal.meal_slot_id)),
+        timeForSlot: (slot) => timeLabel(slot.starts_at, activeCamp.timezone)
+      })
+    : [];
+  const recurringHasConflict = recurringPreview.some((item) => item.state === "conflict");
 
   return (
     <section className="page schedule-page">
@@ -847,6 +891,7 @@ export function SchedulePage() {
               <span><i className="legend-swatch legend-swatch--gap" aria-hidden="true" /> Oplanerat tillfälle</span>
               <span><Ban aria-hidden="true" size={15} /> Ingen servering</span>
               <span><CircleAlert className="meal-status--missing" aria-hidden="true" size={16} fill="currentColor" /> Recept saknas</span>
+              <span><CircleAlert className="meal-status--missing" aria-hidden="true" size={16} fill="currentColor" /> Ingen deltagare eller reserv</span>
               <span><Circle className="meal-status--diet" aria-hidden="true" size={12} fill="currentColor" /> Har specialkostreserver</span>
               <span><Leaf className="meal-status--clear" aria-hidden="true" size={16} /> Recept klart</span>
             </div>
@@ -877,6 +922,7 @@ export function SchedulePage() {
             ) : selectedMeal ? (
               <>
                 <div className="meal-detail__heading"><div><h2 id="meal-detail-title">{selectedMeal.title}</h2><p>{dayHeading(selectedMeal.starts_at, activeCamp.timezone).weekday} · {timeLabel(selectedMeal.starts_at, activeCamp.timezone)} · {mealTypeLabels[selectedMeal.meal_type]}</p></div></div>
+                {zeroAttendanceMealIds.has(selectedMeal.id) ? <p className="form-error" role="alert"><CircleAlert aria-hidden="true" size={18} />Ingen deltagare eller reserv är närvarande vid den här tiden. Ändra närvaro eller tid, lägg till en reservportion, eller markera tillfället som ingen servering.</p> : null}
                 <div className="portion-count"><UsersRound aria-hidden="true" size={22} /><strong>{selectedMultiplier ? `Motsvarar ${decimal(Number(traceString(selectedMultiplier.line.trace, "multiplier")))} normalportioner` : "Inte beräknad"}</strong><span>Beräknat från deltagarnas portionsstorlek och närvaro</span></div>
                 <div className="detail-section"><div className="detail-section__title"><h3>Recept för måltiden</h3><ChevronRight aria-hidden="true" size={17} /></div><dl><div><dt>Recept</dt><dd>{selectedMeal.camp_recipe_copies?.name ?? "Saknas"}</dd></div><div><dt>Version</dt><dd>{selectedMeal.camp_recipe_copies?.recipe_versions ? `Version ${selectedMeal.camp_recipe_copies.recipe_versions.version_number}` : "Version saknas"}</dd></div><div><dt>Extra portioner</dt><dd>{selectedReserves.length > 0 ? selectedReserves.map((reserve) => `${reserve.portions} ${reserve.dietary_label}`).join(", ") : "Inga"}</dd></div></dl></div>
                 <div className="calculation-detail"><div className="detail-section__title"><h3>Beräknade mängder</h3><span>{selectedLines.length} {selectedLines.length === 1 ? "ingrediens" : "ingredienser"}</span></div>{selectedLines.length === 0 ? <p className="muted-copy">Räkna ut mängderna för att se ingredienserna här.</p> : <ul>{selectedLines.sort((left, right) => left.ingredient_name.localeCompare(right.ingredient_name, "sv-SE")).map((line) => {
@@ -921,18 +967,24 @@ export function SchedulePage() {
               <div className="meal-editor">
                 <div className="meal-editor__fields">
                   <label>Titel<input name="meal-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-                  {editingSlotId ? null : (
+                  {editingSlotId ? null : isRepeatingExtraMeal ? (
+                    <>
+                      <label>Tid<input name="meal-start-time" type="time" value={draft.startsAt.slice(11, 16)} onChange={(event) => setDraft({ ...draft, startsAt: `${activeCamp.startsOn}T${event.target.value}` })} /></label>
+                      <label>Typ<select name="meal-type" value={draft.mealType} onChange={(event) => setDraft({ ...draft, mealType: event.target.value as MealType })}>{mealTypes.map((type) => <option key={type} value={type}>{mealTypeLabels[type]}</option>)}</select></label>
+                    </>
+                  ) : (
                     <>
                       <label>Tid<input name="meal-starts-at" type="datetime-local" value={draft.startsAt} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} /></label>
                       <label>Typ<select name="meal-type" value={draft.mealType} onChange={(event) => setDraft({ ...draft, mealType: event.target.value as MealType })}>{mealTypes.map((type) => <option key={type} value={type}>{mealTypeLabels[type]}</option>)}</select></label>
                     </>
                   )}
-                  <label>Publicerad receptversion<select name="meal-recipe-version" value={draft.recipeVersionId} onChange={(event) => setDraft({ ...draft, recipeVersionId: event.target.value })}>{versionOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+                  <label>Publicerad receptversion<select name="meal-recipe-version" value={draft.recipeVersionId} onChange={(event) => setDraft({ ...draft, recipeVersionId: event.target.value })}><option value="">Välj recept</option>{versionOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+                  {isRepeatingExtraMeal ? <fieldset className="meal-editor__repeat-dates"><legend>Upprepa på valda dagar</legend><p className="muted-copy">Samma extra mål skapas på de dagar du väljer. Krockar stoppas innan något sparas.</p><div>{dateKeys.map((date) => <label key={date}><input type="checkbox" checked={draft.repeatDates.includes(date)} onChange={(event) => setDraft({ ...draft, repeatDates: event.target.checked ? [...draft.repeatDates, date] : draft.repeatDates.filter((selectedDate) => selectedDate !== date) })} />{dayHeading(`${date}T12:00:00`, activeCamp.timezone).weekday} {dayHeading(`${date}T12:00:00`, activeCamp.timezone).date}</label>)}</div>{recurringPreview.length > 0 ? <ul>{recurringPreview.map((item) => <li key={item.date}>{dayHeading(`${item.date}T12:00:00`, activeCamp.timezone).weekday} {dayHeading(`${item.date}T12:00:00`, activeCamp.timezone).date}: {item.state === "new" ? "skapas" : item.state === "reuse" ? "återanvänder ledigt tillfälle" : item.reason}</li>)}</ul> : null}</fieldset> : null}
                 </div>
                 <div className="meal-reserve-editor"><div className="detail-section__title"><h3>Extra portioner</h3><Button className="text-button" onPress={() => setDraft({ ...draft, reserves: [...draft.reserves, { id: crypto.randomUUID(), dietaryLabel: "Standardkost", portions: "1" }] })}><Plus aria-hidden="true" size={16} /> Lägg till</Button></div>{draft.reserves.map((reserve) => <div className="meal-reserve-row" key={reserve.id}><label><span>Typ av specialkost</span><input name={`reserve-diet-${reserve.id}`} value={reserve.dietaryLabel} onChange={(event) => updateReserve(reserve.id, { dietaryLabel: event.target.value })} /></label><label><span>Antal</span><input name={`reserve-portions-${reserve.id}`} type="number" min="0" step="1" value={reserve.portions} onChange={(event) => updateReserve(reserve.id, { portions: event.target.value })} /></label><Button className="icon-button" aria-label={`Ta bort extra portion ${reserve.dietaryLabel}`} onPress={() => setDraft({ ...draft, reserves: draft.reserves.filter((item) => item.id !== reserve.id) })}><X aria-hidden="true" size={18} /></Button></div>)}</div>
                 <div className="meal-editor__actions">
                   <Button className="button-link" onPress={closeMealEditor} isDisabled={saving}>Avbryt</Button>
-                  <Button className="primary-button meal-editor__save" onPress={saveMeal} isDisabled={saving || !draft.title.trim() || !draft.recipeVersionId}>{saving ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Save aria-hidden="true" size={18} />} Spara måltid</Button>
+                  <Button className="primary-button meal-editor__save" onPress={saveMeal} isDisabled={saving || !draft.title.trim() || !draft.recipeVersionId || (isRepeatingExtraMeal && (draft.repeatDates.length === 0 || recurringHasConflict))}>{saving ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Save aria-hidden="true" size={18} />} Spara måltid</Button>
                 </div>
               </div>
             </Dialog>

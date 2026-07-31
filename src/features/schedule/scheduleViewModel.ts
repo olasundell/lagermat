@@ -6,6 +6,7 @@ export interface ScheduleReadiness {
   no_service_slots: number;
   unresolved_dietary_needs: number;
   meals_without_recipe: number;
+  zero_attendance_slots: number;
   calculation_stale: boolean;
   can_finalize: boolean;
 }
@@ -15,6 +16,7 @@ export type ScheduleNextActionKind =
   | "plan_meal_slot"
   | "review_dietary_needs"
   | "choose_meal_recipe"
+  | "review_zero_attendance"
   | "calculate";
 
 export interface ScheduleNextAction {
@@ -58,6 +60,14 @@ export function scheduleNextAction(readiness: ScheduleReadiness | null): Schedul
       label: "Välj recept"
     };
   }
+  if (readiness.zero_attendance_slots > 0) {
+    return {
+      kind: "review_zero_attendance",
+      title: `${readiness.zero_attendance_slots} ${readiness.zero_attendance_slots === 1 ? "planerad måltid saknar deltagare" : "planerade måltider saknar deltagare"}`,
+      description: "Kontrollera närvaron eller markera tillfället som ingen servering innan underlaget används.",
+      label: "Kontrollera måltiden"
+    };
+  }
   if (readiness.calculation_stale && readiness.planned_slots > 0) {
     return {
       kind: "calculate",
@@ -89,6 +99,7 @@ export function scheduleIssueParts(readiness: ScheduleReadiness | null): string[
     readiness.unplanned_slots ? `${readiness.unplanned_slots} ${readiness.unplanned_slots === 1 ? "måltidstillfälle är oplanerat" : "måltidstillfällen är oplanerade"}` : null,
     readiness?.unresolved_dietary_needs ? `${readiness.unresolved_dietary_needs} ${readiness.unresolved_dietary_needs === 1 ? "specialkostuppgift" : "specialkostuppgifter"}` : null,
     readiness?.meals_without_recipe ? `${readiness.meals_without_recipe} ${readiness.meals_without_recipe === 1 ? "måltid saknar" : "måltider saknar"} recept` : null,
+    readiness.zero_attendance_slots ? `${readiness.zero_attendance_slots} ${readiness.zero_attendance_slots === 1 ? "måltid saknar närvarande deltagare eller reserver" : "måltider saknar närvarande deltagare eller reserver"}` : null,
     readiness.calculation_stale && readiness.planned_slots > 0 ? "beräkningen saknas eller är inaktuell" : null
   ].filter((value): value is string => Boolean(value));
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { overviewNextAction, type OverviewCounts } from "./overviewModel";
+import { overviewDeliveryProgress, overviewNextAction, type OverviewCounts } from "./overviewModel";
 
 const emptyCounts: OverviewCounts = {
   participants: 0,
@@ -10,6 +10,7 @@ const emptyCounts: OverviewCounts = {
   requiredSlots: 0,
   plannedSlots: 0,
   unplannedSlots: 0,
+  zeroAttendanceSlots: 0,
   noServiceSlots: 0,
   missingRecipes: 0,
   calculationStale: true,
@@ -57,6 +58,17 @@ describe("overview next action", () => {
     })).toMatchObject({
       title: "Färdigställ matsedeln",
       to: "/matsedel"
+    });
+    expect(overviewNextAction({
+      ...withRecipes,
+      mealPlanConfirmed: true,
+      requiredSlots: 6,
+      plannedSlots: 6,
+      zeroAttendanceSlots: 1,
+      calculationStale: true,
+    })).toMatchObject({
+      title: "Färdigställ matsedeln",
+      to: "/matsedel",
     });
   });
 
@@ -123,6 +135,123 @@ describe("overview next action", () => {
     })).toMatchObject({
       title: "Skapa inköpsunderlaget",
       to: "/inkop",
+    });
+  });
+});
+
+describe("overview delivery progress", () => {
+  it("shows the current and next delivery with operational blockers", () => {
+    const progress = overviewDeliveryProgress([
+      {
+        id: "complete",
+        title: "Leverans 1",
+        rangeStart: "2026-08-01T08:00:00Z",
+        status: "complete",
+        items: [
+          { completed: true, sourcePresent: true },
+          { completed: true, sourcePresent: true },
+        ],
+      },
+      {
+        id: "current",
+        title: "Leverans 2",
+        rangeStart: "2026-08-03T08:00:00Z",
+        status: "active",
+        items: [
+          { completed: true, sourcePresent: true },
+          { completed: false, sourcePresent: true },
+          { completed: false, sourcePresent: true },
+          { completed: false, sourcePresent: false },
+        ],
+      },
+      {
+        id: "next",
+        title: "Leverans 3",
+        rangeStart: "2026-08-05T08:00:00Z",
+        status: "draft",
+        items: [
+          { completed: false, sourcePresent: true },
+          { completed: false, sourcePresent: true },
+        ],
+      },
+    ], {
+      ...emptyCounts,
+      participants: 24,
+      recipeCopies: 3,
+      mealPlanConfirmed: true,
+      requiredSlots: 6,
+      plannedSlots: 6,
+      calculationStale: false,
+      supplierItemsTotal: 20,
+      supplierReadyItems: 19,
+      supplierReviewSuggestions: 1,
+      supplierUnresolvedItems: 1,
+      procurementReady: false,
+      deliveries: 3,
+    });
+
+    expect(progress).toMatchObject({
+      complete: 1,
+      total: 3,
+      current: {
+        id: "current",
+        title: "Leverans 2",
+        doneItems: 1,
+        totalItems: 3,
+      },
+      next: {
+        id: "next",
+        title: "Leverans 3",
+      },
+      to: "/leveranser",
+    });
+    expect(progress.blockers).toEqual([
+      "2 varor återstår i Leverans 2",
+      "1 ICA-träff behöver granskas",
+    ]);
+  });
+
+  it("shows zero attendance as a delivery blocker", () => {
+    const progress = overviewDeliveryProgress([{
+      id: "current",
+      title: "Leverans 1",
+      rangeStart: "2026-08-01T08:00:00Z",
+      status: "active",
+      items: [{ completed: true, sourcePresent: true }],
+    }], {
+      ...emptyCounts,
+      mealPlanConfirmed: true,
+      calculationStale: false,
+      zeroAttendanceSlots: 1,
+      deliveries: 1,
+    });
+
+    expect(progress.blockers).toContain(
+      "1 måltid saknar närvarande deltagare eller reserver",
+    );
+  });
+
+  it("reports a fully completed delivery sequence", () => {
+    const progress = overviewDeliveryProgress([{
+      id: "complete",
+      title: "Leverans 1",
+      rangeStart: null,
+      status: "complete",
+      items: [{ completed: true, sourcePresent: true }],
+    }], {
+      ...emptyCounts,
+      deliveries: 1,
+      mealPlanConfirmed: true,
+      calculationStale: false,
+    });
+
+    expect(progress).toMatchObject({
+      complete: 1,
+      total: 1,
+      current: null,
+      next: null,
+      blockers: [],
+      to: "/leveranser",
     });
   });
 });

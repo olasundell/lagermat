@@ -2062,6 +2062,9 @@ export type Database = {
           item_key: string
           item_name: string
           manually_moved: boolean
+          manual_order_source_item_id: string | null
+          manual_order_total_amount: number | null
+          manual_order_unit: string | null
           order_source_kind: string | null
           ordered_amount: number | null
           ordered_unit: string | null
@@ -2092,6 +2095,9 @@ export type Database = {
           item_key: string
           item_name: string
           manually_moved?: boolean
+          manual_order_source_item_id?: string | null
+          manual_order_total_amount?: number | null
+          manual_order_unit?: string | null
           order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
@@ -2122,6 +2128,9 @@ export type Database = {
           item_key?: string
           item_name?: string
           manually_moved?: boolean
+          manual_order_source_item_id?: string | null
+          manual_order_total_amount?: number | null
+          manual_order_unit?: string | null
           order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
@@ -2430,6 +2439,14 @@ export type Database = {
           supplier_unresolved_items: number
           unplanned_slots: number
           unresolved_dietary_needs: number
+          zero_attendance_slots: number
+        }[]
+      }
+      get_zero_attendance_meals: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: {
+          meal_id: string
+          meal_slot_id: string
         }[]
       }
       get_demo_session_status: {
@@ -2538,14 +2555,28 @@ export type Database = {
           user_id: string
         }[]
       }
-      move_delivery_item: {
-        Args: {
-          p_expected_version: number
-          p_item_id: string
-          p_target_list_id: string
-        }
-        Returns: number
-      }
+      move_delivery_item:
+        | {
+            Args: {
+              p_expected_version: number
+              p_item_id: string
+              p_target_list_id: string
+            }
+            Returns: number
+          }
+        | {
+            Args: {
+              p_comment: string
+              p_completed: boolean
+              p_expected_version: number
+              p_item_id: string
+              p_ordered_amount: number | null
+              p_ordered_unit: string
+              p_package_note: string
+              p_target_list_id: string
+            }
+            Returns: number
+          }
       normalized_supplier_match_name:
         | { Args: { p_display_name: string }; Returns: string }
         | { Args: { p_brand: string; p_display_name: string }; Returns: string }
@@ -2634,6 +2665,18 @@ export type Database = {
           p_title: string
         }
         Returns: string
+      }
+      save_repeating_extra_meals: {
+        Args: {
+          p_camp_id: string
+          p_meal_type: string
+          p_recipe_version_id: string
+          p_reserves: Json
+          p_service_dates: string[]
+          p_start_time: string
+          p_title: string
+        }
+        Returns: Json
       }
       save_supplier_account: {
         Args: {

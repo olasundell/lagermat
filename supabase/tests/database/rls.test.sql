@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(90);
+select plan(96);
 
 -- Restore only the historical fixture-building privileges inside this rolled
 -- back transaction. Production privilege assertions live in security.test.sql.
@@ -648,6 +648,117 @@ select ok(
    where list.list_key = 'purchase:all' and item.item_name = 'Linser'),
   'exact need and differently-unitised order values remain separate without conversion'
 );
+
+create temporary table atomic_delivery_move_state on commit drop as
+select
+  item.id as item_id,
+  item.supply_list_id as original_list_id,
+  target.id as target_list_id,
+  item.row_version as original_row_version,
+  item.ordered_amount as original_ordered_amount,
+  item.ordered_unit as original_ordered_unit,
+  item.package_note as original_package_note,
+  item.comment as original_comment,
+  item.completed as original_completed
+from public.supply_list_items item
+join public.supply_lists source on source.id = item.supply_list_id
+cross join lateral (
+  select list.id
+  from public.supply_lists list
+  where list.list_key = 'delivery:auto:2026-08-04'
+) target
+where source.list_key = 'delivery:auto:2026-08-03'
+  and item.item_name = 'Linser';
+
+select throws_ok(
+  $$select public.move_delivery_item(
+    state.item_id,
+    state.target_list_id,
+    state.original_row_version + 1,
+    0.7,
+    'kg',
+    'Ska inte sparas',
+    'Ska inte flyttas',
+    true
+  )
+  from atomic_delivery_move_state state$$,
+  '40001',
+  'Supply item has changed',
+  'an atomic move rejects a stale expected row version'
+);
+select ok(
+  (select row(
+      item.supply_list_id,
+      item.row_version,
+      item.ordered_amount,
+      item.ordered_unit,
+      item.package_note,
+      item.comment,
+      item.completed
+    ) is not distinct from row(
+      state.original_list_id,
+      state.original_row_version,
+      state.original_ordered_amount,
+      state.original_ordered_unit,
+      state.original_package_note,
+      state.original_comment,
+      state.original_completed
+    )
+   from atomic_delivery_move_state state
+   join public.supply_list_items item on item.id = state.item_id),
+  'a rejected stale move changes neither assignment nor edited fields'
+);
+
+select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000002', true);
+select throws_ok(
+  $$select public.move_delivery_item(
+    state.item_id,
+    state.target_list_id,
+    state.original_row_version,
+    0.7,
+    'kg',
+    'Ska inte sparas',
+    'Ska inte flyttas',
+    true
+  )
+  from atomic_delivery_move_state state$$,
+  '42501',
+  'Supply item not found',
+  'a member of another organization cannot move a delivery item'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
+
+reset role;
+update public.supply_lists
+set status = 'complete'
+where id = (select target_list_id from atomic_delivery_move_state);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
+select set_config('request.jwt.claim.aal', 'aal2', true);
+select throws_ok(
+  $$select public.move_delivery_item(
+    state.item_id,
+    state.target_list_id,
+    state.original_row_version,
+    0.7,
+    'kg',
+    'Ska inte sparas',
+    'Ska inte flyttas',
+    true
+  )
+  from atomic_delivery_move_state state$$,
+  '22023',
+  'Completed target delivery cannot receive items',
+  'a completed delivery cannot silently receive another item'
+);
+reset role;
+update public.supply_lists
+set status = 'draft'
+where id = (select target_list_id from atomic_delivery_move_state);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
+select set_config('request.jwt.claim.aal', 'aal2', true);
+
 select lives_ok(
   $$select public.move_delivery_item(
     (select item.id
@@ -658,17 +769,50 @@ select lives_ok(
     (select item.row_version
      from public.supply_list_items item
      join public.supply_lists list on list.id = item.supply_list_id
-     where list.list_key = 'delivery:auto:2026-08-03' and item.item_name = 'Linser')
+     where list.list_key = 'delivery:auto:2026-08-03' and item.item_name = 'Linser'),
+    0.7,
+    'kg',
+    'Flyttad beställning',
+    'Till kökstältet',
+    true
   )$$,
-  'a delivery item can be moved manually to another current interval'
+  'a delivery item and its edited fields move atomically to another current interval'
 );
-select is(
-  (select list.list_key
+select ok(
+  (select list.list_key = 'delivery:auto:2026-08-04'
+      and item.item_key like 'delivery:2026-08-03:%'
+      and item.ordered_amount = 0.7::numeric
+      and item.ordered_unit = 'kg'
+      and item.package_note = 'Flyttad beställning'
+      and item.comment = 'Till kökstältet'
+      and item.completed
+      and item.manually_moved
    from public.supply_list_items item
    join public.supply_lists list on list.id = item.supply_list_id
    where item.item_key like 'delivery:2026-08-03:%' and item.item_name = 'Linser'),
-  'delivery:auto:2026-08-04',
-  'manual delivery movement changes assignment without changing its source key'
+  'manual movement preserves source identity while saving the open form'
+);
+select is(
+  (select count(*)::integer
+   from public.supply_list_items item
+   join public.supply_lists list on list.id = item.supply_list_id
+   where list.list_key = 'delivery:auto:2026-08-04'
+     and item.item_name = 'Linser'
+     and item.source_present),
+  2,
+  'same-ingredient source rows remain distinct in the target delivery'
+);
+select ok(
+  (select event.payload ->> 'item_key' like 'delivery:2026-08-03:%'
+      and event.payload ->> 'from_list_key' = 'delivery:auto:2026-08-03'
+      and event.payload ->> 'to_list_key' = 'delivery:auto:2026-08-04'
+      and (event.payload ->> 'target_had_same_canonical')::boolean
+      and (event.payload ->> 'order_fields_changed')::boolean
+   from public.audit_events event
+   where event.event_type = 'delivery_item_moved'
+   order by event.id desc
+   limit 1),
+  'delivery movement audit retains source, target and duplicate-source context'
 );
 
 update public.participants
@@ -697,6 +841,11 @@ select ok(
    where item.item_key = 'purchase:' || md5('linser' || chr(31) || 'kg'))
   and
   (select list.list_key = 'delivery:auto:2026-08-04' and item.manually_moved
+      and item.ordered_amount = 0.7::numeric
+      and item.ordered_unit = 'kg'
+      and item.package_note = 'Flyttad beställning'
+      and item.comment = 'Till kökstältet'
+      and item.completed
    from public.supply_list_items item
    join public.supply_lists list on list.id = item.supply_list_id
    where item.item_key like 'delivery:2026-08-03:%' and item.item_name = 'Linser'),

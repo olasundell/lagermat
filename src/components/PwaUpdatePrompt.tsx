@@ -34,7 +34,7 @@ export function PwaUpdatePrompt() {
       <Button
         className="primary-button"
         isDisabled={pending > 0 || !update.activate}
-        onPress={() => void update.activate?.()}
+        onPress={() => void update.activate?.().catch(() => undefined)}
       >
         Uppdatera
       </Button>

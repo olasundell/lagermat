@@ -125,6 +125,10 @@ describe("ICA catalogue Node handler", () => {
         retailerProductId: "2141387",
         name: "Krossade tomater 3-p 1170g ICA",
         price: { amount: "28.55", currency: "SEK" },
+        scoutmatSearchMatches: [{
+          query: "Krossade tomater",
+          rank: 0,
+        }],
       }],
     });
 

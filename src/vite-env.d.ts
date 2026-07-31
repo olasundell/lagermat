@@ -10,6 +10,10 @@ interface ImportMetaEnv {
   readonly VITE_DEV_AUTO_LOGIN?: string;
   readonly VITE_DEV_AUTO_LOGIN_EMAIL?: string;
   readonly VITE_DEV_AUTO_LOGIN_PASSWORD?: string;
+  /** Explicitly enables the anonymous, synthetic demo client experience. */
+  readonly VITE_DEMO_MODE?: string;
+  /** Public Cloudflare Turnstile site key. Never put the secret here. */
+  readonly VITE_TURNSTILE_SITE_KEY?: string;
 }
 
 interface ImportMeta {

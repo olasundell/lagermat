@@ -6,7 +6,7 @@ import {
 } from "./exportModel";
 import { downloadSupplyCsv, openPrintableSupplyExport } from "./browserExport";
 import { fetchSupplyExportReadiness, type SupplyScope } from "./supplyApi";
-import type { SupplyListRow } from "./supplyModel";
+import type { PracticalSupplyAmount, SupplyListRow } from "./supplyModel";
 
 export function SupplyExportActions({
   scope,
@@ -14,7 +14,8 @@ export function SupplyExportActions({
   organizationName,
   campName,
   timeZone,
-  disabled
+  disabled,
+  practicalAmounts,
 }: {
   scope: SupplyScope;
   list: SupplyListRow;
@@ -22,6 +23,7 @@ export function SupplyExportActions({
   campName: string;
   timeZone: string;
   disabled: boolean;
+  practicalAmounts?: ReadonlyMap<string, PracticalSupplyAmount>;
 }) {
   const readinessQuery = useQuery({
     queryKey: ["supply-export-readiness", scope.organizationId, scope.campId],
@@ -39,7 +41,8 @@ export function SupplyExportActions({
       organizationName,
       campName,
       timeZone,
-      readiness: readinessQuery.data
+      readiness: readinessQuery.data,
+      practicalAmounts,
     });
   }
 

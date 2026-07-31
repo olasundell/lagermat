@@ -98,7 +98,7 @@ describe("proposeSupplierOrder", () => {
       purchaseUnits: 2,
       orderedAmount: 6,
       surplusAmount: 0.5,
-      packageNote: "2 kolli à 3 kg = 6 kg (behov 5.5 kg, överskott 0.5 kg)",
+      packageNote: "2 kolli à 3 kg = 6 kg (behov 5,5 kg, överskott 0,5 kg)",
     });
   });
 

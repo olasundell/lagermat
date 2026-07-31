@@ -6,13 +6,22 @@ import type {
   SupplierProduct,
 } from "./supplierModel";
 
-export const CATALOGUE_MATCHER_VERSION = "deterministic-v3" as const;
-export const CATALOGUE_NORMALIZATION_VERSION = "sv-v2" as const;
+export const CATALOGUE_MATCHER_VERSION = "deterministic-v10" as const;
+export const CATALOGUE_NORMALIZATION_VERSION = "sv-v4" as const;
 export const SAFE_MATCH_SCORE = 96;
 export const SAFE_MATCH_MARGIN = 8;
 export const REVIEW_MATCH_SCORE = 70;
+export const MAX_CATALOGUE_MATCH_CANDIDATES = 12;
 
-export interface CatalogueIngredient {
+export interface CatalogueIngredientContext {
+  category?: string | null;
+  comment?: string | null;
+  recipe_names?: readonly string[];
+  dietary_rules?: readonly string[];
+  dietary_labels?: readonly string[];
+}
+
+export interface CatalogueIngredient extends CatalogueIngredientContext {
   organization_id: string;
   canonical_key: string;
   display_name: string;
@@ -50,9 +59,16 @@ export type CatalogueExplanationCode =
   | "exact_name"
   | "synonym_name"
   | "token_similarity"
+  | "compound_name"
+  | "ica_search_result"
+  | "category_context_match"
+  | "category_context_conflict"
+  | "recipe_context_match"
+  | "context_assumption"
   | "exact_unit"
   | "convertible_unit"
   | "verified_package"
+  | "verified_inner_count"
   | "approved_manual_conversion"
   | "extra_product_modifier"
   | "stale_approval"
@@ -69,6 +85,7 @@ export type CatalogueExplanationCode =
   | "incompatible_unit"
   | "missing_required_modifier"
   | "conflicting_product_form"
+  | "conflicting_product_kind"
   | "rejected_product"
   | "low_name_confidence";
 
@@ -140,6 +157,10 @@ const UNIT_ALIASES: Readonly<Record<string, string>> = {
   centiliters: "cl",
   milliliter: "ml",
   milliliters: "ml",
+  matsked: "msk",
+  matskedar: "msk",
+  tesked: "tsk",
+  teskedar: "tsk",
   styck: "st",
   stycken: "st",
   st: "st",
@@ -154,6 +175,8 @@ const UNIT_DEFINITIONS: Readonly<Record<string, UnitDefinition>> = {
   dl: { dimension: "volume", factor_to_base: "100" },
   cl: { dimension: "volume", factor_to_base: "10" },
   ml: { dimension: "volume", factor_to_base: "1" },
+  msk: { dimension: "volume", factor_to_base: "15" },
+  tsk: { dimension: "volume", factor_to_base: "5" },
 };
 
 const PACKAGING_UNIT_PATTERN =
@@ -162,9 +185,17 @@ const PACKAGING_UNIT_PATTERN =
 const FORM_MODIFIERS: Readonly<Record<string, readonly string[]>> = {
   fresh: ["färsk", "färska"],
   frozen: ["fryst", "frysta", "djupfryst", "djupfrysta"],
+  canned: ["konserv", "konserver", "burk", "burkar"],
   dried: ["torkad", "torkade"],
   powder: ["pulver"],
-  concentrate: ["koncentrat", "koncentrerad", "koncentrerade"],
+  concentrate: [
+    "koncentrat",
+    "koncentrerad",
+    "koncentrerade",
+    "puré",
+    "pure",
+    "paste",
+  ],
 };
 
 const REQUIREMENT_MODIFIERS: Readonly<Record<string, readonly string[]>> = {
@@ -176,6 +207,52 @@ const REQUIREMENT_MODIFIERS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const LOW_WEIGHT_TOKENS = new Set(["av", "för", "med", "och", "utan"]);
+const LOW_CONTEXT_TOKENS = new Set([
+  "med",
+  "och",
+  "utan",
+  "till",
+  "från",
+  "samt",
+  "middag",
+  "lunch",
+  "frukost",
+]);
+const RISKY_COMPOUND_ENDINGS = [
+  "paj",
+  "ficka",
+  "puré",
+  "pure",
+  "paste",
+  "mynta",
+  "sallad",
+  "mix",
+  "soppa",
+  "sås",
+  "röra",
+  "gratäng",
+  "gryta",
+  "dryck",
+  "kaka",
+  "kak",
+  "bröd",
+  "ost",
+] as const;
+const GENERIC_COMPOUND_INGREDIENTS = new Set([
+  "dressing",
+  "mix",
+  "röra",
+  "sallad",
+  "sås",
+]);
+
+type ProductForm = keyof typeof FORM_MODIFIERS;
+
+interface IngredientContextAssessment {
+  preferredForms: Set<ProductForm>;
+  recipeTerms: Set<string>;
+  usesAssumption: boolean;
+}
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -241,6 +318,14 @@ export function normalizeSupplierProductName(
     return productName.slice(0, -(normalizedBrand.length + 1)).trim();
   }
   return productName;
+}
+
+function normalizeIngredientName(value: string): string {
+  const quantityExpression = new RegExp(
+    `\\b\\d+(?:[.,]\\d+)?\\s*${PACKAGING_UNIT_PATTERN}\\b`,
+    "giu",
+  );
+  return normalizeCatalogueText(value.replace(quantityExpression, " "));
 }
 
 function canonicalDecimal(value: number): string {
@@ -321,30 +406,105 @@ function tokenize(value: string): string[] {
   return value ? [...new Set(value.split(" ").filter(Boolean))] : [];
 }
 
+function swedishStem(token: string): string {
+  if (token.length >= 7) {
+    for (const suffix of ["erna", "orna", "arna"]) {
+      if (token.endsWith(suffix)) return token.slice(0, -suffix.length);
+    }
+  }
+  if (token.length >= 6) {
+    for (const suffix of ["ande", "ade", "are"]) {
+      if (token.endsWith(suffix)) return token.slice(0, -suffix.length);
+    }
+  }
+  if (token.length >= 5) {
+    for (const suffix of ["er", "or", "ar"]) {
+      if (token.endsWith(suffix)) return token.slice(0, -suffix.length);
+    }
+  }
+  return token;
+}
+
+function compoundTokenMatch(left: string, right: string): boolean {
+  if (left === right) return true;
+  const leftStem = swedishStem(left);
+  const rightStem = swedishStem(right);
+  if (leftStem === rightStem && leftStem.length >= 4) return true;
+
+  const shorter = leftStem.length <= rightStem.length ? leftStem : rightStem;
+  const longer = shorter === leftStem ? rightStem : leftStem;
+  if (shorter.length < 4 || longer.length - shorter.length < 3) return false;
+  return longer.startsWith(shorter) || longer.endsWith(shorter);
+}
+
+function ingredientTokenMatchesProduct(
+  ingredientToken: string,
+  productToken: string,
+): boolean {
+  if (ingredientToken === productToken) return true;
+  const ingredientStem = swedishStem(ingredientToken);
+  const productStem = swedishStem(productToken);
+  if (
+    ingredientStem === productStem
+    && ingredientStem.length >= 4
+  ) {
+    return true;
+  }
+  if (
+    ingredientStem.length < 4
+    || productStem.length - ingredientStem.length < 3
+  ) {
+    return false;
+  }
+  return productStem.startsWith(ingredientStem)
+    || productStem.endsWith(ingredientStem);
+}
+
 function tokenWeight(token: string): number {
   if (LOW_WEIGHT_TOKENS.has(token)) return 0.25;
   return Math.max(1, Math.min(4, token.length / 3));
 }
 
-function weightedTokenF1(ingredientName: string, productName: string): number {
+function weightedTokenF1(
+  ingredientName: string,
+  productName: string,
+): { score: number; compound: boolean } {
   const ingredientTokens = tokenize(ingredientName);
   const productTokens = tokenize(productName);
-  if (ingredientTokens.length === 0 || productTokens.length === 0) return 0;
+  if (ingredientTokens.length === 0 || productTokens.length === 0) {
+    return { score: 0, compound: false };
+  }
 
-  const productSet = new Set(productTokens);
-  const ingredientSet = new Set(ingredientTokens);
   const ingredientWeight = ingredientTokens.reduce((sum, token) => sum + tokenWeight(token), 0);
   const productWeight = productTokens.reduce((sum, token) => sum + tokenWeight(token), 0);
-  const sharedWeight = ingredientTokens
-    .filter((token) => productSet.has(token))
+  const sharedIngredientTokens = ingredientTokens
+    .filter((ingredientToken) =>
+      productTokens.some((productToken) =>
+        ingredientTokenMatchesProduct(ingredientToken, productToken)
+      )
+    );
+  const sharedProductTokens = productTokens
+    .filter((productToken) =>
+      ingredientTokens.some((ingredientToken) =>
+        ingredientTokenMatchesProduct(ingredientToken, productToken)
+      )
+    );
+  const sharedWeight = sharedIngredientTokens
     .reduce((sum, token) => sum + tokenWeight(token), 0);
 
-  if (sharedWeight === 0 || ingredientWeight === 0 || productWeight === 0) return 0;
+  if (sharedWeight === 0 || ingredientWeight === 0 || productWeight === 0) {
+    return { score: 0, compound: false };
+  }
   const recall = sharedWeight / ingredientWeight;
-  const precision = productTokens
-    .filter((token) => ingredientSet.has(token))
+  const precision = sharedProductTokens
     .reduce((sum, token) => sum + tokenWeight(token), 0) / productWeight;
-  return (2 * precision * recall) / (precision + recall);
+  const exactPairs = ingredientTokens.every((ingredientToken) =>
+    productTokens.some((productToken) => productToken === ingredientToken)
+  );
+  return {
+    score: (2 * precision * recall) / (precision + recall),
+    compound: !exactPairs,
+  };
 }
 
 function orderedBigramScore(ingredientName: string, productName: string): number {
@@ -397,6 +557,209 @@ function extractModifiers(
   return modifiers;
 }
 
+function dietaryLabelRequirements(
+  labels: readonly string[],
+): Set<string> {
+  const requirements = new Set<string>();
+  for (const label of labels.map(normalizeCatalogueText)) {
+    const tokens = new Set(tokenize(label));
+    if (
+      ["gluten", "glutenfri", "glutenfritt", "glutenfria"]
+        .some((token) => tokens.has(token))
+    ) {
+      requirements.add("gluten_free");
+    }
+    if (
+      ["laktos", "laktosfri", "laktosfritt", "laktosfria"]
+        .some((token) => tokens.has(token))
+    ) {
+      requirements.add("lactose_free");
+    }
+    if (
+      [
+        "mjölk",
+        "mjölkprotein",
+        "mjölkfri",
+        "mjölkfritt",
+        "mjölkfria",
+      ].some((token) => tokens.has(token))
+    ) {
+      requirements.add("milk_free");
+    }
+    if (
+      ["vegan", "vegansk", "veganskt", "veganska"]
+        .some((token) => tokens.has(token))
+    ) {
+      requirements.add("vegan");
+    }
+    if (
+      ["vegetarian", "vegetarisk", "vegetariskt", "vegetariska"]
+        .some((token) => tokens.has(token))
+    ) {
+      requirements.add("vegetarian");
+    }
+  }
+  return requirements;
+}
+
+function productForms(
+  productName: string,
+  category: string | null,
+): Set<ProductForm> {
+  const categoryName = normalizeCatalogueText(category ?? "");
+  const forms = extractModifiers(
+    `${productName} ${categoryName}`.trim(),
+    FORM_MODIFIERS,
+  ) as Set<ProductForm>;
+
+  if (
+    /\b(?:frukt och grönt|frukt grönt|färska grönsaker|färskvaror)\b/u
+      .test(categoryName)
+  ) {
+    forms.add("fresh");
+  }
+  if (/\b(?:fryst|frysta|djupfryst)\b/u.test(categoryName)) {
+    forms.add("frozen");
+  }
+  if (
+    /\b(?:konserv|konserver|tomatkonserver|grönsakskonserver)\b/u
+      .test(categoryName)
+  ) {
+    forms.add("canned");
+  }
+  return forms;
+}
+
+function ingredientContext(
+  ingredient: CatalogueIngredient,
+  ingredientName: string,
+): IngredientContextAssessment {
+  const category = normalizeCatalogueText(ingredient.category ?? "");
+  const comment = normalizeCatalogueText(ingredient.comment ?? "");
+  const recipeNames = (ingredient.recipe_names ?? [])
+    .map(normalizeCatalogueText)
+    .filter(Boolean);
+  const combined = `${ingredientName} ${category} ${comment}`.trim();
+  const preferredForms = extractModifiers(
+    combined,
+    FORM_MODIFIERS,
+  ) as Set<ProductForm>;
+  let usesAssumption = false;
+
+  if (/\b(?:konserv|konserver|burk|burkar)\b/u.test(comment)) {
+    preferredForms.add("canned");
+  }
+  if (
+    /\b(?:krossad|krossade|passerad|passerade)\s+tomat/u
+      .test(ingredientName)
+  ) {
+    preferredForms.add("canned");
+  }
+  if (
+    ingredientName === "majs"
+    && recipeNames.some((name) =>
+      /\b(?:taco|tacos)\b/u.test(name) || name.includes("sallad")
+    )
+  ) {
+    preferredForms.add("canned");
+    usesAssumption = true;
+  }
+  if (
+    preferredForms.size === 0
+    &&
+    /\b(?:frukt och grönt|frukt grönt|färska grönsaker|grönt)\b/u
+      .test(category)
+  ) {
+    preferredForms.add("fresh");
+    usesAssumption = true;
+  }
+
+  const recipeTerms = new Set(
+    recipeNames
+      .flatMap(tokenize)
+      .map(swedishStem)
+      .filter((token) => token.length >= 5 && !LOW_CONTEXT_TOKENS.has(token)),
+  );
+  return { preferredForms, recipeTerms, usesAssumption };
+}
+
+function conflictingCompoundKind(
+  ingredientName: string,
+  productName: string,
+  context: IngredientContextAssessment,
+): string | null {
+  const ingredientTokens = tokenize(ingredientName);
+  const ingredientStems = ingredientTokens.map(swedishStem);
+  for (const productToken of tokenize(productName)) {
+    const productStem = swedishStem(productToken);
+    for (const riskyEnding of RISKY_COMPOUND_ENDINGS) {
+      if (
+        !productStem.endsWith(riskyEnding)
+        || ingredientStems.some((stem) => stem.endsWith(riskyEnding))
+      ) {
+        continue;
+      }
+      const base = productStem.slice(0, -riskyEnding.length);
+      const possibleBases = base.endsWith("s")
+        ? [base, base.slice(0, -1)]
+        : [base];
+      if (
+        possibleBases.some((possibleBase) =>
+          possibleBase.length >= 4
+          && ingredientStems.some((ingredientStem) =>
+            compoundTokenMatch(possibleBase, ingredientStem)
+          )
+        )
+      ) {
+        return riskyEnding;
+      }
+    }
+  }
+
+  if (ingredientTokens.length !== 1) return null;
+  const ingredientToken = ingredientTokens[0]!;
+  const ingredientStem = swedishStem(ingredientToken);
+  if (ingredientStem.length < 4) return null;
+
+  for (const productToken of tokenize(productName)) {
+    const productStem = swedishStem(productToken);
+    if (productStem.length - ingredientStem.length < 3) continue;
+
+    if (productStem.startsWith(ingredientStem)) {
+      const suffix = productStem.slice(ingredientStem.length);
+      const riskyEnding = RISKY_COMPOUND_ENDINGS.find((ending) =>
+        suffix.endsWith(ending)
+      );
+      if (riskyEnding) return riskyEnding;
+    }
+
+    if (
+      productStem.endsWith(ingredientStem)
+      && GENERIC_COMPOUND_INGREDIENTS.has(ingredientToken)
+    ) {
+      const prefix = productStem.slice(
+        0,
+        productStem.length - ingredientStem.length,
+      );
+      const supportedByRecipe = [...context.recipeTerms].some((term) =>
+        compoundTokenMatch(term, prefix)
+      );
+      if (!supportedByRecipe) return prefix;
+    }
+  }
+  return null;
+}
+
+function contextTermMatchesProduct(
+  term: string,
+  productName: string,
+  category: string | null,
+): boolean {
+  return tokenize(
+    `${productName} ${normalizeCatalogueText(category ?? "")}`.trim(),
+  ).some((token) => compoundTokenMatch(term, token));
+}
+
 function explanation(
   kind: CatalogueExplanationKind,
   code: CatalogueExplanationCode,
@@ -442,13 +805,80 @@ function nameAssessment(
     return { score: 78, code: "approved_gtin", message: "Samma GTIN som en tidigare godkänd produkt." };
   }
 
-  const tokenScore = weightedTokenF1(ingredientName, productName) * 70;
+  const tokenSimilarity = weightedTokenF1(ingredientName, productName);
+  const tokenScore = tokenSimilarity.score * 70;
   const phraseScore = orderedBigramScore(ingredientName, productName) * 5;
   return {
     score: roundedScore(Math.min(75, tokenScore + phraseScore)),
-    code: "token_similarity",
-    message: "Poäng från viktad tokenlikhet och stabil ordföljd.",
+    code: tokenSimilarity.compound ? "compound_name" : "token_similarity",
+    message: tokenSimilarity.compound
+      ? "Produktnamnet innehåller råvaran som en svensk sammansättning."
+      : "Poäng från viktad tokenlikhet och stabil ordföljd.",
   };
+}
+
+function verifiedIcaSearchRank(
+  product: SupplierProduct,
+  ingredientDisplayName: string,
+): number | null {
+  const metadata = product.source_metadata;
+  if (
+    metadata === null
+    || typeof metadata !== "object"
+    || Array.isArray(metadata)
+  ) {
+    return null;
+  }
+  const source = metadata as Record<string, unknown>;
+  if (
+    source.source !== "ica_public_webshop"
+    || source.store_id !== "1004021"
+    || !Array.isArray(source.ica_search_matches)
+  ) {
+    return null;
+  }
+  const ingredientKey = normalizeCatalogueText(ingredientDisplayName);
+  const ranks = source.ica_search_matches.flatMap((rawMatch) => {
+    if (
+      rawMatch === null
+      || typeof rawMatch !== "object"
+      || Array.isArray(rawMatch)
+    ) {
+      return [];
+    }
+    const match = rawMatch as Record<string, unknown>;
+    return typeof match.query === "string"
+        && normalizeCatalogueText(match.query) === ingredientKey
+        && typeof match.rank === "number"
+        && Number.isSafeInteger(match.rank)
+        && match.rank >= 0
+        && match.rank < 100
+      ? [match.rank]
+      : [];
+  });
+  return ranks.length ? Math.min(...ranks) : null;
+}
+
+function verifiedInnerUnitCount(product: SupplierProduct): number | null {
+  const metadata = product.packaging_metadata;
+  if (
+    metadata === null
+    || typeof metadata !== "object"
+    || Array.isArray(metadata)
+  ) {
+    return null;
+  }
+  const count = (metadata as Record<string, unknown>).inner_unit_count;
+  const label = (metadata as Record<string, unknown>).inner_unit_label;
+  return typeof count === "number"
+      && Number.isSafeInteger(count)
+      && count > 0
+      && count <= 10_000
+      && typeof label === "string"
+      && label.trim().length > 0
+      && label.trim().length <= 80
+    ? count
+    : null;
 }
 
 function packageAssessment(
@@ -518,7 +948,21 @@ function packageAssessment(
 
   let unitScore = 0;
   let amountPerPurchaseUnit: Decimal | null = null;
-  if (packageUnit === requiredUnit) {
+  const innerUnitCount = verifiedInnerUnitCount(product);
+  if (
+    requiredUnit === "st"
+    && packageUnit !== "st"
+    && innerUnitCount !== null
+  ) {
+    unitScore = 15;
+    amountPerPurchaseUnit = new Decimal(innerUnitCount);
+    explanations.push(explanation(
+      "evidence",
+      "verified_inner_count",
+      15,
+      `Förpackningen anger uttryckligen ${innerUnitCount} stycken.`,
+    ));
+  } else if (packageUnit === requiredUnit) {
     unitScore = 15;
     amountPerPurchaseUnit = packageAmount;
     explanations.push(explanation(
@@ -667,7 +1111,7 @@ function assessCandidate(
 ): CatalogueMatchCandidate {
   const explanations: CatalogueMatchExplanation[] = [];
   const fingerprint = createSupplierProductFingerprint(product);
-  const ingredientName = normalizeCatalogueText(ingredient.display_name);
+  const ingredientName = normalizeIngredientName(ingredient.display_name);
   const productName = normalizeSupplierProductName(
     product.display_name,
     product.brand,
@@ -786,10 +1230,44 @@ function assessCandidate(
       assessedName.score,
       assessedName.message,
     ));
+    const icaSearchRank = verifiedIcaSearchRank(
+      product,
+      ingredient.display_name,
+    );
+    if (icaSearchRank !== null) {
+      // ICA's ranking widens recall, but the public search sometimes places a
+      // same-category yet unrelated item near the top. Only the first result
+      // can reach the review threshold without lexical evidence; later ranks
+      // remain input for the advisory semantic reranker.
+      const searchScore = icaSearchRank === 0
+        ? 58
+        : Math.max(20, 50 - icaSearchRank * 4);
+      nameScore = Math.max(nameScore, searchScore);
+      explanations.push(explanation(
+        "evidence",
+        "ica_search_result",
+        searchScore,
+        `ICA:s butikssökning gav artikeln som resultat ${icaSearchRank + 1} för råvaran.`,
+      ));
+    }
   }
 
   if (!approvedMatch) {
-    const ingredientRequirements = extractModifiers(ingredientName, REQUIREMENT_MODIFIERS);
+    const ingredientRequirementText = [
+      ingredientName,
+      normalizeCatalogueText(ingredient.comment ?? ""),
+    ].filter(Boolean).join(" ");
+    const ingredientRequirements = extractModifiers(
+      ingredientRequirementText,
+      REQUIREMENT_MODIFIERS,
+    );
+    for (
+      const requirement of dietaryLabelRequirements(
+        ingredient.dietary_labels ?? [],
+      )
+    ) {
+      ingredientRequirements.add(requirement);
+    }
     const productRequirements = extractModifiers(productName, REQUIREMENT_MODIFIERS);
     const missingRequirements = [...ingredientRequirements]
       .filter((modifier) => !productRequirements.has(modifier));
@@ -802,9 +1280,51 @@ function assessCandidate(
       ));
     }
 
-    const ingredientForms = extractModifiers(ingredientName, FORM_MODIFIERS);
-    const productForms = extractModifiers(productName, FORM_MODIFIERS);
-    if (ingredientForms.size > 0 && productForms.size === 0) {
+    const context = ingredientContext(ingredient, ingredientName);
+    const conflictingKind = conflictingCompoundKind(
+      ingredientName,
+      productName,
+      context,
+    );
+    if (conflictingKind) {
+      explanations.push(explanation(
+        "blocker",
+        "conflicting_product_kind",
+        0,
+        `Artikeln är en annan maträtt eller produkttyp (${conflictingKind}), inte råvaran.`,
+      ));
+    }
+
+    const ingredientForms = extractModifiers(
+      ingredientName,
+      FORM_MODIFIERS,
+    ) as Set<ProductForm>;
+    const detectedProductForms = productForms(
+      productName,
+      product.category,
+    );
+    const ingredientIsFinelyCrushed =
+      /\bfinkrossad(?:e)?\b/u.test(ingredientName);
+    const productIsFinelyCrushed =
+      /\bfinkrossad(?:e)?\b/u.test(productName);
+    if (ingredientIsFinelyCrushed && !productIsFinelyCrushed) {
+      explanations.push(explanation(
+        "blocker",
+        "missing_required_modifier",
+        0,
+        "Råvaran är finkrossad men artikeln är inte det.",
+      ));
+    } else if (!ingredientIsFinelyCrushed && productIsFinelyCrushed) {
+      const penalty = 8;
+      nameScore = Math.max(0, nameScore - penalty);
+      explanations.push(explanation(
+        "warning",
+        "extra_product_modifier",
+        -penalty,
+        "Artikeln är finkrossad medan råvaran bara anger krossad.",
+      ));
+    }
+    if (ingredientForms.size > 0 && detectedProductForms.size === 0) {
       explanations.push(explanation(
         "blocker",
         "missing_required_modifier",
@@ -813,7 +1333,9 @@ function assessCandidate(
       ));
     } else if (
       ingredientForms.size > 0
-      && ![...ingredientForms].some((form) => productForms.has(form))
+      && ![...ingredientForms].some((form) =>
+        detectedProductForms.has(form)
+      )
     ) {
       explanations.push(explanation(
         "blocker",
@@ -823,9 +1345,65 @@ function assessCandidate(
       ));
     }
 
+    let contextAssumptionUsed = context.usesAssumption;
+    if (context.preferredForms.size > 0) {
+      const matchingForms = [...context.preferredForms].filter((form) =>
+        detectedProductForms.has(form)
+      );
+      if (matchingForms.length > 0) {
+        const bonus = assessedName.score >= 40
+          ? Math.min(4, 80 - nameScore)
+          : 0;
+        nameScore += bonus;
+        explanations.push(explanation(
+          "evidence",
+          "category_context_match",
+          bonus,
+          `Artikelkategorin stämmer med råvarans sammanhang: ${matchingForms.sort(compareText).join(", ")}.`,
+        ));
+      } else if (detectedProductForms.size > 0) {
+        const penalty = 18;
+        nameScore = Math.max(0, nameScore - penalty);
+        explanations.push(explanation(
+          "warning",
+          "category_context_conflict",
+          -penalty,
+          "Artikelkategorin pekar på en annan produktform än inköpslistans sammanhang.",
+        ));
+      }
+    }
+
+    const matchingRecipeTerms = [...context.recipeTerms].filter((term) =>
+      contextTermMatchesProduct(term, productName, product.category)
+    );
+    if (matchingRecipeTerms.length > 0 && assessedName.score >= 40) {
+      const bonus = Math.min(8, 75 - nameScore);
+      if (bonus > 0) {
+        nameScore += bonus;
+        explanations.push(explanation(
+          "evidence",
+          "recipe_context_match",
+          bonus,
+          `Artikelns användning stämmer med receptet: ${matchingRecipeTerms.sort(compareText).join(", ")}.`,
+        ));
+        contextAssumptionUsed = true;
+      }
+    }
+
+    if (contextAssumptionUsed) {
+      explanations.push(explanation(
+        "warning",
+        "context_assumption",
+        0,
+        "Recept och kategori används för sortering, så förslaget måste granskas.",
+      ));
+    }
+
     const extraModifiers = new Set(
-      [...productRequirements, ...productForms].filter((modifier) =>
-        !ingredientRequirements.has(modifier) && !ingredientForms.has(modifier)
+      [...productRequirements, ...detectedProductForms].filter((modifier) =>
+        !ingredientRequirements.has(modifier)
+        && !ingredientForms.has(modifier as ProductForm)
+        && !context.preferredForms.has(modifier as ProductForm)
       ),
     );
     if (extraModifiers.size > 0) {
@@ -878,6 +1456,18 @@ function assessCandidate(
 
 function stableCandidates(candidates: readonly CatalogueMatchCandidate[]): CatalogueMatchCandidate[] {
   return [...candidates].sort(compareCandidates);
+}
+
+function semanticCandidateIdentity(
+  candidate: CatalogueMatchCandidate,
+): string {
+  return [
+    candidate.account.id,
+    normalizeSupplierProductName(
+      candidate.product.display_name,
+      candidate.product.brand,
+    ),
+  ].join("\u001f");
 }
 
 export function matchSupplierCatalogue(
@@ -949,7 +1539,7 @@ export function matchSupplierCatalogue(
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: freshApproved[0] ?? null,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: "single_current_approved_match",
       margin_to_next: null,
     };
@@ -960,7 +1550,7 @@ export function matchSupplierCatalogue(
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: null,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: "multiple_approved_matches",
       margin_to_next: 0,
     };
@@ -971,26 +1561,30 @@ export function matchSupplierCatalogue(
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: null,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: "approved_match_needs_review",
       margin_to_next: null,
     };
   }
 
   const top = eligible[0];
-  const runnerUp = eligible[1];
   if (!top) {
     return {
       status: "no_match",
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: null,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: "no_eligible_candidate",
       margin_to_next: null,
     };
   }
 
+  const topIdentity = semanticCandidateIdentity(top);
+  const runnerUp = eligible.find((candidate, index) =>
+    index > 0
+    && semanticCandidateIdentity(candidate) !== topIdentity
+  );
   const margin = runnerUp
     ? roundedScore(top.score.total - runnerUp.score.total)
     : null;
@@ -1005,7 +1599,7 @@ export function matchSupplierCatalogue(
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: top,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: "unique_safe_candidate",
       margin_to_next: margin,
     };
@@ -1016,7 +1610,7 @@ export function matchSupplierCatalogue(
       matcher_version: CATALOGUE_MATCHER_VERSION,
       normalization_version: CATALOGUE_NORMALIZATION_VERSION,
       selected: null,
-      candidates: candidates.slice(0, 5),
+      candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
       reason: top.score.total >= SAFE_MATCH_SCORE && !safeMargin
         ? "safe_margin_not_met"
         : "candidate_needs_review",
@@ -1029,7 +1623,7 @@ export function matchSupplierCatalogue(
     matcher_version: CATALOGUE_MATCHER_VERSION,
     normalization_version: CATALOGUE_NORMALIZATION_VERSION,
     selected: null,
-    candidates: candidates.slice(0, 5),
+    candidates: candidates.slice(0, MAX_CATALOGUE_MATCH_CANDIDATES),
     reason: "confidence_below_review_threshold",
     margin_to_next: margin,
   };

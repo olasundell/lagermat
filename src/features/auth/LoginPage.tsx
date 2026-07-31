@@ -3,15 +3,26 @@ import { type FormEvent, useState } from "react";
 import { Button, Input, Label, TextField } from "react-aria-components";
 import { BrandMark } from "../../components/BrandMark";
 import { supabaseConfiguration } from "../../lib/supabase";
+import { DemoStartPanel } from "../demo/DemoStartPanel";
+import { demoConfiguration } from "../demo/demoConfiguration";
 import { useAuth } from "./AuthContext";
 
 export function LoginPage() {
-  const { automaticSignInError, requestMagicLink, status } = useAuth();
+  const {
+    automaticSignInError,
+    demoState,
+    requestMagicLink,
+    startDemo,
+    status
+  } = useAuth();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const localMailpitUrl = import.meta.env.DEV ? "http://127.0.0.1:54324" : null;
+  const demoEnabled = demoConfiguration.enabled
+    && Boolean(demoConfiguration.siteKey);
+  const demoMisconfigured = Boolean(demoConfiguration.error);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -31,10 +42,16 @@ export function LoginPage() {
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="login-title">
         <div className="auth-card__brand"><BrandMark /></div>
-        <p className="auth-card__eyebrow">Säker lägerplanering</p>
-        <h1 id="login-title">Logga in utan lösenord</h1>
+        <p className="auth-card__eyebrow">
+          {demoEnabled ? "Syntetiskt demoläger" : "Säker lägerplanering"}
+        </p>
+        <h1 id="login-title">
+          {demoEnabled ? "Prova Lägermat" : "Logga in utan lösenord"}
+        </h1>
         <p className="auth-card__intro">
-          Ange e-postadressen som du har blivit inbjuden med. Du får en personlig engångslänk för inloggning.
+          {demoEnabled
+            ? "Planera med helt fingerade deltagare och recept i en egen kopia som raderas automatiskt."
+            : "Ange e-postadressen som du har blivit inbjuden med. Du får en personlig engångslänk för inloggning."}
         </p>
 
         {status === "unconfigured" ? (
@@ -49,7 +66,21 @@ export function LoginPage() {
           </div>
         ) : null}
 
-        {sent ? (
+        {demoEnabled && demoConfiguration.siteKey ? (
+          <DemoStartPanel
+            siteKey={demoConfiguration.siteKey}
+            busy={
+              demoState.status === "checking"
+              || demoState.status === "starting"
+            }
+            error={demoState.error}
+            onStart={startDemo}
+          />
+        ) : demoMisconfigured ? (
+          <div className="auth-notice auth-notice--error" role="alert">
+            {demoConfiguration.error}
+          </div>
+        ) : sent ? (
           <div className="auth-sent" role="status">
             <Mail aria-hidden="true" size={25} />
             <div>
@@ -62,7 +93,7 @@ export function LoginPage() {
               </a>
             ) : null}
           </div>
-        ) : (
+        ) : !demoMisconfigured ? (
           <form className="auth-form" onSubmit={handleSubmit}>
             <TextField name="email" type="email" isRequired value={email} onChange={setEmail}>
               <Label>E-postadress</Label>
@@ -74,11 +105,15 @@ export function LoginPage() {
               Skicka inloggningslänk
             </Button>
           </form>
-        )}
+        ) : null}
 
         <div className="auth-card__security">
           <ShieldCheck aria-hidden="true" size={21} />
-          <span>Endast inbjudna användare kan logga in</span>
+          <span>
+            {demoEnabled
+              ? "Ingen e-post, registrering eller verklig persondata används"
+              : "Endast inbjudna användare kan logga in"}
+          </span>
         </div>
       </section>
     </main>

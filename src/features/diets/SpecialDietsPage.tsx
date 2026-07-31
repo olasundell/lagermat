@@ -19,6 +19,7 @@ interface DietaryNeedRow {
 interface ParticipantIdentity {
   id: string;
   display_name: string;
+  lifecycle_status: "active" | "withdrawn";
 }
 
 interface DietaryTagRow {
@@ -111,9 +112,9 @@ export function SpecialDietsPage() {
       if (!scope || !supabase) return { needs: [], participants: [], tags: [], links: [], readiness: null };
       const [needsResult, participantsResult, tagsResult, linksResult, readinessResult] = await Promise.all([
         supabase.from("participant_dietary_needs").select("id, participant_id, raw_food_note, review_status, reviewed_at").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).order("created_at"),
-        supabase.from("participants").select("id, display_name").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId),
+        supabase.from("participants").select("id, display_name, lifecycle_status").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("lifecycle_status", "active"),
         supabase.from("dietary_tags").select("id, label").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).order("label"),
-        supabase.from("dietary_need_tags").select("dietary_need_id, dietary_tag_id").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId),
+        supabase.from("dietary_need_tags").select("dietary_need_id, dietary_tag_id").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("active", true),
         supabase.rpc("get_camp_readiness", { p_organization_id: scope.organizationId, p_camp_id: scope.campId }).maybeSingle()
       ]);
       const queryError = needsResult.error ?? participantsResult.error ?? tagsResult.error ?? linksResult.error ?? readinessResult.error;
@@ -128,11 +129,13 @@ export function SpecialDietsPage() {
     }
   });
 
+  const activeParticipantIds = new Set((dietQuery.data?.participants ?? []).map((participant) => participant.id));
+  const activeNeeds = (dietQuery.data?.needs ?? []).filter((need) => activeParticipantIds.has(need.participant_id));
   const participantNames = new Map((dietQuery.data?.participants ?? []).map((participant) => [participant.id, participant.display_name]));
   const tagLabels = new Map((dietQuery.data?.tags ?? []).map((tag) => [tag.id, tag.label]));
   const availableTags = (dietQuery.data?.tags ?? []).map((tag) => tag.label);
-  const unresolved = (dietQuery.data?.needs ?? []).filter((need) => need.review_status !== "resolved");
-  const resolved = (dietQuery.data?.needs ?? []).filter((need) => need.review_status === "resolved");
+  const unresolved = activeNeeds.filter((need) => need.review_status !== "resolved");
+  const resolved = activeNeeds.filter((need) => need.review_status === "resolved");
   const totalNeeds = unresolved.length + resolved.length;
   const summary = specialDietSummary(totalNeeds, unresolved.length, Boolean(dietQuery.data?.readiness?.calculation_stale));
 

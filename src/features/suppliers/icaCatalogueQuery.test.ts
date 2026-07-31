@@ -31,18 +31,19 @@ function item(
 }
 
 describe("ICA catalogue query planning", () => {
-  it("preserves the visible supply order and removes only exact duplicate searches", () => {
+  it("preserves the visible supply order, removes exact duplicates and searches every physical need unit", () => {
     expect(buildIcaCatalogueQueries([
       item("Gurka", "kg"),
       item("isbergssallad", "kg"),
       item("Krossade tomater", "kg"),
       item("krossade TOMATER", "kg"),
-      item("Mjölkfritt matfett", "paket"),
+      item("Mjölkfritt matfett", "kg"),
       item("Morot", "kg"),
     ])).toEqual([
       "Gurka",
       "isbergssallad",
       "Krossade tomater",
+      "Mjölkfritt matfett",
       "Morot",
     ]);
   });

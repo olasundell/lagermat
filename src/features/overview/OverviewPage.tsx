@@ -19,6 +19,15 @@ const emptyCounts: OverviewCounts = {
   missingRecipes: 0,
   calculationStale: true,
   canFinalize: false,
+  supplierItemsTotal: 0,
+  supplierReadyItems: 0,
+  supplierSafeSuggestions: 0,
+  supplierReviewSuggestions: 0,
+  supplierPendingItems: 0,
+  supplierNoMatchItems: 0,
+  supplierOrderIncompleteItems: 0,
+  supplierUnresolvedItems: 0,
+  procurementReady: true,
   deliveries: 0
 };
 
@@ -48,9 +57,9 @@ export function OverviewPage() {
       }
       const scope = { organizationId: activeMembership.organizationId, campId: activeCamp.id };
       const [participantsResult, recipesResult, deliveriesResult, readinessResult] = await Promise.all([
-        supabase.from("participants").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId),
+        supabase.from("participants").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("lifecycle_status", "active"),
         supabase.from("camp_recipe_copies").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId),
-        supabase.from("supply_lists").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("kind", "delivery"),
+        supabase.from("supply_lists").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("kind", "delivery").eq("source_present", true),
         supabase.rpc("get_camp_readiness", { p_organization_id: scope.organizationId, p_camp_id: scope.campId }).maybeSingle()
       ]);
       const failure = participantsResult.error ?? recipesResult.error ?? deliveriesResult.error ?? readinessResult.error;
@@ -69,6 +78,15 @@ export function OverviewPage() {
         missingRecipes: readiness?.meals_without_recipe ?? 0,
         calculationStale: readiness?.calculation_stale ?? true,
         canFinalize: readiness?.can_finalize ?? false,
+        supplierItemsTotal: readiness?.supplier_items_total ?? 0,
+        supplierReadyItems: readiness?.supplier_ready_items ?? 0,
+        supplierSafeSuggestions: readiness?.supplier_safe_suggestions ?? 0,
+        supplierReviewSuggestions: readiness?.supplier_review_suggestions ?? 0,
+        supplierPendingItems: readiness?.supplier_pending_items ?? 0,
+        supplierNoMatchItems: readiness?.supplier_no_match ?? 0,
+        supplierOrderIncompleteItems: readiness?.supplier_order_incomplete ?? 0,
+        supplierUnresolvedItems: readiness?.supplier_unresolved_items ?? 0,
+        procurementReady: readiness?.procurement_ready ?? true,
         deliveries: deliveriesResult.count ?? 0
       };
     }
@@ -105,7 +123,36 @@ export function OverviewPage() {
       done: counts.mealPlanConfirmed && counts.unplannedSlots === 0 && counts.missingRecipes === 0,
       warning: !counts.mealPlanConfirmed || counts.unplannedSlots > 0 || counts.missingRecipes > 0
     },
-    { number: 6, title: "Inköp", detail: counts.calculationStale ? "Väntar på att mängderna räknas ut" : "Mängderna är aktuella", to: "/inkop" as const, done: !counts.calculationStale },
+    {
+      number: 6,
+      title: "Inköp",
+      detail: counts.calculationStale
+        ? "Väntar på att mängderna räknas ut"
+        : counts.supplierItemsTotal === 0
+          ? "Inköpslistan behöver skapas"
+          : counts.supplierUnresolvedItems > 0
+            ? counts.supplierPendingItems > 0
+              ? quantity(
+                counts.supplierPendingItems,
+                "råvara söks automatiskt hos ICA",
+                "råvaror söks automatiskt hos ICA",
+              )
+              : quantity(
+                counts.supplierUnresolvedItems,
+                "råvara behöver åtgärdas",
+                "råvaror behöver åtgärdas",
+              )
+            : `${quantity(counts.supplierReadyItems, "råvara", "råvaror")} klara för beställning`,
+      to: "/inkop" as const,
+      done: !counts.calculationStale
+        && counts.supplierItemsTotal > 0
+        && counts.procurementReady,
+      warning: !counts.calculationStale
+        && (
+          counts.supplierItemsTotal === 0
+          || !counts.procurementReady
+        ),
+    },
     { number: 7, title: "Leveranser", detail: quantity(counts.deliveries, "leveranslista", "leveranslistor"), to: "/leveranser" as const, done: counts.deliveries > 0 }
   ];
   const nextAction = overviewNextAction(counts);

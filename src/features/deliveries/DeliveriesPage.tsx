@@ -30,10 +30,12 @@ import {
 } from "../supplies/supplyApi";
 import {
   filterSupplyItems,
+  formatCountedAmount,
   formatExactAmount,
   groupSupplyItems,
   hasUnitMismatch,
   parseDecimalInput,
+  practicalSupplyAmount,
   type SupplyFilter,
   type SupplyItemRow,
   type SupplyListRow
@@ -160,12 +162,30 @@ export function DeliveriesPage() {
     enabled: Boolean(scope && offlineState.online),
     queryFn: () => fetchCurrentCalculation(scope!)
   });
-  const deliveries = (listsQuery.data?.lists ?? []).filter((list) => list.kind === "delivery");
+  const lists = listsQuery.data?.lists ?? [];
+  const deliveries = lists.filter((list) => list.kind === "delivery");
+  const practicalDeliveryAmounts = new Map(
+    deliveries.flatMap((list) =>
+      list.supply_list_items
+        .filter((item) => item.source_present)
+        .map((item) => [
+          item.id,
+          practicalSupplyAmount(item.required_amount, item.required_unit),
+        ] as const)
+    ),
+  );
   const cached = listsQuery.data?.source === "cache";
   const networkWritable = offlineState.online && !cached && offlineState.pending === 0 && offlineState.conflicts.length === 0;
   const selectedDelivery = deliveries.find((list) => list.id === selectedDeliveryId) ?? deliveries[0] ?? null;
+  const deliveryUsesCurrentCalculation =
+    selectedDelivery?.calculation_revisions?.status === "current";
   const hasCurrentCalculation = Boolean(currentCalculationQuery.data)
-    || selectedDelivery?.calculation_revisions?.status === "current";
+    || deliveryUsesCurrentCalculation;
+  const deliveryNeedsSync = Boolean(
+    currentCalculationQuery.data
+    && selectedDelivery
+    && !deliveryUsesCurrentCalculation,
+  );
   const checkingCurrentCalculation = offlineState.online
     && (currentCalculationQuery.isPending || currentCalculationQuery.isFetching);
   const calculationStatusUnavailable = !hasCurrentCalculation
@@ -267,7 +287,20 @@ export function DeliveriesPage() {
       <div className="delivery-content">
         <div className="delivery-breadcrumb">{activeMembership?.organizationName} <span>·</span> {activeCamp?.name}</div>
         <div className="page-heading delivery-heading">
-          <div><h1>{selectedDelivery.title}</h1><p>{dateLabel(selectedDelivery.range_start, activeCamp?.timezone ?? "Europe/Stockholm")} · {currentItems.length} {currentItems.length === 1 ? "vara" : "varor"} · {selectedDelivery.calculation_revisions?.status === "current" ? "senaste mängderna" : "mängderna behöver räknas om"}</p></div>
+          <div>
+            <h1>{selectedDelivery.title}</h1>
+            <p>
+              {dateLabel(selectedDelivery.range_start, activeCamp?.timezone ?? "Europe/Stockholm")}
+              {" · "}
+              {currentItems.length} {currentItems.length === 1 ? "vara" : "varor"}
+              {" · "}
+              {deliveryUsesCurrentCalculation
+                ? "senaste mängderna"
+                : deliveryNeedsSync
+                  ? "listan behöver uppdateras"
+                  : "mängderna behöver räknas om"}
+            </p>
+          </div>
           {checkingCurrentCalculation ? (
             <Button className="secondary-button" isDisabled><Calculator aria-hidden="true" size={17} /> Kontrollerar beräkning…</Button>
           ) : calculationStatusUnavailable ? (
@@ -296,6 +329,7 @@ export function DeliveriesPage() {
             campName={activeCamp.name}
             timeZone={activeCamp.timezone}
             disabled={!networkWritable || !hasCurrentCalculation}
+            practicalAmounts={practicalDeliveryAmounts}
           />
         ) : null}
 
@@ -318,12 +352,19 @@ export function DeliveriesPage() {
           <input name="delivery-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sök vara" type="search" />
         </label>
 
+        <p className="operational-rounding-note">
+          Behoven visas i praktiska mängder för varje leverans. Faktiska
+          ICA-förpackningar fördelas globalt utan dubbel avrundning.
+        </p>
+
         <div className="delivery-groups">
           {[...grouped.entries()].map(([category, categoryItems]) => (
             <section key={category} className="delivery-group" aria-labelledby={`category-${category}`}>
               <h2 id={`category-${category}`}>{category}</h2>
               {categoryItems.map((item) => {
                 const expanded = expandedId === item.id;
+                const practical = practicalDeliveryAmounts.get(item.id)
+                  ?? practicalSupplyAmount(item.required_amount, item.required_unit);
                 return (
                   <div key={item.id} className={`delivery-item${expanded ? " delivery-item--expanded" : ""}`}>
                     <div className="delivery-item__row">
@@ -332,8 +373,20 @@ export function DeliveriesPage() {
                         <span aria-hidden="true">{item.completed ? <Check size={22} strokeWidth={3} /> : null}</span>
                         <span className="sr-only">{item.completed ? "Markera som kvar" : "Markera som klar"}: {item.item_name}</span>
                       </label>
-                      <div className="delivery-item__name"><strong>{item.item_name}</strong><span>Behov {formatExactAmount(item.required_amount)} {item.required_unit}</span></div>
-                      <div className="delivery-item__ordered" aria-label={`Beställt för ${item.item_name}`}>{item.ordered_amount === null ? "Ej angivet" : `${formatExactAmount(item.ordered_amount)} ${item.ordered_unit ?? ""}`}</div>
+                      <div className="delivery-item__name">
+                        <strong>{item.item_name}</strong>
+                        <span className={practical.issue ? "operational-amount--warning" : undefined}>
+                          Behov {practical.display}
+                        </span>
+                      </div>
+                      <div className="delivery-item__ordered" aria-label={`Beställt för ${item.item_name}`}>
+                        <span>{item.ordered_amount === null
+                          ? "Ej angivet"
+                          : formatCountedAmount(item.ordered_amount, item.ordered_unit ?? "")}</span>
+                        {item.order_source_kind === "supplier_purchase" && item.package_note ? (
+                          <small>{item.package_note}</small>
+                        ) : null}
+                      </div>
                       <Button className="icon-button delivery-item__expand" aria-label={expanded ? `Fäll ihop ${item.item_name}` : `Visa detaljer för ${item.item_name}`} onPress={() => setExpandedId(expanded ? null : item.id)}>
                         {expanded ? <ChevronUp aria-hidden="true" size={22} /> : <ChevronDown aria-hidden="true" size={22} />}
                       </Button>

@@ -42,4 +42,26 @@ describe("supply readiness copy", () => {
       "Beräkningen saknas eller är inaktuell"
     ]);
   });
+
+  it("uses the same supplier counts as procurement and overview", () => {
+    expect(createSupplyReadinessProblems({
+      meal_plan_confirmed: true,
+      unplanned_slots: 0,
+      unresolved_dietary_needs: 0,
+      meals_without_recipe: 0,
+      calculation_stale: false,
+      supplier_pending_items: 4,
+      supplier_safe_suggestions: 2,
+      supplier_review_suggestions: 1,
+      supplier_no_match: 3,
+      supplier_order_incomplete: 1,
+      supplier_unresolved_items: 7,
+    })).toEqual([
+      "Scoutmat söker fortfarande efter 4 råvaror hos ICA",
+      "2 säkra ICA-förslag behöver godkännas",
+      "1 ICA-träff behöver granskas",
+      "3 råvaror saknar ICA-träff",
+      "1 godkänd ICA-artikel saknar köpantal",
+    ]);
+  });
 });

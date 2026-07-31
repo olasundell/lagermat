@@ -42,9 +42,11 @@ describe("supply export", () => {
     generatedAt: new Date("2026-07-19T12:34:00Z")
   });
 
-  it("skriver stabil CSV med rå decimal och tydlig varningsstatus", () => {
+  it("skriver praktisk mängd och separat exakt decimal med tydlig varningsstatus", () => {
     const csv = createSupplyCsv(document);
-    expect(csv).toContain('"Beräknat behov"');
+    expect(csv).toContain('"Praktiskt behov"');
+    expect(csv).toContain('"Exakt beräkning"');
+    expect(csv).toContain('"Aubergine";"6";"st";"5.7";"st"');
     expect(csv).toContain('"5.7"');
     expect(csv).toContain('"UNDERLAG MED VARNINGAR"');
     expect(csv).toContain('"1 specialkostuppgift återstår"');
@@ -57,7 +59,8 @@ describe("supply export", () => {
     expect(html).toContain("thead { display: table-header-group; }");
     expect(html).toContain("UNDERLAG MED VARNINGAR – kontrollera före användning");
     expect(html).toContain("Aubergine");
-    expect(html).toContain("5,7");
+    expect(html).toContain(">6 st<");
+    expect(html).not.toContain(">5,7 st<");
   });
 
   it("skiljer leveransdatum från tiden då underlaget skapades", () => {
@@ -73,5 +76,56 @@ describe("supply export", () => {
     const html = createPrintableSupplyHtml(deliveryDocument);
     expect(html).toContain("Leveransdatum saknas");
     expect(html).toContain("Skapad: 19 juli 2026 14:34");
+  });
+
+  it("uses the same practical amounts in distribution CSV and print", () => {
+    const distributionDocument = createSupplyExportDocument({
+      list: {
+        ...list,
+        kind: "distribution",
+        title: "Frukost · Matlag Elden",
+        supply_list_items: [
+          {
+            ...list.supply_list_items[0]!,
+            id: "milk",
+            item_name: "Mjölk",
+            required_amount: 1.925,
+            required_unit: "l",
+          },
+          {
+            ...list.supply_list_items[0]!,
+            id: "cheese",
+            item_name: "Ost",
+            required_amount: 7.7,
+            required_unit: "skivor",
+          },
+          {
+            ...list.supply_list_items[0]!,
+            id: "fat",
+            item_name: "Mjölkfritt matfett",
+            required_amount: 0.00225,
+            required_unit: "kg",
+          },
+        ],
+      },
+      organizationName: "Björkstad scoutkår",
+      campName: "Sommarläger 2026",
+      timeZone: "Europe/Stockholm",
+      readiness: { canFinalize: true, problems: [] },
+      generatedAt: new Date("2026-07-19T12:34:00Z"),
+    });
+
+    const csv = createSupplyCsv(distributionDocument);
+    const html = createPrintableSupplyHtml(distributionDocument);
+
+    expect(csv).toContain('"Mjölk";"2";"l"');
+    expect(csv).toContain('"Ost";"8";"skivor"');
+    expect(csv).toContain('"Mjölkfritt matfett";"10";"g";"0.00225";"kg"');
+    expect(csv).toContain('"Mjölk";"2";"l";"1.925";"l"');
+    expect(html).toContain("Varje matlag får en praktiskt avrundad mängd");
+    expect(html).toContain(">2 l<");
+    expect(html).toContain(">8 skivor<");
+    expect(html).toContain(">10 g<");
+    expect(html).not.toContain(">1,925 l<");
   });
 });

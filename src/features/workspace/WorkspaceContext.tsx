@@ -15,6 +15,10 @@ import {
   readCachedCamps,
   readCachedMemberships
 } from "./workspaceCache";
+import {
+  selectedCampKey,
+  selectedOrganizationKey
+} from "./workspaceSelectionStorage";
 
 export type OrganizationRole = "admin" | "planner";
 
@@ -59,14 +63,6 @@ interface MembershipQueryRow {
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
-
-function selectedOrganizationKey(userId: string): string {
-  return `lagermat:selected-organization:${userId}`;
-}
-
-function selectedCampKey(userId: string, organizationId: string): string {
-  return `lagermat:selected-camp:${userId}:${organizationId}`;
-}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();

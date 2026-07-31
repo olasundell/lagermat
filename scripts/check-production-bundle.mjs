@@ -1,7 +1,21 @@
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
+import {
+  readHostedDemoMode,
+  TURNSTILE_ORIGIN
+} from "./hosted-environment.mjs";
 
 const root = resolve(process.argv[2] ?? "dist");
+let hostedMode;
+try {
+  hostedMode = readHostedDemoMode(
+    process.env.DEPLOYMENT_ENVIRONMENT?.trim(),
+    process.env
+  );
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".map", ".svg", ".txt", ".webmanifest"]);
 
 async function collectFiles(directory) {
@@ -68,6 +82,24 @@ if (!headers.includes("Content-Security-Policy:")) findings.push("_headers: Cont
 if (headers.includes("*.supabase.co")) findings.push("_headers: wildcard för Supabase är inte tillåten");
 if (expectedUrl && !headers.includes(new URL(expectedUrl).origin)) {
   findings.push("_headers: den exakta Supabase-originen saknas i CSP");
+}
+if (hostedMode.demoEnabled) {
+  if (!headers.includes(`script-src 'self' ${TURNSTILE_ORIGIN}`)) {
+    findings.push("_headers: staging saknar Turnstiles exakta script-origin");
+  }
+  if (!headers.includes(`frame-src ${TURNSTILE_ORIGIN}`)) {
+    findings.push("_headers: staging saknar Turnstiles exakta frame-origin");
+  }
+  if (!combined.includes(hostedMode.turnstileSiteKey)) {
+    findings.push("stagingbygget saknar den förväntade publika Turnstile-sitekeyn");
+  }
+} else {
+  if (headers.includes(TURNSTILE_ORIGIN)) {
+    findings.push("_headers: produktion får inte tillåta Turnstile-origin");
+  }
+  if (!headers.includes("frame-src 'none'")) {
+    findings.push("_headers: produktion måste neka alla frames");
+  }
 }
 
 if (findings.length > 0) {

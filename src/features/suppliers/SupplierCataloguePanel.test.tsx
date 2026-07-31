@@ -133,7 +133,14 @@ describe("SupplierCataloguePanel", () => {
         provider_location_id: "1004021",
         display_name: "ICA Kvantum Sickla",
       }],
-      syncPending: true,
+      syncProgress: {
+        phase: "syncing",
+        completedQueries: [],
+        totalQueries: 1,
+        retryAfterMs: 15_000,
+        retryAt: Date.now() + 15_000,
+        lastAttemptedAt: Date.now(),
+      },
     });
 
     expect(screen.queryByRole("button", { name: "Prova med exempeldata" }))
@@ -148,10 +155,62 @@ describe("SupplierCataloguePanel", () => {
     expect(screen.getByRole("heading", { name: "Hämtas från ICA" }))
       .toBeInTheDocument();
     expect(screen.getByText(
-      "Du behöver inte söka eller matcha dem för hand.",
+      "du behöver inte matcha dem för hand.",
       { exact: false },
     )).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sök" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("skiljer på pågående ICA-sökning, granskning och färdig sökning utan träff", () => {
+    const havregryn = {
+      ...item,
+      id: "item-havregryn",
+      item_key: "purchase:havregryn",
+      canonical_key: "ingredient:havregryn",
+      item_name: "Havregryn",
+    };
+    const tacosalsa = {
+      ...item,
+      id: "item-tacosalsa",
+      item_key: "purchase:tacosalsa",
+      canonical_key: "ingredient:tacosalsa",
+      item_name: "Tacosalsa",
+    };
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      items: [item, havregryn, tacosalsa],
+      candidates: [{
+        ...candidate,
+        classification: "review",
+        score: 82,
+      }],
+      syncProgress: {
+        phase: "syncing",
+        completedQueries: ["Ris", "Havregryn"],
+        totalQueries: 3,
+        retryAfterMs: 15_000,
+        retryAt: Date.now() + 15_000,
+        lastAttemptedAt: Date.now(),
+      },
+    });
+
+    const status = screen.getByLabelText("ICA-matchningsstatus");
+    expect(status).toHaveTextContent("2 av 3 sökningar klara");
+    expect(status).toHaveTextContent("1 hämtas");
+    expect(status).toHaveTextContent("1 behöver granskas");
+    expect(status).toHaveTextContent("1 utan träff");
+    expect(screen.getByRole("heading", { name: "Hämtas från ICA" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Tacosalsa")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sök alternativ för Havregryn"))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText("Sök alternativ för Tacosalsa"))
       .not.toBeInTheDocument();
   });
 
@@ -219,6 +278,24 @@ describe("SupplierCataloguePanel", () => {
     expect(onReject).toHaveBeenCalledWith("candidate-1");
   });
 
+  it("märker ett modellomrankat förslag som AI-assisterat och fortfarande granskningspliktigt", () => {
+    renderPanel({
+      candidates: [{
+        ...candidate,
+        classification: "review",
+        semanticAssisted: true,
+        reasons: ["Hamburgerdressing passar receptet Hamburgare."],
+      }],
+    });
+
+    expect(screen.getByText("AI-assisterad · Granska")).toBeInTheDocument();
+    expect(screen.getByText(
+      "Hamburgerdressing passar receptet Hamburgare.",
+    )).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Godkänn alla säkra" }))
+      .toBeDisabled();
+  });
+
   it("söker bland importerade artiklar när ingen kandidat finns", async () => {
     const user = userEvent.setup();
     const onSuggestAlternative = vi.fn().mockResolvedValue(undefined);
@@ -231,6 +308,68 @@ describe("SupplierCataloguePanel", () => {
 
     expect(onSearchAlternatives).toHaveBeenCalledWith(account.id, "RIS-10");
     expect(onSuggestAlternative).toHaveBeenCalledWith(item, product);
+  });
+
+  it("skiljer ett oskickat sökord från en genomförd sökning utan träff", async () => {
+    const user = userEvent.setup();
+    const onSearchAlternatives = vi.fn().mockResolvedValue([]);
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      syncProgress: {
+        phase: "complete",
+        completedQueries: ["Ris"],
+        totalQueries: 1,
+        retryAfterMs: null,
+        retryAt: null,
+        lastAttemptedAt: Date.now(),
+      },
+      onSearchAlternatives,
+    });
+
+    const input = screen.getByLabelText("Sök alternativ för Ris");
+    await user.type(input, "jasminris");
+    expect(screen.queryByText(/Inga ICA-artiklar hittades/))
+      .not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Sök" }));
+
+    expect(await screen.findByText(
+      "Inga ICA-artiklar hittades för “jasminris”.",
+      { exact: false },
+    )).toBeInTheDocument();
+  });
+
+  it("visar nästa automatiska försök och kan starta om ICA-synken direkt", async () => {
+    const user = userEvent.setup();
+    const onRetrySync = vi.fn().mockResolvedValue(undefined);
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      syncWarning: "ICA begränsade kataloghämtningen tillfälligt.",
+      syncProgress: {
+        phase: "rate_limited",
+        completedQueries: [],
+        totalQueries: 1,
+        retryAfterMs: 30_000,
+        retryAt: Date.now() + 30_000,
+        lastAttemptedAt: Date.now(),
+      },
+      onRetrySync,
+    });
+
+    expect(screen.getByText(/Nästa försök om \d+ sekunder/))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Försök igen nu" }));
+    expect(onRetrySync).toHaveBeenCalledOnce();
   });
 
   it("återanvänder ett inläst godkännande efter omladdning", () => {

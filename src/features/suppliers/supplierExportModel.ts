@@ -1,5 +1,9 @@
 import type { SupplyExportReadiness } from "../supplies/exportModel";
-import type { SupplyItemRow } from "../supplies/supplyModel";
+import {
+  practicalSupplyAmount,
+  type PracticalSupplyAmount,
+  type SupplyItemRow,
+} from "../supplies/supplyModel";
 import {
   proposeSupplierOrder,
   type SupplierAccount,
@@ -9,6 +13,7 @@ import {
 
 export interface SupplierUnderlayLine {
   item: SupplyItemRow;
+  practicalRequirement: PracticalSupplyAmount;
   detail: SupplierMatchDetail | null;
   proposal: SupplierOrderProposal | null;
 }
@@ -44,8 +49,10 @@ const csvColumns = [
   "Kundnummer",
   "Kategori",
   "Råvara",
-  "Beräknat behov",
-  "Behovets enhet",
+  "Praktiskt behov",
+  "Praktisk enhet",
+  "Exakt beräkning",
+  "Beräkningens enhet",
   "Matchningsstatus",
   "Leverantörens artikelnummer",
   "GTIN",
@@ -135,6 +142,10 @@ export function createSupplierOrderUnderlay(input: SupplierOrderUnderlayInput): 
       const detail = chooseLatestMatch(item, input.supplier, input.details);
       return {
         item,
+        practicalRequirement: practicalSupplyAmount(
+          item.required_amount,
+          item.required_unit,
+        ),
         detail,
         proposal: detail ? proposeSupplierOrder(item.required_amount, item.required_unit, detail) : null,
       };
@@ -182,6 +193,8 @@ export function createSupplierOrderCsv(underlay: SupplierOrderUnderlay): string 
       underlay.supplier.customer_number ?? "",
       line.item.category,
       line.item.item_name,
+      line.practicalRequirement.amount,
+      line.practicalRequirement.unit,
       rawDecimal(line.item.required_amount),
       line.item.required_unit,
       matchStatus(line),

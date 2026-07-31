@@ -69,7 +69,12 @@ describe("ICA:s publika katalogformat", () => {
   });
 
   it("skapar en stagingrad med ICA-artikel, pris och tre verifierade innerenheter", () => {
-    const result = normaliseIcaCatalogueResponse(response(product()), {
+    const result = normaliseIcaCatalogueResponse(response(product({
+      scoutmatSearchMatches: [
+        { query: "Krossade tomater", rank: 0 },
+        { query: "Okänd sökning", rank: 1 },
+      ],
+    })), {
       storeId: "1004021",
       query: "krossade tomater",
       completedQueries: ["Krossade tomater", "Tomatpuré"],
@@ -87,6 +92,9 @@ describe("ICA:s publika katalogformat", () => {
         retailer_product_id: "2012345670001",
         product_id: "ica-product-1",
         pack_size_description: "1170g",
+        scoutmat_search_matches: [
+          { query: "Krossade tomater", rank: 0 },
+        ],
       }),
       normalized_data: {
         supplier_article_number: "2012345670001",
@@ -102,8 +110,10 @@ describe("ICA:s publika katalogformat", () => {
         brand: "ICA",
         catch_weight: false,
         packaging_metadata: {
-          normalization_version: "ica-public-catalogue-v1",
+          normalization_version: "ica-public-catalogue-v2",
           source_pack_size_description: "1170g",
+          effective_pack_size_description: "1170g",
+          package_size_source: "pack_size_description",
           package_dimension: "mass",
           inner_unit_count: 3,
           inner_unit_label: "stycken",
@@ -112,7 +122,11 @@ describe("ICA:s publika katalogformat", () => {
           source: "ica_public_webshop",
           store_id: "1004021",
           query: "krossade tomater",
+          ica_search_association_version: 1,
           ica_completed_searches: ["Krossade tomater", "Tomatpuré"],
+          ica_search_matches: [
+            { query: "Krossade tomater", rank: 0 },
+          ],
           ica_retailer_product_id: "2012345670001",
           ica_product_id: "ica-product-1",
           ica_unit_price: {
@@ -177,6 +191,47 @@ describe("ICA:s publika katalogformat", () => {
     });
   });
 
+  it("använder fysisk mängd i artikelnamnet när ICA:s storleksfält beskriver utspädd mängd", () => {
+    const result = normaliseIcaCatalogueResponse(response(product({
+      retailerProductId: "fond-180",
+      name: "Kycklingfond 180ml ICA",
+      packSizeDescription: "4L",
+      categoryPath: ["Skafferi", "Buljong & fond"],
+    })), { storeId: "1004021" });
+
+    expect(result.rejectedProducts).toEqual([]);
+    expect(result.rows[0]?.normalized_data).toMatchObject({
+      package_amount: 0.18,
+      package_unit: "l",
+      packaging_metadata: {
+        normalization_version: "ica-public-catalogue-v2",
+        source_pack_size_description: "4L",
+        effective_pack_size_description: "180ml",
+        package_size_source: "product_name",
+      },
+    });
+  });
+
+  it("behåller verifierad totalvikt när namnet anger styckvikt och antal", () => {
+    const result = normaliseIcaCatalogueResponse(response(product({
+      retailerProductId: "hamburger-6",
+      name: "Hamburgare 90g 6-p Scan",
+      brand: "Scan",
+      packSizeDescription: "540g",
+    })), { storeId: "1004021" });
+
+    expect(result.rejectedProducts).toEqual([]);
+    expect(result.rows[0]?.normalized_data).toMatchObject({
+      package_amount: 0.54,
+      package_unit: "kg",
+      packaging_metadata: {
+        effective_pack_size_description: "540g",
+        package_size_source: "pack_size_description",
+        inner_unit_count: 6,
+      },
+    });
+  });
+
   it("bevarar available som rådata utan att kalla det verifierat lager", () => {
     const result = normaliseIcaCatalogueResponse(response(product({
       available: false,
@@ -211,17 +266,35 @@ describe("ICA:s publika katalogformat", () => {
   });
 
   it("deduplicerar samma ICA-artikel i featured och vanliga träffar", () => {
-    const duplicate = product();
+    const duplicate = product({
+      scoutmatSearchMatches: [{ query: "Tomater", rank: 2 }],
+    });
     const result = normaliseIcaCatalogueResponse({
       productGroups: [
         { decoratedProducts: [duplicate] },
-        { decoratedProducts: [{ ...duplicate }] },
+        {
+          decoratedProducts: [{
+            ...duplicate,
+            scoutmatSearchMatches: [{ query: "Konserver", rank: 4 }],
+          }],
+        },
       ],
-    }, { storeId: "1004021" });
+    }, {
+      storeId: "1004021",
+      completedQueries: ["Tomater", "Konserver"],
+    });
 
     expect(result.rows).toHaveLength(1);
     expect(result.rejectedProducts).toEqual([]);
     expect(result.duplicateCount).toBe(1);
+    expect(result.rows[0]?.normalized_data).toMatchObject({
+      metadata: {
+        ica_search_matches: [
+          { query: "Tomater", rank: 2 },
+          { query: "Konserver", rank: 4 },
+        ],
+      },
+    });
   });
 
   it("låter ett kampanjpris variera utan att förlora samma fasta artikel", () => {
@@ -266,6 +339,11 @@ describe("ICA:s publika katalogformat", () => {
         name: "Tomatburkar 3-p 6-pack",
         packSizeDescription: "1kg",
       }),
+      product({
+        retailerProductId: "pack-size-conflict",
+        name: "Hamburgare 90g 6-p Scan",
+        packSizeDescription: "1kg",
+      }),
     ), { storeId: "1004021" });
 
     expect(result.rows).toEqual([]);
@@ -276,6 +354,10 @@ describe("ICA:s publika katalogformat", () => {
       { retailerProductId: "approximate", reason: "invalid_pack_size" },
       { retailerProductId: "conflict", reason: "conflicting_inner_count" },
       { retailerProductId: "missing", reason: "missing_pack_size" },
+      {
+        retailerProductId: "pack-size-conflict",
+        reason: "conflicting_pack_size",
+      },
     ]);
   });
 

@@ -31,6 +31,10 @@ import {
 import { AuthCallbackPage } from "../features/auth/AuthCallbackPage";
 import { useAuth } from "../features/auth/AuthContext";
 import { LoginPage } from "../features/auth/LoginPage";
+import { DemoBanner } from "../features/demo/DemoBanner";
+import { demoConfiguration } from "../features/demo/demoConfiguration";
+import { DemoRecoveryPage } from "../features/demo/DemoRecoveryPage";
+import { IcaCatalogueSyncAgent } from "../features/suppliers/IcaCatalogueSyncAgent";
 import { WorkspaceProvider, useWorkspace } from "../features/workspace/WorkspaceContext";
 import { BrandMark } from "./BrandMark";
 import { ContextSelect } from "./ContextSelect";
@@ -53,7 +57,7 @@ const navigation: Array<{
 ];
 
 export function AppShell() {
-  const { session, status, invitation } = useAuth();
+  const { session, status, invitation, demoState } = useAuth();
 
   if (status === "loading") {
     return <main className="auth-page"><LoaderCircle className="spin" aria-label="Kontrollerar session" size={38} /></main>;
@@ -63,13 +67,37 @@ export function AppShell() {
 
   if (invitation.status !== "idle") return <AuthCallbackPage />;
 
+  if (session.user.is_anonymous) {
+    if (
+      demoState.status === "idle"
+      || demoState.status === "checking"
+      || demoState.status === "starting"
+    ) {
+      return (
+        <main className="auth-page">
+          <LoaderCircle
+            className="spin"
+            aria-label="Förbereder demosessionen"
+            size={38}
+          />
+        </main>
+      );
+    }
+    if (
+      demoState.status !== "active"
+      && demoState.status !== "resetting"
+    ) {
+      return <DemoRecoveryPage />;
+    }
+  }
+
   return <WorkspaceProvider><AuthenticatedAppShell /></WorkspaceProvider>;
 }
 
 function AuthenticatedAppShell() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const { user, signOut } = useAuth();
+  const { demoState, resetDemo, user, signOut } = useAuth();
   const {
     memberships,
     camps,
@@ -80,10 +108,14 @@ function AuthenticatedAppShell() {
     loading,
     error
   } = useWorkspace();
-  const displayName = typeof user?.user_metadata.display_name === "string"
-    ? user.user_metadata.display_name
-    : user?.email?.split("@")[0] ?? "Användare";
+  const isDemoUser = user?.is_anonymous === true;
+  const displayName = isDemoUser
+    ? "Demobesökare"
+    : typeof user?.user_metadata.display_name === "string"
+      ? user.user_metadata.display_name
+      : user?.email?.split("@")[0] ?? "Användare";
   const initials = displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const demoInstance = isDemoUser ? demoState.instance : null;
 
   if (loading && memberships.length === 0) {
     return <main className="auth-page"><LoaderCircle className="spin" aria-label="Läser organisationer" size={38} /></main>;
@@ -98,7 +130,8 @@ function AuthenticatedAppShell() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${demoInstance ? " app-shell--demo" : ""}`}>
+      <IcaCatalogueSyncAgent />
       <header className="topbar">
         {pathname === "/" ? null : (
           <Link to="/" className="mobile-header-button mobile-header-button--back" aria-label="Tillbaka till översikten">
@@ -209,6 +242,16 @@ function AuthenticatedAppShell() {
           </ModalOverlay>
         </DialogTrigger>
       </header>
+
+      {demoInstance && demoConfiguration.siteKey ? (
+        <DemoBanner
+          instance={demoInstance}
+          siteKey={demoConfiguration.siteKey}
+          resetting={demoState.status === "resetting"}
+          error={demoState.error}
+          onReset={resetDemo}
+        />
+      ) : null}
 
       <aside className="sidebar" aria-label="Huvudnavigation">
         <nav className="sidebar__nav">

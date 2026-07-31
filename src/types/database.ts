@@ -201,6 +201,7 @@ export type Database = {
           name: string
           organization_id: string
           parent_group_id: string | null
+          scoutnet_source_reference: string | null
           sort_order: number
           updated_at: string
         }
@@ -212,6 +213,7 @@ export type Database = {
           name: string
           organization_id: string
           parent_group_id?: string | null
+          scoutnet_source_reference?: string | null
           sort_order?: number
           updated_at?: string
         }
@@ -223,6 +225,7 @@ export type Database = {
           name?: string
           organization_id?: string
           parent_group_id?: string | null
+          scoutnet_source_reference?: string | null
           sort_order?: number
           updated_at?: string
         }
@@ -440,25 +443,31 @@ export type Database = {
       }
       dietary_need_tags: {
         Row: {
+          active: boolean
           camp_id: string
           created_at: string
           dietary_need_id: string
           dietary_tag_id: string
           organization_id: string
+          superseded_at: string | null
         }
         Insert: {
+          active?: boolean
           camp_id: string
           created_at?: string
           dietary_need_id: string
           dietary_tag_id: string
           organization_id: string
+          superseded_at?: string | null
         }
         Update: {
+          active?: boolean
           camp_id?: string
           created_at?: string
           dietary_need_id?: string
           dietary_tag_id?: string
           organization_id?: string
+          superseded_at?: string | null
         }
         Relationships: [
           {
@@ -859,33 +868,42 @@ export type Database = {
       }
       participant_attendance: {
         Row: {
+          active: boolean
           camp_id: string
           created_at: string
           ends_at: string
           id: string
           organization_id: string
           participant_id: string
+          source: Database["public"]["Enums"]["participant_data_source"]
           starts_at: string
+          superseded_at: string | null
           updated_at: string
         }
         Insert: {
+          active?: boolean
           camp_id: string
           created_at?: string
           ends_at: string
           id?: string
           organization_id: string
           participant_id: string
+          source?: Database["public"]["Enums"]["participant_data_source"]
           starts_at: string
+          superseded_at?: string | null
           updated_at?: string
         }
         Update: {
+          active?: boolean
           camp_id?: string
           created_at?: string
           ends_at?: string
           id?: string
           organization_id?: string
           participant_id?: string
+          source?: Database["public"]["Enums"]["participant_data_source"]
           starts_at?: string
+          superseded_at?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -909,6 +927,7 @@ export type Database = {
           review_status: Database["public"]["Enums"]["dietary_review_status"]
           reviewed_at: string | null
           reviewed_by: string | null
+          scoutnet_managed: boolean
           updated_at: string
         }
         Insert: {
@@ -921,6 +940,7 @@ export type Database = {
           review_status?: Database["public"]["Enums"]["dietary_review_status"]
           reviewed_at?: string | null
           reviewed_by?: string | null
+          scoutnet_managed?: boolean
           updated_at?: string
         }
         Update: {
@@ -933,6 +953,7 @@ export type Database = {
           review_status?: Database["public"]["Enums"]["dietary_review_status"]
           reviewed_at?: string | null
           reviewed_by?: string | null
+          scoutnet_managed?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -954,11 +975,21 @@ export type Database = {
           food_factor: number
           id: string
           import_batch_id: string | null
+          lifecycle_status: Database["public"]["Enums"]["participant_lifecycle_status"]
           meal_group_id: string | null
           organization_id: string
           patrol_id: string | null
+          pre_scoutnet_display_name: string | null
+          pre_scoutnet_division_id: string | null
+          pre_scoutnet_patrol_id: string | null
+          scoutnet_registration_status:
+            | Database["public"]["Enums"]["scoutnet_registration_status"]
+            | null
+          scoutnet_source_reference: string | null
+          scoutnet_synced_at: string | null
           source_reference: string | null
           updated_at: string
+          withdrawn_at: string | null
         }
         Insert: {
           camp_id: string
@@ -968,11 +999,21 @@ export type Database = {
           food_factor?: number
           id?: string
           import_batch_id?: string | null
+          lifecycle_status?: Database["public"]["Enums"]["participant_lifecycle_status"]
           meal_group_id?: string | null
           organization_id: string
           patrol_id?: string | null
+          pre_scoutnet_display_name?: string | null
+          pre_scoutnet_division_id?: string | null
+          pre_scoutnet_patrol_id?: string | null
+          scoutnet_registration_status?:
+            | Database["public"]["Enums"]["scoutnet_registration_status"]
+            | null
+          scoutnet_source_reference?: string | null
+          scoutnet_synced_at?: string | null
           source_reference?: string | null
           updated_at?: string
+          withdrawn_at?: string | null
         }
         Update: {
           camp_id?: string
@@ -982,11 +1023,21 @@ export type Database = {
           food_factor?: number
           id?: string
           import_batch_id?: string | null
+          lifecycle_status?: Database["public"]["Enums"]["participant_lifecycle_status"]
           meal_group_id?: string | null
           organization_id?: string
           patrol_id?: string | null
+          pre_scoutnet_display_name?: string | null
+          pre_scoutnet_division_id?: string | null
+          pre_scoutnet_patrol_id?: string | null
+          scoutnet_registration_status?:
+            | Database["public"]["Enums"]["scoutnet_registration_status"]
+            | null
+          scoutnet_source_reference?: string | null
+          scoutnet_synced_at?: string | null
           source_reference?: string | null
           updated_at?: string
+          withdrawn_at?: string | null
         }
         Relationships: [
           {
@@ -1020,6 +1071,20 @@ export type Database = {
           {
             foreignKeyName: "participants_patrol_fk"
             columns: ["organization_id", "camp_id", "patrol_id"]
+            isOneToOne: false
+            referencedRelation: "camp_groups"
+            referencedColumns: ["organization_id", "camp_id", "id"]
+          },
+          {
+            foreignKeyName: "participants_pre_scoutnet_division_fk"
+            columns: ["organization_id", "camp_id", "pre_scoutnet_division_id"]
+            isOneToOne: false
+            referencedRelation: "camp_groups"
+            referencedColumns: ["organization_id", "camp_id", "id"]
+          },
+          {
+            foreignKeyName: "participants_pre_scoutnet_patrol_fk"
+            columns: ["organization_id", "camp_id", "pre_scoutnet_patrol_id"]
             isOneToOne: false
             referencedRelation: "camp_groups"
             referencedColumns: ["organization_id", "camp_id", "id"]
@@ -1301,6 +1366,69 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_catalogue_search_states: {
+        Row: {
+          camp_id: string
+          canonical_key: string
+          completed_at: string | null
+          created_at: string
+          last_attempted_at: string | null
+          last_error: string | null
+          organization_id: string
+          retry_at: string | null
+          search_date: string
+          search_query: string
+          status: string
+          supplier_account_id: string
+          updated_at: string
+        }
+        Insert: {
+          camp_id: string
+          canonical_key: string
+          completed_at?: string | null
+          created_at?: string
+          last_attempted_at?: string | null
+          last_error?: string | null
+          organization_id: string
+          retry_at?: string | null
+          search_date: string
+          search_query: string
+          status: string
+          supplier_account_id: string
+          updated_at?: string
+        }
+        Update: {
+          camp_id?: string
+          canonical_key?: string
+          completed_at?: string | null
+          created_at?: string
+          last_attempted_at?: string | null
+          last_error?: string | null
+          organization_id?: string
+          retry_at?: string | null
+          search_date?: string
+          search_query?: string
+          status?: string
+          supplier_account_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_catalogue_search_states_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_catalogue_search_states_camp_fk"
+            columns: ["organization_id", "camp_id"]
+            isOneToOne: false
+            referencedRelation: "camps"
+            referencedColumns: ["organization_id", "id"]
           },
         ]
       }
@@ -1782,6 +1910,79 @@ export type Database = {
           },
         ]
       }
+      supplier_semantic_match_cache: {
+        Row: {
+          adapter: string
+          candidate_set_fingerprint: string
+          canonical_key: string
+          context_fingerprint: string
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          model: string
+          organization_id: string
+          prompt_version: string
+          result: Json
+          supplier_account_id: string
+          updated_at: string
+        }
+        Insert: {
+          adapter: string
+          candidate_set_fingerprint: string
+          canonical_key: string
+          context_fingerprint: string
+          created_at?: string
+          created_by: string
+          expires_at?: string
+          id?: string
+          model: string
+          organization_id: string
+          prompt_version: string
+          result: Json
+          supplier_account_id: string
+          updated_at?: string
+        }
+        Update: {
+          adapter?: string
+          candidate_set_fingerprint?: string
+          canonical_key?: string
+          context_fingerprint?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          model?: string
+          organization_id?: string
+          prompt_version?: string
+          result?: Json
+          supplier_account_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_semantic_match_cache_account_fk"
+            columns: ["organization_id", "supplier_account_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "supplier_semantic_match_cache_ingredient_fk"
+            columns: ["organization_id", "canonical_key"]
+            isOneToOne: false
+            referencedRelation: "canonical_ingredients"
+            referencedColumns: ["organization_id", "canonical_key"]
+          },
+          {
+            foreignKeyName: "supplier_semantic_match_cache_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supply_item_mutations: {
         Row: {
           actor_user_id: string
@@ -1861,6 +2062,7 @@ export type Database = {
           item_key: string
           item_name: string
           manually_moved: boolean
+          order_source_kind: string | null
           ordered_amount: number | null
           ordered_unit: string | null
           organization_id: string
@@ -1870,6 +2072,11 @@ export type Database = {
           row_version: number
           source_line_keys: Json
           source_present: boolean
+          supplier_order_account_id: string | null
+          supplier_order_product_fingerprint: string | null
+          supplier_order_product_id: string | null
+          supplier_order_source_item_id: string | null
+          supplier_order_total_units: number | null
           supply_list_id: string
           updated_at: string
           updated_by: string | null
@@ -1885,6 +2092,7 @@ export type Database = {
           item_key: string
           item_name: string
           manually_moved?: boolean
+          order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
           organization_id: string
@@ -1894,6 +2102,11 @@ export type Database = {
           row_version?: number
           source_line_keys?: Json
           source_present?: boolean
+          supplier_order_account_id?: string | null
+          supplier_order_product_fingerprint?: string | null
+          supplier_order_product_id?: string | null
+          supplier_order_source_item_id?: string | null
+          supplier_order_total_units?: number | null
           supply_list_id: string
           updated_at?: string
           updated_by?: string | null
@@ -1909,6 +2122,7 @@ export type Database = {
           item_key?: string
           item_name?: string
           manually_moved?: boolean
+          order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
           organization_id?: string
@@ -1918,6 +2132,11 @@ export type Database = {
           row_version?: number
           source_line_keys?: Json
           source_present?: boolean
+          supplier_order_account_id?: string | null
+          supplier_order_product_fingerprint?: string | null
+          supplier_order_product_id?: string | null
+          supplier_order_source_item_id?: string | null
+          supplier_order_total_units?: number | null
           supply_list_id?: string
           updated_at?: string
           updated_by?: string | null
@@ -2013,6 +2232,17 @@ export type Database = {
           role: Database["public"]["Enums"]["organization_role"]
         }[]
       }
+      apply_scoutnet_reconciliation: {
+        Args: {
+          p_actor_user_id: string
+          p_camp_id: string
+          p_decisions: Json
+          p_expected_state_digest: string
+          p_idempotency_key: string
+          p_snapshot: Json
+        }
+        Returns: Json
+      }
       apply_supplier_candidate_approval: {
         Args: {
           p_actor_user_id: string
@@ -2094,6 +2324,17 @@ export type Database = {
         Args: { p_camp_id: string }
         Returns: number
       }
+      connect_scoutnet_project: {
+        Args: {
+          p_actor_aal: string
+          p_actor_user_id: string
+          p_camp_id: string
+          p_participants_api_key: string
+          p_project_id: string
+          p_questions_api_key: string
+        }
+        Returns: Json
+      }
       create_camp: {
         Args: {
           p_ends_on: string
@@ -2132,6 +2373,18 @@ export type Database = {
         Args: { p_participant_id: string }
         Returns: undefined
       }
+      disconnect_scoutnet_project: {
+        Args: {
+          p_actor_aal: string
+          p_actor_user_id: string
+          p_camp_id: string
+        }
+        Returns: Json
+      }
+      ensure_ica_sickla_supplier_account: {
+        Args: { p_organization_id: string }
+        Returns: string
+      }
       export_participant_privacy_data: {
         Args: { p_participant_id: string }
         Returns: Json
@@ -2165,10 +2418,84 @@ export type Database = {
           meals_without_recipe: number
           no_service_slots: number
           planned_slots: number
+          procurement_ready: boolean
           required_slots: number
+          supplier_items_total: number
+          supplier_pending_items: number
+          supplier_no_match: number
+          supplier_order_incomplete: number
+          supplier_ready_items: number
+          supplier_review_suggestions: number
+          supplier_safe_suggestions: number
+          supplier_unresolved_items: number
           unplanned_slots: number
           unresolved_dietary_needs: number
         }[]
+      }
+      get_demo_session_status: {
+        Args: never
+        Returns: {
+          camp_id: string
+          expires_at: string
+          organization_id: string
+          state: string
+        }[]
+      }
+      get_scoutnet_connection_credentials: {
+        Args: { p_actor_user_id: string; p_camp_id: string }
+        Returns: {
+          camp_id: string
+          connection_id: string
+          ends_on: string
+          organization_id: string
+          participants_api_key: string
+          project_id: string
+          question_mapping: Json
+          questions_api_key: string
+          starts_on: string
+          timezone: string
+        }[]
+      }
+      get_scoutnet_connection_status: {
+        Args: { p_actor_user_id: string; p_camp_id: string }
+        Returns: Json
+      }
+      get_scoutnet_reconciliation_context: {
+        Args: { p_actor_user_id: string; p_camp_id: string }
+        Returns: Json
+      }
+      get_supplier_procurement_readiness: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: {
+          procurement_ready: boolean
+          supplier_items_total: number
+          supplier_pending_items: number
+          supplier_no_match: number
+          supplier_order_incomplete: number
+          supplier_ready_items: number
+          supplier_review_suggestions: number
+          supplier_safe_suggestions: number
+          supplier_unresolved_items: number
+        }[]
+      }
+      get_supplier_semantic_match_cache: {
+        Args: {
+          p_candidate_set_fingerprint: string
+          p_canonical_key: string
+          p_context_fingerprint: string
+          p_organization_id: string
+          p_prompt_version: string
+          p_supplier_account_id: string
+        }
+        Returns: Json
+      }
+      get_supplier_semantic_match_context: {
+        Args: {
+          p_camp_id: string
+          p_canonical_keys: string[]
+          p_organization_id: string
+        }
+        Returns: Json
       }
       import_participant_batch: {
         Args: {
@@ -2201,10 +2528,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      ensure_ica_sickla_supplier_account: {
-        Args: { p_organization_id: string }
-        Returns: string
-      }
       list_organization_members: {
         Args: { target_organization_id: string }
         Returns: {
@@ -2223,15 +2546,36 @@ export type Database = {
         }
         Returns: number
       }
-      normalized_supplier_match_name: {
-        Args: { p_display_name: string }
-        Returns: string
-      }
+      normalized_supplier_match_name:
+        | { Args: { p_display_name: string }; Returns: string }
+        | { Args: { p_brand: string; p_display_name: string }; Returns: string }
       normalized_supplier_search_name: {
         Args: { p_display_name: string }
         Returns: string
       }
       normalized_supplier_unit: { Args: { p_unit: string }; Returns: string }
+      provision_demo_instance: {
+        Args: { p_reset?: boolean; p_user_id: string }
+        Returns: {
+          camp_id: string
+          created_at: string
+          expires_at: string
+          organization_id: string
+          reused: boolean
+          template_digest: string
+          template_version: number
+          user_id: string
+        }[]
+      }
+      record_supplier_catalogue_search_states: {
+        Args: {
+          p_camp_id: string
+          p_organization_id: string
+          p_states: Json
+          p_supplier_account_id: string
+        }
+        Returns: Json
+      }
       replace_supplier_match_candidates: {
         Args: {
           p_candidates: Json
@@ -2244,6 +2588,17 @@ export type Database = {
       review_dietary_need: {
         Args: { p_dietary_need_id: string; p_tag_labels: string[] }
         Returns: undefined
+      }
+      rotate_scoutnet_connection: {
+        Args: {
+          p_actor_aal: string
+          p_actor_user_id: string
+          p_camp_id: string
+          p_participants_api_key?: string
+          p_project_id?: string
+          p_questions_api_key?: string
+        }
+        Returns: Json
       }
       save_meal: {
         Args: {
@@ -2332,6 +2687,20 @@ export type Database = {
         }
         Returns: string
       }
+      save_supplier_semantic_match_cache: {
+        Args: {
+          p_adapter: string
+          p_candidate_set_fingerprint: string
+          p_canonical_key: string
+          p_context_fingerprint: string
+          p_model: string
+          p_organization_id: string
+          p_prompt_version: string
+          p_result: Json
+          p_supplier_account_id: string
+        }
+        Returns: Json
+      }
       set_meal_slot_service_status: {
         Args: { p_service_status: string; p_slot_id: string }
         Returns: undefined
@@ -2371,7 +2740,7 @@ export type Database = {
       }
       start_supplier_import: {
         Args: {
-          p_column_profile_id: string | null
+          p_column_profile_id: string
           p_organization_id: string
           p_source_fingerprint: string
           p_source_kind: string
@@ -2394,19 +2763,47 @@ export type Database = {
       }
       supplier_jsonb_integer: { Args: { p_value: Json }; Returns: number }
       supplier_jsonb_numeric: { Args: { p_value: Json }; Returns: number }
-      supplier_product_fingerprint: {
-        Args: {
-          p_catch_weight: boolean
-          p_display_name: string
-          p_gtin: string
-          p_minimum_order_units: number
-          p_package_amount: number
-          p_package_unit: string
-          p_purchase_unit: string
-          p_supplier_article_number: string
-        }
+      supplier_order_unit_label: {
+        Args: { p_amount: number; p_unit: string }
         Returns: string
       }
+      supplier_product_expected_amount: {
+        Args: {
+          p_package_amount: number
+          p_package_unit: string
+          p_packaging_metadata: Json
+          p_required_unit: string
+        }
+        Returns: number
+      }
+      supplier_product_fingerprint:
+        | {
+            Args: {
+              p_catch_weight: boolean
+              p_display_name: string
+              p_gtin: string
+              p_minimum_order_units: number
+              p_package_amount: number
+              p_package_unit: string
+              p_purchase_unit: string
+              p_supplier_article_number: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_catch_weight: boolean
+              p_display_name: string
+              p_gtin: string
+              p_minimum_order_units: number
+              p_package_amount: number
+              p_package_unit: string
+              p_packaging_metadata: Json
+              p_purchase_unit: string
+              p_supplier_article_number: string
+            }
+            Returns: string
+          }
       supplier_safe_match_score: {
         Args: {
           p_canonical_key: string
@@ -2419,9 +2816,21 @@ export type Database = {
       }
       supplier_unit_base_factor: { Args: { p_unit: string }; Returns: number }
       supplier_unit_dimension: { Args: { p_unit: string }; Returns: string }
+      supplier_verified_inner_unit_count: {
+        Args: { p_packaging_metadata: Json }
+        Returns: number
+      }
       switch_meal_recipe_version: {
         Args: { p_meal_id: string; p_recipe_version_id: string }
         Returns: string
+      }
+      sync_supplier_order_delivery_allocations: {
+        Args: {
+          p_camp_id: string
+          p_canonical_key?: string
+          p_organization_id: string
+        }
+        Returns: Json
       }
       update_participant_details: {
         Args: {
@@ -2435,6 +2844,15 @@ export type Database = {
           p_patrol: string
         }
         Returns: undefined
+      }
+      update_scoutnet_question_mapping: {
+        Args: {
+          p_actor_aal: string
+          p_actor_user_id: string
+          p_camp_id: string
+          p_question_mapping: Json
+        }
+        Returns: Json
       }
       update_supply_item: {
         Args: {
@@ -2460,7 +2878,10 @@ export type Database = {
       meal_status: "draft" | "ready" | "blocked"
       membership_status: "active" | "suspended"
       organization_role: "admin" | "planner"
+      participant_data_source: "local" | "scoutnet"
+      participant_lifecycle_status: "active" | "withdrawn"
       recipe_status: "draft" | "published" | "retired"
+      scoutnet_registration_status: "confirmed" | "unconfirmed" | "cancelled"
       supply_list_kind: "purchase" | "distribution" | "delivery"
       supply_list_status: "draft" | "active" | "complete"
       supply_mutation_status: "applied" | "conflict"
@@ -2617,7 +3038,10 @@ export const Constants = {
       meal_status: ["draft", "ready", "blocked"],
       membership_status: ["active", "suspended"],
       organization_role: ["admin", "planner"],
+      participant_data_source: ["local", "scoutnet"],
+      participant_lifecycle_status: ["active", "withdrawn"],
       recipe_status: ["draft", "published", "retired"],
+      scoutnet_registration_status: ["confirmed", "unconfirmed", "cancelled"],
       supply_list_kind: ["purchase", "distribution", "delivery"],
       supply_list_status: ["draft", "active", "complete"],
       supply_mutation_status: ["applied", "conflict"],

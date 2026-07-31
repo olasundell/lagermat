@@ -20,13 +20,11 @@ select is(
          and ingredient.amount = 0.25 and ingredient.mode = 'weighted_portion')
        or (ingredient.name = 'Bacon' and ingredient.unit = 'kg'
          and ingredient.amount = 0.05 and ingredient.mode = 'weighted_portion')
-       or (ingredient.name = 'Matfett' and ingredient.unit = 'paket'
-         and ingredient.amount = 0.0025 and ingredient.mode = 'weighted_portion')
-       or (ingredient.name = 'Matfett' and ingredient.unit = 'paket'
-         and ingredient.amount = 10 and ingredient.mode = 'fixed_once_per_camp')
+       or (ingredient.name = 'Matfett' and ingredient.unit = 'kg'
+         and ingredient.amount = 0.01 and ingredient.mode = 'weighted_portion')
      )),
-  4,
-  'the approved catalogue preserves every ingredient rule used by the golden fixture'
+  3,
+  'the approved catalogue preserves the curated physical rules used by the golden fixture'
 );
 
 insert into auth.users (
@@ -88,8 +86,7 @@ insert into public.recipe_ingredients (
 ) values
   ('f2200000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000001', 'Aubergine', 'st', 0.25, 'weighted_portion', 'standard', null, 0),
   ('f2200000-0000-0000-0000-000000000002', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000002', 'Bacon', 'kg', 0.05, 'weighted_portion', 'exclude', 'Vegetarian', 0),
-  ('f2200000-0000-0000-0000-000000000003', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000003', 'Bregott', 'paket', 0.0025, 'weighted_portion', 'exclude', 'Mjölkprotein', 0),
-  ('f2200000-0000-0000-0000-000000000004', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000003', 'Bregott', 'paket', 10, 'fixed_once_per_camp', 'exclude', 'Mjölkprotein', 1),
+  ('f2200000-0000-0000-0000-000000000003', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000003', 'Bregott', 'kg', 0.01, 'weighted_portion', 'exclude', 'Mjölkprotein', 0),
   ('f2200000-0000-0000-0000-000000000005', 'f0000000-0000-0000-0000-000000000001', 'f2100000-0000-0000-0000-000000000004', 'Golden behov/beställt', 'kg', 0.55, 'weighted_portion', 'standard', null, 0);
 
 do $$
@@ -178,14 +175,14 @@ select is(
 );
 select is(
   (select sum(line.exact_amount) from public.calculation_lines line where line.ingredient_name = 'Bregott'),
-  10.86025::numeric,
-  'Bregott is exactly 10.86025 packages'
+  3.441::numeric,
+  'Bregott is exactly 3.441 kg'
 );
 select is(
   (select count(distinct line.trace ->> 'mode')::integer
    from public.calculation_lines line where line.ingredient_name = 'Bregott'),
-  2,
-  'Bregott retains its weighted and fixed-once components'
+  1,
+  'Bregott is a physical weighted requirement without package allowances'
 );
 
 select lives_ok(

@@ -1,6 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import {
+  readHostedDemoMode,
+  TURNSTILE_ORIGIN
+} from "./hosted-environment.mjs";
 
 function fail(message) {
   console.error(message);
@@ -36,6 +40,15 @@ function assertPublishableKey() {
 
 const supabaseOrigin = readHostedOrigin();
 assertPublishableKey();
+let hostedMode;
+try {
+  hostedMode = readHostedDemoMode(
+    process.env.DEPLOYMENT_ENVIRONMENT?.trim(),
+    process.env
+  );
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
 
 for (const [command, args, label] of [
   ["./node_modules/.bin/tsc", ["-b"], "TypeScript-kontrollen"],
@@ -47,18 +60,28 @@ for (const [command, args, label] of [
 }
 
 const realtimeOrigin = supabaseOrigin.replace(/^https:/, "wss:");
+const connectSources = [
+  "'self'",
+  supabaseOrigin,
+  realtimeOrigin,
+  ...(hostedMode.demoEnabled ? [TURNSTILE_ORIGIN] : [])
+].join(" ");
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
-  `connect-src 'self' ${supabaseOrigin} ${realtimeOrigin}`,
+  `connect-src ${connectSources}`,
   "font-src 'self' data:",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "frame-src 'none'",
+  hostedMode.demoEnabled
+    ? `frame-src ${TURNSTILE_ORIGIN}`
+    : "frame-src 'none'",
   "img-src 'self' data: blob:",
   "manifest-src 'self'",
   "object-src 'none'",
-  "script-src 'self'",
+  hostedMode.demoEnabled
+    ? `script-src 'self' ${TURNSTILE_ORIGIN}`
+    : "script-src 'self'",
   "style-src 'self'",
   "worker-src 'self' blob:",
   "upgrade-insecure-requests"
@@ -105,4 +128,16 @@ const check = spawnSync(process.execPath, ["scripts/check-production-bundle.mjs"
   env: process.env
 });
 if (check.error) fail(`Kunde inte kontrollera produktionsbygget: ${check.error.message}`);
-process.exit(check.status ?? 1);
+if (check.status !== 0) process.exit(check.status ?? 1);
+
+// Netlify CLI otherwise resolves `netlify/functions` from netlify.toml even
+// when `--dir=dist` is supplied. A hosted demo release must explicitly pass
+// this empty directory through `--functions` and use `--no-build`, so the
+// supplier-only local functions can never hitchhike into the static site.
+const staticFunctions = resolve(".tmp/netlify-static-functions");
+await rm(staticFunctions, { recursive: true, force: true });
+await mkdir(staticFunctions, { recursive: true });
+console.log(
+  "Static Netlify artifact ready. Deploy only with "
+  + "--dir=dist --functions=.tmp/netlify-static-functions --no-build."
+);

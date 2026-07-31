@@ -11,6 +11,15 @@ export interface OverviewCounts {
   missingRecipes: number;
   calculationStale: boolean;
   canFinalize: boolean;
+  supplierItemsTotal: number;
+  supplierReadyItems: number;
+  supplierSafeSuggestions: number;
+  supplierReviewSuggestions: number;
+  supplierPendingItems: number;
+  supplierNoMatchItems: number;
+  supplierOrderIncompleteItems: number;
+  supplierUnresolvedItems: number;
+  procurementReady: boolean;
   deliveries: number;
 }
 
@@ -77,6 +86,55 @@ export function overviewNextAction(counts: OverviewCounts): OverviewNextAction {
       label: "Öppna matsedeln",
       note: "En aktuell beräkning krävs innan inköps- och leveranslistor kan skapas.",
       to: "/matsedel"
+    };
+  }
+  if (counts.supplierItemsTotal === 0) {
+    return {
+      title: "Skapa inköpsunderlaget",
+      description: "Mängderna är aktuella. Skapa inköpslistan och låt Scoutmat matcha råvarorna mot ICA.",
+      label: "Öppna inköp",
+      note: "Leveranser planeras först när det finns ett faktiskt beställningsunderlag.",
+      to: "/inkop"
+    };
+  }
+  if (!counts.procurementReady || counts.supplierUnresolvedItems > 0) {
+    const details = [
+      counts.supplierPendingItems > 0
+        ? counts.supplierPendingItems === 1
+          ? "Scoutmat söker automatiskt efter 1 råvara hos ICA"
+          : `Scoutmat söker automatiskt efter ${counts.supplierPendingItems} råvaror hos ICA`
+        : null,
+      counts.supplierSafeSuggestions > 0
+        ? counts.supplierSafeSuggestions === 1
+          ? "1 säkert förslag att godkänna"
+          : `${counts.supplierSafeSuggestions} säkra förslag att godkänna`
+        : null,
+      counts.supplierReviewSuggestions > 0
+        ? counts.supplierReviewSuggestions === 1
+          ? "1 träff att granska"
+          : `${counts.supplierReviewSuggestions} träffar att granska`
+        : null,
+      counts.supplierNoMatchItems > 0
+        ? counts.supplierNoMatchItems === 1
+          ? "1 råvara utan träff"
+          : `${counts.supplierNoMatchItems} råvaror utan träff`
+        : null,
+      counts.supplierOrderIncompleteItems > 0
+        ? counts.supplierOrderIncompleteItems === 1
+          ? "1 beställning utan köpantal"
+          : `${counts.supplierOrderIncompleteItems} beställningar utan köpantal`
+        : null,
+    ].filter((detail): detail is string => Boolean(detail));
+    return {
+      title: "Färdigställ ICA-underlaget",
+      description: details.length
+        ? `${details.join(", ")}.`
+        : `${counts.supplierUnresolvedItems} råvaror behöver åtgärdas innan inköpsunderlaget är klart.`,
+      label: "Öppna inköp",
+      note: counts.supplierPendingItems > 0
+        ? "Du kan fortsätta planera på andra sidor medan Scoutmat söker."
+        : "Översikten blir klar först när varje råvara har en godkänd artikel och ett köpantal.",
+      to: "/inkop"
     };
   }
   if (counts.deliveries === 0) {

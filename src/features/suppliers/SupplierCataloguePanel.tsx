@@ -11,7 +11,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Button } from "react-aria-components";
 import { userFacingError } from "../../lib/userFacingError";
 import { formatExactAmount, type SupplyItemRow } from "../supplies/supplyModel";
@@ -25,6 +25,10 @@ import {
   type SupplierCataloguePreview,
 } from "./catalogueImportModel";
 import { demoSupplierCatalogueTable } from "./demoSupplierCatalogue";
+import {
+  splitIcaUnmatchedItems,
+  type IcaCatalogueSyncProgress,
+} from "./icaCatalogueSyncModel";
 import { ICA_KVANTUM_SICKLA, isIcaSicklaAccount } from "./icaStore";
 import {
   describeSupplierPurchaseQuantity,
@@ -44,6 +48,7 @@ export interface SupplierCatalogueCandidateView {
   amountPerPurchaseUnit: number;
   requiredUnit: string;
   reasons: string[];
+  semanticAssisted?: boolean;
   product: SupplierProduct;
 }
 
@@ -75,7 +80,8 @@ interface SupplierCataloguePanelProps {
   online: boolean;
   loading: boolean;
   syncWarning?: string | null;
-  syncPending?: boolean;
+  syncProgress?: IcaCatalogueSyncProgress | null;
+  onRetrySync?: () => Promise<void>;
   onImport: (
     supplierAccountId: string,
     preview: SupplierCataloguePreview,
@@ -137,7 +143,9 @@ function CandidateCard({
           <span>Artikel {candidate.product.supplier_article_number} · {candidate.score} poäng</span>
         </div>
         <span className={`supplier-confidence supplier-confidence--${candidate.classification}`}>
-          {candidate.classification === "safe" ? "Säker" : "Granska"}
+          {candidate.semanticAssisted ? (
+            <><Sparkles aria-hidden="true" size={14} /> AI-assisterad · Granska</>
+          ) : candidate.classification === "safe" ? "Säker" : "Granska"}
         </span>
       </div>
       <p>
@@ -168,7 +176,8 @@ export function SupplierCataloguePanel({
   online,
   loading,
   syncWarning = null,
-  syncPending = false,
+  syncProgress = null,
+  onRetrySync,
   onImport,
   onApproveSafe,
   onApprove,
@@ -183,7 +192,6 @@ export function SupplierCataloguePanel({
     : activeAccounts[0]?.id ?? "";
   const selectedAccount = activeAccounts.find((account) => account.id === selectedAccountId);
   const icaSicklaSelected = isIcaSicklaAccount(selectedAccount);
-  const icaSyncPending = icaSicklaSelected && syncPending;
   const [table, setTable] = useState<SupplierCatalogueImportTable | null>(null);
   const [mapping, setMapping] = useState<SupplierCatalogueColumnMapping[]>([]);
   const [preview, setPreview] = useState<SupplierCataloguePreview | null>(null);
@@ -195,8 +203,23 @@ export function SupplierCataloguePanel({
   const [alternativeResults, setAlternativeResults] = useState<
     Record<string, SupplierProduct[]>
   >({});
+  const [alternativeSearchStatus, setAlternativeSearchStatus] = useState<
+    Record<string, { status: "searching" | "complete"; submittedQuery: string }>
+  >({});
   const [searchingCanonicalKey, setSearchingCanonicalKey] = useState<string | null>(null);
+  const [retryingSync, setRetryingSync] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!syncProgress?.retryAt || syncProgress.retryAt <= Date.now()) return;
+    const initialTimer = window.setTimeout(() => setClock(Date.now()), 0);
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [syncProgress?.retryAt]);
 
   const activeItems = useMemo(
     () => items.filter((item) => item.source_present),
@@ -220,7 +243,18 @@ export function SupplierCataloguePanel({
       .map((match) => match.canonicalKey),
     ...accountCandidates.map((candidate) => candidate.canonicalKey),
   ]);
-  const noMatchItems = activeItems.filter((item) => !accountedCanonicalKeys.has(item.canonical_key));
+  const unmatchedItems = activeItems.filter((item) =>
+    !accountedCanonicalKeys.has(item.canonical_key)
+  );
+  const icaUnmatched = splitIcaUnmatchedItems(
+    unmatchedItems,
+    icaSicklaSelected ? syncProgress : null,
+    icaSicklaSelected && loading,
+  );
+  const pendingItems = icaSicklaSelected ? icaUnmatched.pending : [];
+  const noMatchItems = icaSicklaSelected
+    ? icaUnmatched.noMatch
+    : unmatchedItems;
 
   function installTable(nextTable: SupplierCatalogueImportTable) {
     const savedProfile = columnProfiles.find((profile) =>
@@ -335,6 +369,11 @@ export function SupplierCataloguePanel({
       await onSuggestAlternative(item, product);
       setAlternativeSearch((current) => ({ ...current, [item.canonical_key]: "" }));
       setAlternativeResults((current) => ({ ...current, [item.canonical_key]: [] }));
+      setAlternativeSearchStatus((current) => {
+        const next = { ...current };
+        delete next[item.canonical_key];
+        return next;
+      });
     } catch (caught) {
       setMessage({ kind: "error", text: userFacingError(caught, "Artikeln kan inte föreslås för råvaran.") });
     } finally {
@@ -347,6 +386,10 @@ export function SupplierCataloguePanel({
     if (query.length < 2 || !selectedAccountId) return;
 
     setSearchingCanonicalKey(item.canonical_key);
+    setAlternativeSearchStatus((current) => ({
+      ...current,
+      [item.canonical_key]: { status: "searching", submittedQuery: query },
+    }));
     setMessage(null);
     try {
       const products = await onSearchAlternatives(selectedAccountId, query);
@@ -354,7 +397,16 @@ export function SupplierCataloguePanel({
         ...current,
         [item.canonical_key]: products,
       }));
+      setAlternativeSearchStatus((current) => ({
+        ...current,
+        [item.canonical_key]: { status: "complete", submittedQuery: query },
+      }));
     } catch (caught) {
+      setAlternativeSearchStatus((current) => {
+        const next = { ...current };
+        delete next[item.canonical_key];
+        return next;
+      });
       setMessage({
         kind: "error",
         text: userFacingError(caught, "Katalogen kunde inte sökas."),
@@ -363,6 +415,26 @@ export function SupplierCataloguePanel({
       setSearchingCanonicalKey(null);
     }
   }
+
+  async function retrySyncNow() {
+    if (!onRetrySync) return;
+    setRetryingSync(true);
+    setMessage(null);
+    try {
+      await onRetrySync();
+    } catch (caught) {
+      setMessage({
+        kind: "error",
+        text: userFacingError(caught, "ICA-sökningen kunde inte startas om."),
+      });
+    } finally {
+      setRetryingSync(false);
+    }
+  }
+
+  const retrySeconds = syncProgress?.retryAt
+    ? Math.max(0, Math.ceil((syncProgress.retryAt - clock) / 1_000))
+    : null;
 
   return (
     <section className="supplier-catalogue" aria-labelledby="supplier-catalogue-heading">
@@ -401,9 +473,33 @@ export function SupplierCataloguePanel({
         </p>
       ) : null}
       {syncWarning ? (
-        <p className="inline-message inline-message--error" role="status">
-          <AlertTriangle aria-hidden="true" size={17} /> {syncWarning}
-        </p>
+        <div
+          className={
+            syncProgress?.phase === "syncing"
+              ? "supplier-foundation__notice"
+              : "inline-message inline-message--error"
+          }
+          role="status"
+        >
+          {syncProgress?.phase === "syncing"
+            ? <PackageSearch aria-hidden="true" size={17} />
+            : <AlertTriangle aria-hidden="true" size={17} />}
+          <span>
+            {syncWarning}
+            {retrySeconds !== null && retrySeconds > 0
+              ? ` Nästa försök om ${retrySeconds} sekunder.`
+              : null}
+          </span>
+          {onRetrySync && syncProgress?.phase !== "complete" ? (
+            <Button
+              className="text-button"
+              onPress={retrySyncNow}
+              isDisabled={retryingSync || !online}
+            >
+              {retryingSync ? "Försöker…" : "Försök igen nu"}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="supplier-catalogue__toolbar">
@@ -454,6 +550,26 @@ export function SupplierCataloguePanel({
       </div>
       {!activeAccounts.length ? (
         <p className="supplier-catalogue__empty">Lägg först till en leverantör ovan.</p>
+      ) : null}
+      {icaSicklaSelected && syncProgress ? (
+        <div className="supplier-import-counts" aria-label="ICA-matchningsstatus">
+          <span>
+            <Check aria-hidden="true" size={16} />
+            {syncProgress.completedQueries.length} av {syncProgress.totalQueries} sökningar klara
+          </span>
+          <span>
+            <PackageSearch aria-hidden="true" size={16} />
+            {pendingItems.length} hämtas
+          </span>
+          <span>
+            <AlertTriangle aria-hidden="true" size={16} />
+            {reviewCandidates.length} behöver granskas
+          </span>
+          <span>
+            <X aria-hidden="true" size={16} />
+            {noMatchItems.length} utan träff
+          </span>
+        </div>
       ) : null}
 
       {preview && !icaSicklaSelected ? (
@@ -572,32 +688,48 @@ export function SupplierCataloguePanel({
             )) : <p className="supplier-review-empty">Inga osäkra förslag väntar.</p>}
           </section>
 
+          {icaSicklaSelected && pendingItems.length ? (
+            <section aria-labelledby="pending-suggestions-heading">
+              <div className="supplier-review-section__heading">
+                <div>
+                  <PackageSearch aria-hidden="true" size={20} />
+                  <span>
+                    <h3 id="pending-suggestions-heading">Hämtas från ICA</h3>
+                    <small>{pendingItems.length} råvarusökningar återstår</small>
+                  </span>
+                </div>
+              </div>
+              <p className="supplier-review-empty">
+                Scoutmat fortsätter automatiskt. Det här är inte artiklar utan
+                träff. Sökningen fortsätter även när du arbetar på andra sidor,
+                och du behöver inte matcha dem för hand.
+              </p>
+              <ul className="supplier-review-reasons">
+                {pendingItems.map((item) => (
+                  <li key={item.canonical_key}>{item.item_name}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section aria-labelledby="no-suggestions-heading">
             <div className="supplier-review-section__heading">
               <div>
                 <PackageSearch aria-hidden="true" size={20} />
                 <span>
-                  <h3 id="no-suggestions-heading">
-                    {icaSyncPending ? "Hämtas från ICA" : "Ingen träff"}
-                  </h3>
+                  <h3 id="no-suggestions-heading">Ingen träff</h3>
                   <small>
-                    {icaSyncPending
-                      ? "Scoutmat arbetar vidare automatiskt"
-                      : icaSicklaSelected
+                    {icaSicklaSelected
                       ? "Sök bland hämtade artiklar från ICA Sickla"
                       : "Sök i den importerade katalogen"}
                   </small>
                 </span>
               </div>
             </div>
-            {icaSyncPending ? (
-              <p className="supplier-review-empty">
-                {noMatchItems.length} råvaror väntar fortfarande på ICA-katalogen.
-                Du behöver inte söka eller matcha dem för hand.
-              </p>
-            ) : noMatchItems.length ? noMatchItems.map((item) => {
+            {noMatchItems.length ? noMatchItems.map((item) => {
               const query = alternativeSearch[item.canonical_key] ?? "";
               const alternatives = alternativeResults[item.canonical_key] ?? [];
+              const searchStatus = alternativeSearchStatus[item.canonical_key];
               return (
                 <div className="supplier-alternative-search" key={item.canonical_key}>
                   <label>
@@ -616,6 +748,11 @@ export function SupplierCataloguePanel({
                             ...current,
                             [item.canonical_key]: [],
                           }));
+                          setAlternativeSearchStatus((current) => {
+                            const next = { ...current };
+                            delete next[item.canonical_key];
+                            return next;
+                          });
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") void searchAlternatives(item);
@@ -631,10 +768,14 @@ export function SupplierCataloguePanel({
                       </Button>
                     </span>
                   </label>
-                  {query.trim().length >= 2
-                    && searchingCanonicalKey !== item.canonical_key
+                  {searchStatus?.status === "complete"
                     && !alternatives.length
-                    ? <small>Inga sökresultat ännu.</small>
+                    ? (
+                      <small>
+                        Inga ICA-artiklar hittades för “{searchStatus.submittedQuery}”.
+                        Prova ett kortare eller mer allmänt sökord.
+                      </small>
+                    )
                     : null}
                   {alternatives.map((product) => (
                     <Button

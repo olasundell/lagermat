@@ -21,7 +21,10 @@ import {
   type PreviewRow
 } from "./importModel";
 import { CreateParticipantDialog } from "./CreateParticipantDialog";
+import { activeParticipantListFilter } from "./participantLifecycle";
 import { ParticipantPrivacyDialog } from "./ParticipantPrivacyDialog";
+import { ScoutnetQuestionMappingCard } from "./ScoutnetQuestionMappingCard";
+import { ScoutnetReconciliationCard } from "./ScoutnetReconciliationCard";
 
 interface ParticipantListRow {
   id: string;
@@ -30,6 +33,8 @@ interface ParticipantListRow {
   patrol_id: string | null;
   meal_group_id: string | null;
   food_factor: number;
+  lifecycle_status: "active" | "withdrawn";
+  scoutnet_source_reference: string | null;
 }
 
 interface GroupRow {
@@ -62,9 +67,10 @@ async function fetchAllParticipants(organizationId: string, campId: string): Pro
   return collectPages(async (offset, pageSize) => {
     const { data, error } = await client
       .from("participants")
-      .select("id, display_name, division_id, patrol_id, meal_group_id, food_factor")
+      .select("id, display_name, division_id, patrol_id, meal_group_id, food_factor, lifecycle_status, scoutnet_source_reference")
       .eq("organization_id", organizationId)
       .eq("camp_id", campId)
+      .eq(activeParticipantListFilter.column, activeParticipantListFilter.value)
       .order("display_name")
       .range(offset, offset + pageSize - 1);
     if (error) throw error;
@@ -338,6 +344,9 @@ export function ParticipantsPage() {
         </div>
       </header>
 
+      <ScoutnetQuestionMappingCard />
+      <ScoutnetReconciliationCard />
+
       <section className="privacy-banner" aria-label="Dataminimering">
         <ShieldCheck aria-hidden="true" size={26} />
         <div>
@@ -474,10 +483,14 @@ export function ParticipantsPage() {
                   <div className="participant-record" key={participant.id}>
                     <div className="participant-row">
                       <span className="participant-avatar">{participant.display_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
-                      <div><strong>{participant.display_name}</strong><span>{participant.division_id ? groupNames.get(participant.division_id) : "Ingen avdelning"}{participant.patrol_id ? ` · ${groupNames.get(participant.patrol_id)}` : ""}</span></div>
+                      <div>
+                        <strong>{participant.display_name}</strong>
+                        <span>{participant.division_id ? groupNames.get(participant.division_id) : "Ingen avdelning"}{participant.patrol_id ? ` · ${groupNames.get(participant.patrol_id)}` : ""}</span>
+                        {participant.lifecycle_status === "withdrawn" ? <span className="participant-row__status">Återtagen · räknas inte med</span> : null}
+                      </div>
                       <span className="participant-row__portion">{portionSizeLabel(participant.food_factor)}</span>
                       <div className="participant-row__actions">
-                        <Button className="icon-button" aria-label={`Redigera ${participant.display_name}`} onPress={() => startEditing(participant)}><Pencil aria-hidden="true" size={18} /></Button>
+                        <Button className="icon-button" aria-label={`Redigera ${participant.display_name}`} onPress={() => startEditing(participant)} isDisabled={participant.lifecycle_status === "withdrawn"}><Pencil aria-hidden="true" size={18} /></Button>
                         {activeMembership.role === "admin" ? (
                           <ParticipantPrivacyDialog
                             participantId={participant.id}

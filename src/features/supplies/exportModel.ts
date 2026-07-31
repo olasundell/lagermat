@@ -1,4 +1,11 @@
-import { formatExactAmount, type SupplyItemRow, type SupplyListRow } from "./supplyModel";
+import {
+  formatCountedAmount,
+  practicalSupplyAmount,
+  type PracticalSupplyAmount,
+  type SupplyItemRow,
+  type SupplyListKind,
+  type SupplyListRow,
+} from "./supplyModel";
 
 export interface SupplyExportReadiness {
   canFinalize: boolean;
@@ -6,6 +13,7 @@ export interface SupplyExportReadiness {
 }
 
 export interface SupplyExportDocument {
+  kind: SupplyListKind;
   fileStem: string;
   title: string;
   perspective: string;
@@ -18,6 +26,7 @@ export interface SupplyExportDocument {
   draft: boolean;
   problems: string[];
   items: SupplyItemRow[];
+  practicalAmounts?: ReadonlyMap<string, PracticalSupplyAmount>;
 }
 
 export interface SupplyExportInput {
@@ -27,6 +36,7 @@ export interface SupplyExportInput {
   timeZone: string;
   readiness: SupplyExportReadiness;
   generatedAt?: Date;
+  practicalAmounts?: ReadonlyMap<string, PracticalSupplyAmount>;
 }
 
 const csvColumns = [
@@ -40,8 +50,10 @@ const csvColumns = [
   "Att kontrollera",
   "Kategori",
   "Vara",
-  "Beräknat behov",
-  "Behovets enhet",
+  "Praktiskt behov",
+  "Praktisk enhet",
+  "Exakt beräkning",
+  "Beräkningens enhet",
   "Beställt antal",
   "Beställd enhet",
   "Förpackning",
@@ -94,6 +106,7 @@ export function createSupplyExportDocument(input: SupplyExportInput): SupplyExpo
     .filter((item) => item.source_present)
     .sort((left, right) => left.category.localeCompare(right.category, "sv") || left.item_name.localeCompare(right.item_name, "sv"));
   return {
+    kind: input.list.kind,
     fileStem: `lagermat-${slug(input.campName)}-${slug(input.list.title)}`,
     title: input.list.title,
     perspective: perspectiveLabel(input.list),
@@ -105,31 +118,38 @@ export function createSupplyExportDocument(input: SupplyExportInput): SupplyExpo
     timeZone: input.timeZone,
     draft: !input.readiness.canFinalize,
     problems: input.readiness.problems,
-    items
+    items,
+    practicalAmounts: input.practicalAmounts,
   };
 }
 
 export function createSupplyCsv(document: SupplyExportDocument): string {
   const problemText = document.problems.join(" | ");
-  const rows = document.items.map((item) => [
-    document.perspective,
-    document.title,
-    document.organizationName,
-    document.campName,
-    document.revisionNumber ?? "",
-    document.generatedAt,
-    document.draft ? "UNDERLAG MED VARNINGAR" : "KONTROLLERAT UNDERLAG",
-    problemText,
-    item.category,
-    item.item_name,
-    rawDecimal(item.required_amount),
-    item.required_unit,
-    rawDecimal(item.ordered_amount),
-    item.ordered_unit ?? "",
-    item.package_note ?? "",
-    item.comment ?? "",
-    item.completed ? "ja" : "nej"
-  ]);
+  const rows = document.items.map((item) => {
+    const required = document.practicalAmounts?.get(item.id)
+      ?? practicalSupplyAmount(item.required_amount, item.required_unit);
+    return [
+      document.perspective,
+      document.title,
+      document.organizationName,
+      document.campName,
+      document.revisionNumber ?? "",
+      document.generatedAt,
+      document.draft ? "UNDERLAG MED VARNINGAR" : "KONTROLLERAT UNDERLAG",
+      problemText,
+      item.category,
+      item.item_name,
+      required.amount,
+      required.unit,
+      rawDecimal(item.required_amount),
+      item.required_unit,
+      rawDecimal(item.ordered_amount),
+      item.ordered_unit ?? "",
+      item.package_note ?? "",
+      item.comment ?? "",
+      item.completed ? "ja" : "nej",
+    ];
+  });
   return `\uFEFF${[csvColumns, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n")}\r\n`;
 }
 
@@ -147,6 +167,11 @@ export function createPrintableSupplyHtml(document: SupplyExportDocument): strin
   const problems = document.problems.length > 0
     ? `<ul>${document.problems.map((problem) => `<li>${escapeHtml(problem)}</li>`).join("")}</ul>`
     : "<p>Inga återstående problem hittades.</p>";
+  const practicalAmountNote = document.kind === "distribution"
+    ? "<p>Varje matlag får en praktiskt avrundad mängd som går att använda. Förpackningar räknas globalt först när en ICA-artikel väljs och räknas om om varan byts.</p>"
+    : document.kind === "delivery"
+      ? "<p>Behoven är praktiskt avrundade för varje leverans. Faktiska ICA-förpackningar fördelas globalt utan dubbel avrundning.</p>"
+      : "<p>Mängderna är praktiskt avrundade för inköp. Den exakta beräkningen finns kvar separat för spårbarhet och beräkning av valda artiklar.</p>";
   const groups = groupedItems(document.items).map(({ category, items }) => `
     <tbody>
       <tr class="category-row"><th colspan="6">${escapeHtml(category)}</th></tr>
@@ -154,8 +179,12 @@ export function createPrintableSupplyHtml(document: SupplyExportDocument): strin
         <tr>
           <td class="check">${item.completed ? "✓" : "□"}</td>
           <td><strong>${escapeHtml(item.item_name)}</strong></td>
-          <td>${escapeHtml(formatExactAmount(item.required_amount))} ${escapeHtml(item.required_unit)}</td>
-          <td>${item.ordered_amount === null ? "-" : `${escapeHtml(formatExactAmount(item.ordered_amount))} ${escapeHtml(item.ordered_unit)}`}</td>
+          <td>${(() => {
+            const required = document.practicalAmounts?.get(item.id)
+              ?? practicalSupplyAmount(item.required_amount, item.required_unit);
+            return escapeHtml(required.display);
+          })()}</td>
+          <td>${item.ordered_amount === null ? "-" : escapeHtml(formatCountedAmount(item.ordered_amount, item.ordered_unit ?? ""))}</td>
           <td>${escapeHtml(item.package_note) || "-"}</td>
           <td>${escapeHtml(item.comment) || "-"}</td>
         </tr>`).join("")}
@@ -212,6 +241,7 @@ export function createPrintableSupplyHtml(document: SupplyExportDocument): strin
     <section class="status${document.draft ? " status--draft" : ""}">
       <h2>${document.draft ? "UNDERLAG MED VARNINGAR – kontrollera före användning" : "Kontrollerat planeringsunderlag"}</h2>
       ${problems}
+      ${practicalAmountNote}
     </section>
     <table>
       <thead><tr><th scope="col">Klar</th><th scope="col">Vara</th><th scope="col">Beräknat behov</th><th scope="col">Beställt</th><th scope="col">Förpackning</th><th scope="col">Kommentar</th></tr></thead>

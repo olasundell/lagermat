@@ -1,0 +1,43 @@
+{
+  "fixtureVersion": 1,
+  "dataClassification": "synthetic-only",
+  "contract": {
+    "clientPackage": "@scouterna/scoutnet",
+    "clientVersion": "0.3.26",
+    "clientTarballSha1": "4a3b517b6fb7ea2ca64fa768777d776d95b43ab2",
+    "openApiPackage": "@scouterna/scoutnet-openapi",
+    "openApiVersion": "0.4.1",
+    "openApiTarballSha1": "60b3e701bcbf5bbb52a965e72622c1a99f80ca54",
+    "baseUrl": "https://scoutnet.se/api",
+    "authentication": "basic-resource-id-and-endpoint-key",
+    "endpoints": {
+      "participants": "/project/get/participants",
+      "questions": "/project/get/questions"
+    }
+  },
+  "questionCases": [
+    "object",
+    "emptyArray",
+    "null"
+  ],
+  "participantCases": [
+    "object",
+    "emptyArray",
+    "null"
+  ],
+  "participantScenarios": {
+    "cancelled": "990002",
+    "unconfirmed": "990003",
+    "groupFallback": "990004",
+    "groupPrecedence": "990007",
+    "multipleAttendanceIntervals": "990005",
+    "specialDiet": "990006"
+  },
+  "httpCases": [
+    "unauthorised-empty-body",
+    "rate-limited-json",
+    "unexpected-empty-object",
+    "malformed-json",
+    "server-error-html"
+  ]
+}

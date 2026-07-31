@@ -556,16 +556,42 @@ async function fetchSearchesUntilLimited(
   return { results, complete: true, limitation: null };
 }
 
-function mergeProducts(results: SearchResult[]): IcaCatalogueProduct[] {
-  const productsById = new Map<string, IcaCatalogueProduct>();
+interface ProductSearchMatch {
+  query: string;
+  rank: number;
+}
+
+type ProductWithSearchMatches = IcaCatalogueProduct & {
+  scoutmatSearchMatches: ProductSearchMatch[];
+};
+
+function mergeProducts(results: SearchResult[]): ProductWithSearchMatches[] {
+  const productsById = new Map<string, {
+    product: IcaCatalogueProduct;
+    matches: Map<string, ProductSearchMatch>;
+  }>();
   for (const result of results) {
-    for (const product of result.products) {
-      if (!productsById.has(product.productId)) {
-        productsById.set(product.productId, product);
+    for (let rank = 0; rank < result.products.length; rank += 1) {
+      const product = result.products[rank]!;
+      const entry = productsById.get(product.productId) ?? {
+        product,
+        matches: new Map<string, ProductSearchMatch>(),
+      };
+      const queryKey = result.query.toLocaleLowerCase("sv-SE");
+      const previous = entry.matches.get(queryKey);
+      if (!previous || rank < previous.rank) {
+        entry.matches.set(queryKey, { query: result.query, rank });
       }
+      productsById.set(product.productId, entry);
     }
   }
-  return [...productsById.values()];
+  return [...productsById.values()].map(({ product, matches }) => ({
+    ...product,
+    scoutmatSearchMatches: [...matches.values()].sort((left, right) =>
+      left.rank - right.rank
+      || left.query.localeCompare(right.query, "sv-SE")
+    ),
+  }));
 }
 
 export function createIcaCatalogueHandler(

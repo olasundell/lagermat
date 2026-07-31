@@ -8,7 +8,7 @@ Lägermat är en PWA för lägerplanering: deltagare, specialkost, recept, matse
 - Staging använder en fast Netlify-site, ett separat Supabase-projekt och endast syntetiska data.
 - Produktion använder en egen domän på Netlify och Supabase Pro i Stockholm. Publik registrering är avstängd och administratörsåtgärder kräver TOTP.
 - Startskriptet skapar det CLI-kompatibla nätet `supabase_network_scoutmat` med Docker-inställningen `host_binding_ipv4=127.0.0.1`. API, databas, Studio och testmejl publiceras därför endast på loopback.
-- Appen innehåller inga analysverktyg eller externa bild-CDN:er. Endast Supabases publicerbara nyckel får finnas i webbläsaren; servernycklar lagras aldrig i Vite eller Netlify.
+- Appen innehåller inga analysverktyg eller externa bild-CDN:er. Endast Supabases publicerbara nyckel får finnas i webbläsaren. Databas- och service-role-nycklar lagras aldrig i Vite eller Netlify. Om semantisk leverantörsmatchning senare aktiveras får den endast använda Netlify AI Gateways serverhanterade runtime-uppgifter; de exponeras aldrig som `VITE_*` eller i webbläsaren.
 - PWA-service workern cachar endast appskalet. Känslig API-data läggs inte i HTTP-cachen; offline-listor lagras uttryckligen och versionsstyrt i IndexedDB.
 - Hosted distribution är inte godkänd för verkliga personuppgifter förrän checklistan i [`docs/deployment/privacy-gate.md`](docs/deployment/privacy-gate.md) är godkänd.
 
@@ -53,6 +53,8 @@ Efter `pnpm supabase:reset` kan den seedade administratören `oskar@bjorkstad.te
 | `pnpm supabase:lint` | Linta produktschemat `public` i den lokala databasen |
 | `pnpm supabase:types` | Skriv ut TypeScript-typer från det lokala schemat |
 | `pnpm supabase:stop` | Stoppa den lokala stacken |
+| `pnpm demo:fixture:check` | Verifiera att den kanoniska demofixturen och dess genererade migration är identiska |
+| `pnpm scoutnet:contract:check` | Verifiera exakt Scoutnet-klient/OpenAPI-version och helt syntetiska Project API-fixtures |
 | `pnpm check:deployment` | Verifiera hosted konfiguration och repositoryhygien |
 | `pnpm bootstrap:hosted -- …` | Skapa första administratör, organisation och läger i ett tomt hosted projekt |
 
@@ -65,6 +67,15 @@ Starta med [`docs/deployment/README.md`](docs/deployment/README.md). Där finns 
 ## Design
 
 Designregler och officiella källor finns i [`docs/scouterna-designriktlinjer.md`](docs/scouterna-designriktlinjer.md). Desktop- och mobilkoncepten under `docs/design/` är implementationsspecifikation. Lägermat använder ett eget namn och en egen grytmarkör; ingen officiell Scouterna-logotyp eller scoutsymbol används.
+
+## Integrationer
+
+Scoutnet är valfritt bredvid manuell registrering och lokal XLSX/CSV-import.
+Det versionslåsta, enbart syntetiska Project API-kontraktet finns i
+[`docs/integrations/scoutnet-project-api.md`](docs/integrations/scoutnet-project-api.md).
+Lokal acceptans, felbeteende, gallring och rollback finns i
+[`docs/integrations/scoutnet-rollout.md`](docs/integrations/scoutnet-rollout.md).
+Verkliga nycklar, deltagaruppgifter eller produktionsanrop ingår inte.
 
 ## Dataskydd
 

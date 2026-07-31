@@ -3,8 +3,16 @@ import {
   CATALOGUE_MATCHER_VERSION,
   CATALOGUE_NORMALIZATION_VERSION,
   matchSupplierCatalogue,
+  type CatalogueIngredientContext,
   type CatalogueMatchCandidate,
 } from "./catalogueMatcher";
+import {
+  SUPPLIER_SEMANTIC_MAX_CANDIDATES_PER_GROUP,
+  SUPPLIER_SEMANTIC_PROMPT_VERSION,
+  type SupplierSemanticAdapter,
+  type SupplierSemanticRerankGroup,
+  type SupplierSemanticRerankResult,
+} from "./supplierSemanticMatch";
 import type {
   SupplierCataloguePreview,
   SupplierCataloguePreviewRow,
@@ -24,6 +32,11 @@ export interface SupplierCatalogueEnrichment {
   brand: string | null;
   packageDescription: string | null;
   manufacturerArticleNumber: string | null;
+}
+
+export interface SupplierCalculationIngredientContextRow {
+  canonical_key: string | null;
+  trace: unknown;
 }
 
 export interface StagedSupplierCatalogueRow {
@@ -53,7 +66,26 @@ interface BuildSupplierCandidatesInput {
   offers: SupplierOffer[];
   approvedMatches: IngredientSupplierMatch[];
   rejectedFingerprintsByCanonicalKey: ReadonlyMap<string, readonly string[]>;
+  ingredientContextsByCanonicalKey?: ReadonlyMap<
+    string,
+    CatalogueIngredientContext
+  >;
   asOfDate: string;
+}
+
+export interface SupplierMatchGeneration {
+  payloads: SupplierMatchCandidatePayload[];
+  semanticGroups: SupplierSemanticRerankGroup[];
+  semanticPayloadsByCanonicalKey: ReadonlyMap<
+    string,
+    readonly SupplierMatchCandidatePayload[]
+  >;
+}
+
+export interface SupplierSemanticMatchApplication {
+  adapter: Exclude<SupplierSemanticAdapter, "none">;
+  model: string;
+  results: readonly SupplierSemanticRerankResult[];
 }
 
 function stableJson(value: unknown): string {
@@ -68,6 +100,65 @@ function stableJson(value: unknown): string {
       .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
       .join(",")
   }}`;
+}
+
+function contextString(value: unknown, maximumLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact && compact.length <= maximumLength ? compact : null;
+}
+
+export function buildIngredientContextsFromCalculationLines(
+  rows: readonly SupplierCalculationIngredientContextRow[],
+): Map<string, CatalogueIngredientContext> {
+  const contexts = new Map<string, {
+    recipeNames: Set<string>;
+    dietaryRules: Set<string>;
+    dietaryLabels: Set<string>;
+  }>();
+
+  for (const row of rows) {
+    if (!row.canonical_key) continue;
+    const trace = row.trace !== null
+        && typeof row.trace === "object"
+        && !Array.isArray(row.trace)
+      ? row.trace as Record<string, unknown>
+      : null;
+    if (!trace) continue;
+
+    const context = contexts.get(row.canonical_key) ?? {
+      recipeNames: new Set<string>(),
+      dietaryRules: new Set<string>(),
+      dietaryLabels: new Set<string>(),
+    };
+    const recipeName = contextString(trace.recipe_name, 180);
+    const dietaryRule = contextString(trace.dietary_rule, 80);
+    const dietaryLabel = contextString(trace.dietary_tag_label, 80);
+    if (recipeName) context.recipeNames.add(recipeName);
+    if (dietaryRule && dietaryRule !== "standard") {
+      context.dietaryRules.add(dietaryRule);
+    }
+    if (
+      dietaryLabel
+      && (dietaryRule === "only" || dietaryRule === "replace_for_tag")
+    ) {
+      context.dietaryLabels.add(dietaryLabel);
+    }
+    contexts.set(row.canonical_key, context);
+  }
+
+  return new Map([...contexts].map(([canonicalKey, context]) => [
+    canonicalKey,
+    {
+      recipe_names: [...context.recipeNames].sort((left, right) =>
+        left.localeCompare(right, "sv-SE")
+      ),
+      dietary_rules: [...context.dietaryRules].sort(),
+      dietary_labels: [...context.dietaryLabels].sort((left, right) =>
+        left.localeCompare(right, "sv-SE")
+      ),
+    },
+  ]));
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -268,7 +359,7 @@ function candidatePayload(
   };
 }
 
-export function buildSupplierMatchCandidatePayloads({
+export function buildSupplierMatchGeneration({
   organizationId,
   supplierAccountId,
   items,
@@ -277,18 +368,30 @@ export function buildSupplierMatchCandidatePayloads({
   offers,
   approvedMatches,
   rejectedFingerprintsByCanonicalKey,
+  ingredientContextsByCanonicalKey = new Map(),
   asOfDate,
-}: BuildSupplierCandidatesInput): SupplierMatchCandidatePayload[] {
-  return items
-    .filter((item) => item.source_present)
-    .flatMap((item) => {
+}: BuildSupplierCandidatesInput): SupplierMatchGeneration {
+  const payloads: SupplierMatchCandidatePayload[] = [];
+  const semanticGroups: SupplierSemanticRerankGroup[] = [];
+  const semanticPayloadsByCanonicalKey = new Map<
+    string,
+    SupplierMatchCandidatePayload[]
+  >();
+
+  for (const item of items.filter((candidate) => candidate.source_present)) {
+      const storedContext =
+        ingredientContextsByCanonicalKey.get(item.canonical_key);
+      const ingredient = {
+        organization_id: organizationId,
+        canonical_key: item.canonical_key,
+        display_name: item.item_name,
+        unit: item.required_unit,
+        category: item.category,
+        comment: item.comment,
+        ...storedContext,
+      };
       const result = matchSupplierCatalogue({
-        ingredient: {
-          organization_id: organizationId,
-          canonical_key: item.canonical_key,
-          display_name: item.item_name,
-          unit: item.required_unit,
-        },
+        ingredient,
         accounts,
         products,
         offers,
@@ -304,23 +407,147 @@ export function buildSupplierMatchCandidatePayloads({
         as_of_date: asOfDate,
       });
 
-      if (result.status === "approved_exact" || result.status === "no_match") {
-        return [];
+      if (result.status !== "approved_exact" && result.status !== "no_match") {
+        const candidate = result.status === "safe"
+          ? result.selected
+          : result.candidates.find(isEligibleReviewCandidate) ?? null;
+        const payload = candidate
+          ? candidatePayload(
+              item,
+              candidate,
+              result.status === "safe" ? "safe" : "review",
+              result.margin_to_next,
+              result.reason,
+            )
+          : null;
+        if (payload) payloads.push(payload);
       }
-      const candidate = result.status === "safe"
-        ? result.selected
-        : result.candidates.find(isEligibleReviewCandidate) ?? null;
-      if (!candidate) return [];
 
-      const payload = candidatePayload(
-        item,
-        candidate,
-        result.status === "safe" ? "safe" : "review",
-        result.margin_to_next,
-        result.reason,
+      if (
+        result.status !== "review"
+        && result.status !== "no_match"
+      ) {
+        continue;
+      }
+      const semanticCandidates = result.candidates
+        .filter(isEligibleReviewCandidate)
+        .filter((candidate) => candidate.score.name > 0)
+        .slice(0, SUPPLIER_SEMANTIC_MAX_CANDIDATES_PER_GROUP);
+      const semanticPayloads = semanticCandidates.flatMap((candidate) => {
+        const payload = candidatePayload(
+          item,
+          candidate,
+          "review",
+          result.margin_to_next,
+          "semantic_rerank_candidate",
+        );
+        return payload ? [payload] : [];
+      });
+      const payloadProductIds = new Set(
+        semanticPayloads.map((payload) => payload.supplier_product_id),
       );
-      return payload ? [payload] : [];
-    });
+      const requestCandidates = semanticCandidates.flatMap((candidate) => {
+        const productFingerprint = currentProductFingerprint(candidate.product);
+        if (
+          !productFingerprint
+          || !payloadProductIds.has(candidate.product.id)
+        ) {
+          return [];
+        }
+        return [{
+          productId: candidate.product.id,
+          productFingerprint,
+          displayName: candidate.product.display_name,
+          brand: candidate.product.brand,
+          category: candidate.product.category,
+          purchaseUnit: candidate.product.purchase_unit,
+          packageAmount: candidate.product.package_amount,
+          packageUnit: candidate.product.package_unit,
+          deterministicScore: candidate.score.total,
+          deterministicReasons: candidate.explanations
+            .filter((entry) => entry.kind !== "blocker")
+            .map((entry) => entry.message),
+        }];
+      });
+      if (!requestCandidates.length) continue;
+
+      semanticPayloadsByCanonicalKey.set(
+        item.canonical_key,
+        semanticPayloads,
+      );
+      semanticGroups.push({
+        ingredient: {
+          canonicalKey: item.canonical_key,
+          displayName: item.item_name,
+          requiredUnit: item.required_unit,
+          category: item.category || null,
+          comment: item.comment,
+          recipeNames: [...(ingredient.recipe_names ?? [])],
+          dietaryLabels: [...(ingredient.dietary_labels ?? [])],
+        },
+        candidates: requestCandidates,
+      });
+  }
+
+  return {
+    payloads,
+    semanticGroups,
+    semanticPayloadsByCanonicalKey,
+  };
+}
+
+export function buildSupplierMatchCandidatePayloads(
+  input: BuildSupplierCandidatesInput,
+): SupplierMatchCandidatePayload[] {
+  return buildSupplierMatchGeneration(input).payloads;
+}
+
+export function applySupplierSemanticReranks(
+  generation: SupplierMatchGeneration,
+  applications: readonly SupplierSemanticMatchApplication[],
+): SupplierMatchCandidatePayload[] {
+  const selectedByCanonicalKey = new Map(
+    generation.payloads.map((payload) => [payload.canonical_key, payload]),
+  );
+
+  for (const application of applications) {
+    for (const result of application.results) {
+      if (
+        result.decision !== "match"
+        || !result.selectedProductId
+      ) {
+        continue;
+      }
+      const selected = generation.semanticPayloadsByCanonicalKey
+        .get(result.canonicalKey)
+        ?.find((payload) =>
+          payload.supplier_product_id === result.selectedProductId
+        );
+      if (!selected) continue;
+
+      selectedByCanonicalKey.set(result.canonicalKey, {
+        ...selected,
+        status: "review",
+        signals: {
+          ...selected.signals,
+          resolution_reason: "semantic_rerank",
+          semantic_rerank: {
+            adapter: application.adapter,
+            model: application.model,
+            prompt_version: SUPPLIER_SEMANTIC_PROMPT_VERSION,
+            confidence: result.confidence,
+            explanation: result.explanation,
+            cached: result.cached,
+            review_only: true,
+          },
+        },
+      });
+    }
+  }
+
+  return [...selectedByCanonicalKey.values()].sort((left, right) =>
+    left.canonical_key.localeCompare(right.canonical_key, "en")
+  );
 }
 
 export function buildManuallySelectedCandidatePayload(
@@ -337,6 +564,8 @@ export function buildManuallySelectedCandidatePayload(
       canonical_key: item.canonical_key,
       display_name: item.item_name,
       unit: item.required_unit,
+      category: item.category,
+      comment: item.comment,
     },
     accounts: [supplierAccount],
     products: [product],

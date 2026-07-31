@@ -18,7 +18,16 @@ No deploy preview is allowed to use either hosted database. Netlify receives onl
 - Supabase migrations are dry-run and then applied without `--include-seed`; Auth/SMTP configuration and Edge Functions follow. Netlify is deployed only after the backend is ready.
 - The hosted build generates an exact-origin CSP and cache policy, rejects local/test configuration and scans for server credentials. Non-destructive HTTP smoke tests run after each deploy.
 
-Provider setup is intentionally not automated from an untrusted workstation. Follow [provisioning.md](provisioning.md), then use [release.md](release.md) for each release and [operations.md](operations.md) for routine monitoring. Production remains blocked until [privacy-gate.md](privacy-gate.md) and the approvals in [recipe-catalogue.md](recipe-catalogue.md) are signed off. Recovery is described in [restore.md](restore.md).
+Provider setup is intentionally not automated from an untrusted workstation.
+Follow [provisioning.md](provisioning.md), then use [release.md](release.md) for
+each release and [operations.md](operations.md) for routine monitoring.
+The synthetic public-demo data and its exact 24-hour lifecycle are described in
+[demo-fixture.md](demo-fixture.md). The strict staging/production mode,
+Turnstile, email and static-Netlify boundary is specified in
+[demo-environments.md](demo-environments.md). Production remains blocked until
+[privacy-gate.md](privacy-gate.md) and the approvals in
+[recipe-catalogue.md](recipe-catalogue.md) are signed off. Recovery is
+described in [restore.md](restore.md).
 
 The reviewed hosted database-adviser baseline is recorded in
 [advisors.md](advisors.md); new security findings or unindexed foreign keys block
@@ -28,7 +37,11 @@ a release.
 
 - Never add a service-role/secret key to `VITE_*`, Netlify, browser storage or a generated bundle.
 - Never deploy `supabase/seed.sql` or `supabase/seed/**` to production.
+- Never put real participant, dietary, supplier, price or stock data in the canonical demo fixture.
 - Never point staging, branch builds or local tests at production Supabase.
+- Never give production `DEMO_MODE=true`, a Turnstile key or anonymous Auth.
+- Never deploy the public demo without the explicit empty Netlify Functions
+  directory documented in [demo-environments.md](demo-environments.md).
 - Never restore or roll back the production database merely to undo a frontend fault.
 - Never enter real participant or dietary information before the privacy gate is approved.
 

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "unauthorised-empty-body",
+    "endpoint": "/project/get/participants",
+    "status": 401,
+    "contentType": null,
+    "retryAfter": null,
+    "rawBody": ""
+  },
+  {
+    "id": "rate-limited-json",
+    "endpoint": "/project/get/participants",
+    "status": 429,
+    "contentType": "application/json",
+    "retryAfter": "60",
+    "rawBody": "{\"error\":\"synthetic_rate_limit\"}"
+  },
+  {
+    "id": "unexpected-empty-object",
+    "endpoint": "/project/get/participants",
+    "status": 200,
+    "contentType": "application/json",
+    "retryAfter": null,
+    "rawBody": "{}"
+  },
+  {
+    "id": "malformed-json",
+    "endpoint": "/project/get/participants",
+    "status": 200,
+    "contentType": "application/json",
+    "retryAfter": null,
+    "rawBody": "{\"participants\":"
+  },
+  {
+    "id": "server-error-html",
+    "endpoint": "/project/get/questions",
+    "status": 503,
+    "contentType": "text/html",
+    "retryAfter": null,
+    "rawBody": "<!doctype html><title>Synthetic upstream error</title>"
+  }
+]

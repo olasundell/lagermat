@@ -27,9 +27,9 @@ select is(
   (select count(*)::integer
    from public.recipe_ingredients ingredient
    join public.recipe_versions version on version.id = ingredient.recipe_version_id
-   where version.id in (select id from app_private.recipe_templates)),
-  245,
-  'the local seed clones 245 explicit portion and fixed ingredient components'
+  where version.id in (select id from app_private.recipe_templates)),
+  238,
+  'the local seed clones 238 curated physical ingredient components'
 );
 select is(
   (select count(distinct ingredient.mode)::integer
@@ -262,7 +262,7 @@ insert into public.recipe_ingredients (
 ) values
   ('a3200000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'a3100000-0000-0000-0000-000000000001', 'Linser', 'kg', 0.125, 'weighted_portion', 'standard', null, 0),
   ('a3200000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'a3100000-0000-0000-0000-000000000001', 'Bröd', 'st', 1, 'head', 'exclude', 'Gluten', 1),
-  ('a3200000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'a3100000-0000-0000-0000-000000000001', 'Glutenfritt bröd', 'paket', 2, 'fixed_once_per_camp', 'only', 'Gluten', 2);
+  ('a3200000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'a3100000-0000-0000-0000-000000000001', 'Glutenfritt bröd', 'skivor', 2, 'fixed_once_per_camp', 'only', 'Gluten', 2);
 
 select lives_ok(
   $$select public.freeze_recipe_version(
@@ -403,8 +403,8 @@ insert into public.recipe_ingredients (
   'a0000000-0000-0000-0000-000000000001',
   'a3100000-0000-0000-0000-000000000003',
   'Sojavariant',
-  'paket',
-  4,
+  'kg',
+  0.4,
   'fixed_once_per_camp',
   'only',
   'Soja',

@@ -15,6 +15,7 @@ Each GitHub environment needs these values:
 | Kind | Name | Meaning |
 | --- | --- | --- |
 | Variable | `APP_ORIGIN` | Exact origin, without trailing slash |
+| Variable | `DEMO_MODE` | Exactly `true` in staging and `false` in production |
 | Variable | `AUTH_EMAIL_MAX_FREQUENCY` | Set to `1m` for hosted abuse protection |
 | Variable | `NETLIFY_SITE_ID` | Fixed site for this tier |
 | Variable | `SUPABASE_PROJECT_REF` | Exact 20-character project reference |
@@ -29,11 +30,24 @@ Each GitHub environment needs these values:
 | Secret | `SMTP_USER` | Resend SMTP user |
 | Secret | `SMTP_PASS` | Resend SMTP/API credential |
 
+Staging additionally needs the public variable `TURNSTILE_SITE_KEY` and the
+protected secret `TURNSTILE_SECRET_KEY`. It must not receive any SMTP variable
+or secret. Production requires the SMTP values above and must not receive
+either Turnstile value. `VITE_DEMO_MODE` is derived from the protected
+environment's `DEMO_MODE`; it is not a third independent switch.
+
+The exact generated configuration and the currently known provider inventory
+are in [demo-environments.md](demo-environments.md). The deploy workflow must
+remain disabled until its environment wiring and explicit empty Netlify
+Functions directory have been reviewed under a separate deployment approval.
+
 Use separate provider tokens where practical. Rotate them after personnel or ownership changes and at the interval recorded in the operations log.
 
 ## 2. Supabase projects
 
-1. Create a staging project containing no personal data.
+1. Create a staging project containing no personal data. Enable anonymous Auth
+   only through the generated staging configuration; disable the email provider
+   and do not configure SMTP.
 2. Create a production Pro project in North EU (Stockholm). Confirm the region before creation because it is a data-location and latency decision.
 3. Add only named operators, require MFA on every account, enable SSL enforcement, and restrict direct database access to approved operator/CI addresses where operationally possible.
 4. Confirm public sign-up is disabled and redirects contain only the tier's exact `APP_ORIGIN` and `${APP_ORIGIN}/auth/callback`.
@@ -57,6 +71,8 @@ The workflow pushes the versioned Supabase configuration. It deliberately never 
 3. Assign the production custom domain and HTTPS certificate; set the exact origin as production `APP_ORIGIN`.
 4. Keep automatic Git publishing disabled so the staged workflow remains the only release path.
 5. Give the deployment token access only to these two sites and the intended team.
+6. Keep the staging demo on its fixed `netlify.app` URL. Do not add a custom
+   domain, analytics or Netlify Functions.
 
 ## 5. First release
 

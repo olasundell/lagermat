@@ -14,7 +14,7 @@
       "requirementId": "c3383052-b018-4630-9e54-22328bbb2356",
       "criterionId": "dcaf97ec-a04f-4999-a901-9f43f01bb2c2",
       "publicSheetUrl": null,
-      "note": "Istra specifies the public Google Sheet as a second source but does not persist its URL. The exact expected values below are therefore acceptance-oracle values, not an independently downloaded sheet snapshot."
+      "note": "Istra specifies the public Google Sheet as a second source but does not persist its URL. The workbook package hint for Bregott is superseded by the curated physical recipe measurement."
     }
   },
   "calculationScenarios": [
@@ -39,12 +39,11 @@
     {
       "key": "bregott",
       "ingredient": "Bregott",
-      "unit": "paket",
+      "unit": "kg",
       "components": [
-        { "mode": "weighted_portion", "amount": "0.0025", "multiplier": "344.1" },
-        { "mode": "fixed_once_per_camp", "amount": "10", "multiplier": "1" }
+        { "mode": "weighted_portion", "amount": "0.01", "multiplier": "344.1" }
       ],
-      "expected": "10.86025"
+      "expected": "3.441"
     }
   ],
   "procurementScenario": {

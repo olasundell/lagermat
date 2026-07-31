@@ -232,10 +232,10 @@ function calculateSupplierOrder(
   );
   const packageNote = [
     describedPurchaseQuantity === basicPurchaseQuantity
-      ? `${basicPurchaseQuantity} à ${amountPerPurchaseUnit.toString()} ${displayRequiredUnit}`
+      ? `${basicPurchaseQuantity} à ${readableDecimal(amountPerPurchaseUnit)} ${displayRequiredUnit}`
       : describedPurchaseQuantity,
-    `= ${orderedAmount.toString()} ${displayRequiredUnit}`,
-    `(behov ${amount.toString()} ${displayRequiredUnit}, överskott ${surplusAmount.toString()} ${displayRequiredUnit})`,
+    `= ${readableDecimal(orderedAmount)} ${displayRequiredUnit}`,
+    `(behov ${readableDecimal(amount)} ${displayRequiredUnit}, överskott ${readableDecimal(surplusAmount)} ${displayRequiredUnit})`,
   ].join(" ");
 
   return {

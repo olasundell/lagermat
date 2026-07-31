@@ -48,7 +48,7 @@ export async function fetchSupplyLists(scope: SupplyScope, kinds: SupplyListKind
     if (!supabase) throw new Error("Databasen är inte konfigurerad.");
     const { data, error } = await supabase
       .from("supply_lists")
-      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, canonical_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved)")
+      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, canonical_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved, order_source_kind, supplier_order_source_item_id, supplier_order_account_id, supplier_order_product_id, supplier_order_total_units, supplier_order_product_fingerprint)")
       .eq("organization_id", scope.organizationId)
       .eq("camp_id", scope.campId)
       .eq("source_present", true)
@@ -81,6 +81,12 @@ export function createSupplyReadinessProblems(data: {
   unresolved_dietary_needs: number;
   meals_without_recipe: number;
   calculation_stale: boolean;
+  supplier_safe_suggestions?: number;
+  supplier_review_suggestions?: number;
+  supplier_pending_items?: number;
+  supplier_no_match?: number;
+  supplier_order_incomplete?: number;
+  supplier_unresolved_items?: number;
 }): string[] {
   const problems: string[] = [];
   if (!data.meal_plan_confirmed) {
@@ -102,6 +108,46 @@ export function createSupplyReadinessProblems(data: {
       : `${data.meals_without_recipe} måltider saknar recept`);
   }
   if (data.calculation_stale) problems.push("Beräkningen saknas eller är inaktuell");
+  const supplierProblemStart = problems.length;
+  if ((data.supplier_pending_items ?? 0) > 0) {
+    const count = data.supplier_pending_items ?? 0;
+    problems.push(count === 1
+      ? "Scoutmat söker fortfarande efter 1 råvara hos ICA"
+      : `Scoutmat söker fortfarande efter ${count} råvaror hos ICA`);
+  }
+  if ((data.supplier_safe_suggestions ?? 0) > 0) {
+    const count = data.supplier_safe_suggestions ?? 0;
+    problems.push(count === 1
+      ? "1 säkert ICA-förslag behöver godkännas"
+      : `${count} säkra ICA-förslag behöver godkännas`);
+  }
+  if ((data.supplier_review_suggestions ?? 0) > 0) {
+    const count = data.supplier_review_suggestions ?? 0;
+    problems.push(count === 1
+      ? "1 ICA-träff behöver granskas"
+      : `${count} ICA-träffar behöver granskas`);
+  }
+  if ((data.supplier_no_match ?? 0) > 0) {
+    const count = data.supplier_no_match ?? 0;
+    problems.push(count === 1
+      ? "1 råvara saknar ICA-träff"
+      : `${count} råvaror saknar ICA-träff`);
+  }
+  if ((data.supplier_order_incomplete ?? 0) > 0) {
+    const count = data.supplier_order_incomplete ?? 0;
+    problems.push(count === 1
+      ? "1 godkänd ICA-artikel saknar köpantal"
+      : `${count} godkända ICA-artiklar saknar köpantal`);
+  }
+  if (
+    (data.supplier_unresolved_items ?? 0) > 0
+    && problems.length === supplierProblemStart
+  ) {
+    const count = data.supplier_unresolved_items ?? 0;
+    problems.push(count === 1
+      ? "1 råvara återstår i inköpsunderlaget"
+      : `${count} råvaror återstår i inköpsunderlaget`);
+  }
   return problems;
 }
 

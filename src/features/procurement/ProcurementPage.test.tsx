@@ -486,4 +486,66 @@ describe("ProcurementPage", () => {
     )).toBeInTheDocument();
     expect(screen.queryByText(/Kontrollera mängden manuellt/)).not.toBeInTheDocument();
   });
+
+  it("filters the camp purchase list without discarding an unsaved order draft", async () => {
+    const user = userEvent.setup();
+    const tomato = tomatoItem({ comment: "Till tacos" });
+    const milk = tomatoItem({
+      id: "item-milk",
+      item_key: "purchase:milk",
+      canonical_key: "ingredient:milk",
+      category: "Mejeri",
+      item_name: "Mjölk",
+      ordered_amount: 2,
+      ordered_unit: "l",
+    });
+    const tomatoMatch: IngredientSupplierMatch = {
+      id: "match-filter-tomato",
+      organization_id: "organization-1",
+      canonical_key: tomato.canonical_key,
+      supplier_product_id: tomatoProduct.id,
+      supplier_account_id: account.id,
+      required_unit: "kg",
+      amount_per_purchase_unit: 2.4,
+      approved_product_fingerprint: tomatoProduct.product_fingerprint,
+      approved_by: "user-1",
+      approved_at: "2026-07-29T10:00:00Z",
+      created_at: "2026-07-29T10:00:00Z",
+      updated_at: "2026-07-29T10:00:00Z",
+    };
+    const icaTomato = { ...tomatoProduct, display_name: "ICA Tomater hela 6-pack" };
+    testState.lists = [{
+      ...purchaseList(tomato),
+      supply_list_items: [tomato, milk],
+    }];
+    testState.supplierData = supplierData({
+      accounts: [account],
+      products: [icaTomato],
+      details: [{ account, product: icaTomato, offer: null, match: tomatoMatch }],
+    });
+
+    const { container } = render(<ProcurementPage />);
+
+    const tomatoComment = screen.getByDisplayValue("Till tacos");
+    await user.type(tomatoComment, " – kontrollera bäst före");
+    await user.type(screen.getByRole("searchbox", {
+      name: "Sök råvara, kommentar eller ICA-artikel",
+    }), "tomater hela");
+
+    const orderGrid = container.querySelector(".order-grid") as HTMLElement;
+    expect(within(orderGrid).getByText("Krossade tomater")).toBeVisible();
+    expect(within(orderGrid).getByText("Mjölk").closest(".order-editor")).not.toBeVisible();
+
+    await user.clear(screen.getByRole("searchbox", {
+      name: "Sök råvara, kommentar eller ICA-artikel",
+    }));
+    expect(tomatoComment).toHaveValue("Till tacos – kontrollera bäst före");
+
+    await user.selectOptions(screen.getByLabelText("Beställning"), "not_ordered");
+    expect(within(orderGrid).getByText("Krossade tomater")).toBeVisible();
+    expect(within(orderGrid).getByText("Mjölk").closest(".order-editor")).not.toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText("ICA-status"), "ready");
+    expect(within(orderGrid).getByText("Krossade tomater")).toBeVisible();
+  });
 });

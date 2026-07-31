@@ -48,7 +48,7 @@ export async function fetchSupplyLists(scope: SupplyScope, kinds: SupplyListKind
     if (!supabase) throw new Error("Databasen är inte konfigurerad.");
     const { data, error } = await supabase
       .from("supply_lists")
-      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, canonical_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved, order_source_kind, supplier_order_source_item_id, supplier_order_account_id, supplier_order_product_id, supplier_order_total_units, supplier_order_product_fingerprint)")
+      .select("id, list_key, kind, status, title, range_start, range_end, version, source_present, calculation_revisions(revision_number, status), supply_list_items(id, item_key, canonical_key, category, item_name, required_amount, required_unit, ordered_amount, ordered_unit, package_note, comment, completed, row_version, source_present, manually_moved, order_source_kind, manual_order_source_item_id, manual_order_total_amount, manual_order_unit, supplier_order_source_item_id, supplier_order_account_id, supplier_order_product_id, supplier_order_total_units, supplier_order_product_fingerprint)")
       .eq("organization_id", scope.organizationId)
       .eq("camp_id", scope.campId)
       .eq("source_present", true)
@@ -78,6 +78,7 @@ export async function generateSupplyLists(scope: SupplyScope): Promise<void> {
 export function createSupplyReadinessProblems(data: {
   meal_plan_confirmed: boolean;
   unplanned_slots: number;
+  zero_attendance_slots?: number;
   unresolved_dietary_needs: number;
   meals_without_recipe: number;
   calculation_stale: boolean;
@@ -96,6 +97,12 @@ export function createSupplyReadinessProblems(data: {
     problems.push(data.unplanned_slots === 1
       ? "1 måltidstillfälle är oplanerat"
       : `${data.unplanned_slots} måltidstillfällen är oplanerade`);
+  }
+  if ((data.zero_attendance_slots ?? 0) > 0) {
+    const count = data.zero_attendance_slots ?? 0;
+    problems.push(count === 1
+      ? "1 måltid saknar närvarande deltagare eller reserver"
+      : `${count} måltider saknar närvarande deltagare eller reserver`);
   }
   if (data.unresolved_dietary_needs > 0) {
     problems.push(data.unresolved_dietary_needs === 1
@@ -172,12 +179,21 @@ export async function saveSupplyItem(
   if (queued && navigator.onLine) await syncPendingMutations(scope);
 }
 
-export async function moveDeliveryItem(item: SupplyItemRow, targetListId: string): Promise<void> {
+export async function moveDeliveryItem(
+  item: SupplyItemRow,
+  targetListId: string,
+  patch: SupplyItemPatch,
+): Promise<void> {
   if (!supabase) throw new Error("Databasen är inte konfigurerad.");
   const { error } = await supabase.rpc("move_delivery_item", {
     p_item_id: item.id,
     p_target_list_id: targetListId,
-    p_expected_version: item.row_version
+    p_expected_version: item.row_version,
+    p_ordered_amount: patch.orderedAmount,
+    p_ordered_unit: patch.orderedUnit,
+    p_package_note: patch.packageNote,
+    p_comment: patch.comment,
+    p_completed: patch.completed,
   });
   if (error) throw error;
 }

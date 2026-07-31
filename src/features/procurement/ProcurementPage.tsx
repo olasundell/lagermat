@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, Calculator, Check, ListRestart, PackageCheck, Save, ShoppingCart } from "lucide-react";
+import { AlertTriangle, Calculator, Check, ListRestart, PackageCheck, Save, Search, ShoppingCart } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 import { userFacingError } from "../../lib/userFacingError";
@@ -48,6 +48,11 @@ import {
 } from "../suppliers/supplierModel";
 import { isIcaSicklaAccount } from "../suppliers/icaStore";
 import { useIcaCatalogueSync } from "../suppliers/useIcaCatalogueSync";
+import {
+  filterProcurementItems,
+  type ProcurementIcaFilter,
+  type ProcurementOrderFilter,
+} from "./procurementFilterModel";
 import { createDistributionListOptions } from "./distributionListModel";
 import "../suppliers/suppliers.css";
 
@@ -61,6 +66,7 @@ function OrderEditor({
   supplierAccounts,
   supplierDetails,
   supplierWritable,
+  hidden = false,
   onSaved,
   onSupplierSaved,
 }: {
@@ -71,6 +77,7 @@ function OrderEditor({
   supplierAccounts: SupplierAccount[];
   supplierDetails: SupplierMatchDetail[];
   supplierWritable: boolean;
+  hidden?: boolean;
   onSaved: () => Promise<void>;
   onSupplierSaved: () => Promise<void>;
 }) {
@@ -120,7 +127,7 @@ function OrderEditor({
   }
 
   return (
-    <div className={`order-editor${item.source_present ? "" : " order-editor--missing"}`}>
+    <div hidden={hidden} className={`order-editor${item.source_present ? "" : " order-editor--missing"}`}>
       <div className="order-editor__identity">
         <strong>{item.item_name}</strong>
         <span className={practicalRequirement.issue ? "operational-amount--warning" : undefined}>
@@ -189,6 +196,10 @@ export function ProcurementPage() {
   const [selectedDistributionId, setSelectedDistributionId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  const [purchaseQuery, setPurchaseQuery] = useState("");
+  const [purchaseCategory, setPurchaseCategory] = useState("all");
+  const [purchaseOrderFilter, setPurchaseOrderFilter] = useState<ProcurementOrderFilter>("all");
+  const [purchaseIcaFilter, setPurchaseIcaFilter] = useState<ProcurementIcaFilter>("all");
   const scope = useMemo(() => activeCamp && activeMembership && user
     ? { userId: user.id, organizationId: activeMembership.organizationId, campId: activeCamp.id }
     : null, [activeCamp, activeMembership, user]);
@@ -257,6 +268,18 @@ export function ProcurementPage() {
   const supplierCandidates = supplierQuery.data?.candidates ?? [];
   const supplierColumnProfiles = supplierQuery.data?.columnProfiles ?? [];
   const approvedSupplierMatches = supplierQuery.data?.approvedMatches ?? [];
+  const purchaseCategories = [...new Set(purchaseItems.map((item) => item.category))]
+    .sort((left, right) => left.localeCompare(right, "sv"));
+  const visiblePurchaseItemIds = filterProcurementItems({
+    items: purchaseItems,
+    query: purchaseQuery,
+    category: purchaseCategory,
+    orderFilter: purchaseOrderFilter,
+    icaFilter: purchaseIcaFilter,
+    supplierDetails,
+    supplierCandidates,
+    accounts: supplierAccounts,
+  });
   const distributionOptions = createDistributionListOptions(
     lists,
     activeCamp?.timezone ?? "Europe/Stockholm",
@@ -538,6 +561,41 @@ export function ProcurementPage() {
             ligger kvar oförändrad och används när en faktisk artikel räknas
             om till hela förpackningar.
           </p>
+          <div className="procurement-filters" aria-label="Filtrera inköpslistan">
+            <label className="procurement-search">
+              <span className="sr-only">Sök råvara, kommentar eller ICA-artikel</span>
+              <Search aria-hidden="true" size={20} />
+              <input
+                name="purchase-search"
+                type="search"
+                value={purchaseQuery}
+                onChange={(event) => setPurchaseQuery(event.target.value)}
+                placeholder="Sök råvara, kommentar eller ICA-artikel"
+              />
+            </label>
+            <label className="field-label">Kategori
+              <select name="purchase-category" value={purchaseCategory} onChange={(event) => setPurchaseCategory(event.target.value)}>
+                <option value="all">Alla kategorier</option>
+                {purchaseCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
+            <label className="field-label">Beställning
+              <select name="purchase-order-status" value={purchaseOrderFilter} onChange={(event) => setPurchaseOrderFilter(event.target.value as ProcurementOrderFilter)}>
+                <option value="all">Alla</option>
+                <option value="not_ordered">Ej beställt</option>
+                <option value="ordered">Beställt</option>
+              </select>
+            </label>
+            <label className="field-label">ICA-status
+              <select name="purchase-ica-status" value={purchaseIcaFilter} onChange={(event) => setPurchaseIcaFilter(event.target.value as ProcurementIcaFilter)}>
+                <option value="all">Alla</option>
+                <option value="ready">ICA-artikel klar</option>
+                <option value="review">ICA behöver granskas</option>
+                <option value="missing">ICA saknas</option>
+              </select>
+            </label>
+          </div>
+          {visiblePurchaseItemIds.size === 0 ? <p className="procurement-filter-empty">Inga varor matchar filtret.</p> : null}
           <div className="order-grid">
             {purchaseItems.map((item) => (
               <OrderEditor
@@ -550,6 +608,7 @@ export function ProcurementPage() {
                 supplierAccounts={supplierAccounts}
                 supplierDetails={supplierDetails.filter((detail) => detail.match.canonical_key === item.canonical_key)}
                 supplierWritable={networkWritable}
+                hidden={!visiblePurchaseItemIds.has(item.id)}
                 onSaved={refresh}
                 onSupplierSaved={refreshSuppliers}
               />

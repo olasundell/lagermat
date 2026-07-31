@@ -3,6 +3,7 @@ export interface SpecialDietSummary {
   heading: string;
   detail: string;
   reviewMessage: string;
+  nextStep?: { to: "/matsedel"; label: string };
 }
 
 export function specialDietSummary(total: number, unresolved: number, calculationStale = false): SpecialDietSummary {
@@ -19,7 +20,11 @@ export function specialDietSummary(total: number, unresolved: number, calculatio
       kind: "clear",
       heading: "All specialkost är granskad",
       detail: calculationStale ? "Räkna om mängderna efter granskningen" : "Redo att användas i beräkningen",
-      reviewMessage: "All specialkost är granskad."
+      reviewMessage: "All specialkost är granskad.",
+      nextStep: {
+        to: "/matsedel",
+        label: calculationStale ? "Räkna om mängder" : "Fortsätt till matsedeln"
+      }
     };
   }
   return {

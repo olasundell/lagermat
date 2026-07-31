@@ -43,6 +43,19 @@ describe("supply readiness copy", () => {
     ]);
   });
 
+  it("keeps zero-attendance meals visible in the shared final gate", () => {
+    expect(createSupplyReadinessProblems({
+      meal_plan_confirmed: true,
+      unplanned_slots: 0,
+      zero_attendance_slots: 2,
+      unresolved_dietary_needs: 0,
+      meals_without_recipe: 0,
+      calculation_stale: false
+    })).toEqual([
+      "2 måltider saknar närvarande deltagare eller reserver"
+    ]);
+  });
+
   it("uses the same supplier counts as procurement and overview", () => {
     expect(createSupplyReadinessProblems({
       meal_plan_confirmed: true,

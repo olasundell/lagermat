@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Check, CircleAlert, LoaderCircle, Plus, ShieldAlert, Tags } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "react-aria-components";
@@ -179,7 +180,7 @@ export function SpecialDietsPage() {
         <div className="diet-layout">
           <section aria-labelledby="diet-review-heading">
             <div className="section-heading"><CircleAlert aria-hidden="true" size={24} /><div><h2 id="diet-review-heading">Att granska</h2><p>Förslag är stöd, aldrig automatiska medicinska beslut.</p></div></div>
-            {unresolved.length === 0 ? <div className={`diet-empty${summary.kind === "empty" ? " diet-empty--neutral" : ""}`}>{summary.kind === "empty" ? <Tags aria-hidden="true" size={28} /> : <Check aria-hidden="true" size={28} />}<p>{summary.reviewMessage}</p></div> : <div className="diet-card-list">{unresolved.map((need) => <ReviewCard key={need.id} need={need} participantName={participantNames.get(need.participant_id) ?? "Okänd deltagare"} availableTags={availableTags} currentTags={currentTags(need.id)} saving={savingId === need.id} onReview={reviewNeed} />)}</div>}
+            {unresolved.length === 0 ? <div className={`diet-empty${summary.kind === "empty" ? " diet-empty--neutral" : ""}`}>{summary.kind === "empty" ? <Tags aria-hidden="true" size={28} /> : <Check aria-hidden="true" size={28} />}<p>{summary.reviewMessage}</p>{summary.nextStep ? <Link className="primary-button" to={summary.nextStep.to}>{summary.nextStep.label}</Link> : null}</div> : <div className="diet-card-list">{unresolved.map((need) => <ReviewCard key={need.id} need={need} participantName={participantNames.get(need.participant_id) ?? "Okänd deltagare"} availableTags={availableTags} currentTags={currentTags(need.id)} saving={savingId === need.id} onReview={reviewNeed} />)}</div>}
           </section>
           <aside aria-labelledby="reviewed-diets-heading">
             <div className="section-heading"><Tags aria-hidden="true" size={24} /><div><h2 id="reviewed-diets-heading">Granskade</h2><p>{resolved.length} {resolved.length === 1 ? "klar uppgift" : "klara uppgifter"}</p></div></div>

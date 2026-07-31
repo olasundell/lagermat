@@ -7,6 +7,7 @@ export interface OverviewCounts {
   requiredSlots: number;
   plannedSlots: number;
   unplannedSlots: number;
+  zeroAttendanceSlots: number;
   noServiceSlots: number;
   missingRecipes: number;
   calculationStale: boolean;
@@ -23,12 +24,151 @@ export interface OverviewCounts {
   deliveries: number;
 }
 
+export interface OverviewDeliveryRow {
+  id: string;
+  title: string;
+  rangeStart: string | null;
+  status: "draft" | "active" | "complete";
+  items: Array<{ completed: boolean; sourcePresent: boolean }>;
+}
+
+export interface OverviewDeliveryProgress {
+  complete: number;
+  total: number;
+  current: {
+    id: string;
+    title: string;
+    rangeStart: string | null;
+    doneItems: number;
+    totalItems: number;
+  } | null;
+  next: {
+    id: string;
+    title: string;
+    rangeStart: string | null;
+  } | null;
+  blockers: string[];
+  to: "/leveranser";
+}
+
 interface OverviewNextAction {
   title: string;
   description: string;
   label: string;
   note: string;
   to: "/deltagare" | "/specialkost" | "/recept" | "/matsedel" | "/inkop" | "/leveranser";
+}
+
+function sortedDeliveries(deliveries: OverviewDeliveryRow[]): OverviewDeliveryRow[] {
+  return [...deliveries].sort((left, right) => {
+    if (left.rangeStart && right.rangeStart) {
+      const byDate = left.rangeStart.localeCompare(right.rangeStart);
+      if (byDate) return byDate;
+    } else if (left.rangeStart) {
+      return -1;
+    } else if (right.rangeStart) {
+      return 1;
+    }
+    return left.title.localeCompare(right.title, "sv") || left.id.localeCompare(right.id);
+  });
+}
+
+function supplierBlockers(counts: OverviewCounts): string[] {
+  const blockers: string[] = [];
+  if (counts.supplierPendingItems > 0) {
+    blockers.push(counts.supplierPendingItems === 1
+      ? "Scoutmat söker fortfarande efter 1 råvara hos ICA"
+      : `Scoutmat söker fortfarande efter ${counts.supplierPendingItems} råvaror hos ICA`);
+  }
+  if (counts.supplierSafeSuggestions > 0) {
+    blockers.push(counts.supplierSafeSuggestions === 1
+      ? "1 säkert ICA-förslag behöver godkännas"
+      : `${counts.supplierSafeSuggestions} säkra ICA-förslag behöver godkännas`);
+  }
+  if (counts.supplierReviewSuggestions > 0) {
+    blockers.push(counts.supplierReviewSuggestions === 1
+      ? "1 ICA-träff behöver granskas"
+      : `${counts.supplierReviewSuggestions} ICA-träffar behöver granskas`);
+  }
+  if (counts.supplierNoMatchItems > 0) {
+    blockers.push(counts.supplierNoMatchItems === 1
+      ? "1 råvara saknar ICA-träff"
+      : `${counts.supplierNoMatchItems} råvaror saknar ICA-träff`);
+  }
+  if (counts.supplierOrderIncompleteItems > 0) {
+    blockers.push(counts.supplierOrderIncompleteItems === 1
+      ? "1 godkänd ICA-artikel saknar köpantal"
+      : `${counts.supplierOrderIncompleteItems} godkända ICA-artiklar saknar köpantal`);
+  }
+  if (counts.supplierUnresolvedItems > 0 && blockers.length === 0) {
+    blockers.push(counts.supplierUnresolvedItems === 1
+      ? "1 råvara återstår i inköpsunderlaget"
+      : `${counts.supplierUnresolvedItems} råvaror återstår i inköpsunderlaget`);
+  }
+  return blockers;
+}
+
+export function overviewDeliveryProgress(
+  deliveries: OverviewDeliveryRow[],
+  counts: OverviewCounts,
+): OverviewDeliveryProgress {
+  const sorted = sortedDeliveries(deliveries);
+  const unfinished = sorted.filter((delivery) => delivery.status !== "complete");
+  const currentDelivery = unfinished[0] ?? null;
+  const currentItems = currentDelivery?.items.filter((item) => item.sourcePresent) ?? [];
+  const doneItems = currentItems.filter((item) => item.completed).length;
+  const remainingItems = currentItems.length - doneItems;
+  const blockers: string[] = [];
+
+  if (currentDelivery && remainingItems > 0) {
+    blockers.push(`${remainingItems} ${remainingItems === 1 ? "vara återstår" : "varor återstår"} i ${currentDelivery.title}`);
+  }
+  if (!counts.mealPlanConfirmed) {
+    blockers.push("Lägrets måltidstillfällen är inte bekräftade");
+  }
+  if (counts.unplannedSlots > 0) {
+    blockers.push(counts.unplannedSlots === 1
+      ? "1 måltidstillfälle är oplanerat"
+      : `${counts.unplannedSlots} måltidstillfällen är oplanerade`);
+  }
+  if (counts.zeroAttendanceSlots > 0) {
+    blockers.push(counts.zeroAttendanceSlots === 1
+      ? "1 måltid saknar närvarande deltagare eller reserver"
+      : `${counts.zeroAttendanceSlots} måltider saknar närvarande deltagare eller reserver`);
+  }
+  if (counts.unresolvedDiets > 0) {
+    blockers.push(counts.unresolvedDiets === 1
+      ? "1 specialkostuppgift återstår"
+      : `${counts.unresolvedDiets} specialkostuppgifter återstår`);
+  }
+  if (counts.missingRecipes > 0) {
+    blockers.push(counts.missingRecipes === 1
+      ? "1 måltid saknar recept"
+      : `${counts.missingRecipes} måltider saknar recept`);
+  }
+  if (counts.calculationStale) {
+    blockers.push("Beräkningen saknas eller är inaktuell");
+  }
+  blockers.push(...supplierBlockers(counts));
+
+  return {
+    complete: sorted.filter((delivery) => delivery.status === "complete").length,
+    total: sorted.length,
+    current: currentDelivery ? {
+      id: currentDelivery.id,
+      title: currentDelivery.title,
+      rangeStart: currentDelivery.rangeStart,
+      doneItems,
+      totalItems: currentItems.length,
+    } : null,
+    next: unfinished[1] ? {
+      id: unfinished[1].id,
+      title: unfinished[1].title,
+      rangeStart: unfinished[1].rangeStart,
+    } : null,
+    blockers: currentDelivery ? blockers : [],
+    to: "/leveranser",
+  };
 }
 
 export function overviewNextAction(counts: OverviewCounts): OverviewNextAction {
@@ -68,12 +208,16 @@ export function overviewNextAction(counts: OverviewCounts): OverviewNextAction {
       to: "/matsedel"
     };
   }
-  if (counts.unplannedSlots > 0 || counts.missingRecipes > 0) {
+  if (counts.unplannedSlots > 0 || counts.missingRecipes > 0 || counts.zeroAttendanceSlots > 0) {
     return {
       title: "Färdigställ matsedeln",
       description: counts.unplannedSlots > 0
         ? `Planera eller markera ingen servering för ${counts.unplannedSlots} återstående måltidstillfällen.`
-        : "Kontrollera att varje måltid har ett recept innan mängderna räknas ut.",
+        : counts.missingRecipes > 0
+          ? "Kontrollera att varje måltid har ett recept innan mängderna räknas ut."
+          : counts.zeroAttendanceSlots === 1
+            ? "En planerad måltid saknar närvarande deltagare eller reserver. Kontrollera närvaron eller markera ingen servering."
+            : `${counts.zeroAttendanceSlots} planerade måltider saknar närvarande deltagare eller reserver. Kontrollera närvaron eller markera ingen servering.`,
       label: "Öppna matsedeln",
       note: "Alla måltider behöver ett recept innan inköpsunderlaget kan skapas.",
       to: "/matsedel"

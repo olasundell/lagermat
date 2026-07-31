@@ -19,7 +19,10 @@ export interface SupplyItemRow {
   row_version: number;
   source_present: boolean;
   manually_moved: boolean;
-  order_source_kind?: "manual" | "supplier_purchase" | null;
+  order_source_kind?: "manual" | "supplier_purchase" | "manual_purchase" | null;
+  manual_order_source_item_id?: string | null;
+  manual_order_total_amount?: number | null;
+  manual_order_unit?: string | null;
   supplier_order_source_item_id?: string | null;
   supplier_order_account_id?: string | null;
   supplier_order_product_id?: string | null;
@@ -39,6 +42,12 @@ export interface SupplyListRow {
   source_present: boolean;
   calculation_revisions: { revision_number: number; status: string } | null;
   supply_list_items: SupplyItemRow[];
+}
+
+export interface DeliveryItemOrigin {
+  date: string;
+  listId: string | null;
+  title: string;
 }
 
 export type SupplyFilter = "all" | "remaining" | "done";
@@ -244,4 +253,51 @@ export function groupSupplyItems(items: SupplyItemRow[]): Map<string, SupplyItem
   const groups = new Map<string, SupplyItemRow[]>();
   for (const item of items) groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
   return groups;
+}
+
+export function deliveryItemSource(
+  item: Pick<SupplyItemRow, "item_key">,
+  deliveries: SupplyListRow[],
+): DeliveryItemOrigin | null {
+  const match = /^delivery:(\d{4}-\d{2}-\d{2}):/.exec(item.item_key);
+  if (!match) return null;
+  const date = match[1]!;
+  const source = deliveries.find(
+    (delivery) => delivery.list_key === `delivery:auto:${date}`,
+  );
+  return {
+    date,
+    listId: source?.id ?? null,
+    title: source?.title ?? `Leveransen ${date}`,
+  };
+}
+
+export function deliveryItemOrigin(
+  item: Pick<SupplyItemRow, "item_key" | "manually_moved">,
+  deliveries: SupplyListRow[],
+): DeliveryItemOrigin | null {
+  return item.manually_moved ? deliveryItemSource(item, deliveries) : null;
+}
+
+export function manualPurchaseAllocationExplanation(
+  deliveryItem: SupplyItemRow,
+  purchaseItems: SupplyItemRow[],
+): string | null {
+  if (deliveryItem.ordered_amount !== null) return null;
+  const purchaseItem = purchaseItems.find((candidate) =>
+    candidate.source_present
+    && candidate.canonical_key === deliveryItem.canonical_key
+    && candidate.order_source_kind === "manual"
+    && candidate.ordered_amount !== null
+    && candidate.ordered_amount > 0
+    && Boolean(candidate.ordered_unit),
+  );
+  if (!purchaseItem || purchaseItem.ordered_amount === null || !purchaseItem.ordered_unit) {
+    return null;
+  }
+  const wholeCampOrder = formatCountedAmount(
+    purchaseItem.ordered_amount,
+    purchaseItem.ordered_unit,
+  );
+  return `Hela lägret har ${wholeCampOrder} beställda, men en automatisk fördelning saknas för den här leveransen. Kontrollera manuella leveransvärden och enheter.`;
 }

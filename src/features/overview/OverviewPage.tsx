@@ -4,7 +4,12 @@ import { ArrowRight, Check, CircleAlert, Import, Sparkles } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { CreateCampDialog } from "../camps/CreateCampDialog";
 import { useWorkspace } from "../workspace/WorkspaceContext";
-import { overviewNextAction, type OverviewCounts } from "./overviewModel";
+import {
+  overviewDeliveryProgress,
+  overviewNextAction,
+  type OverviewCounts,
+  type OverviewDeliveryRow,
+} from "./overviewModel";
 
 const emptyCounts: OverviewCounts = {
   participants: 0,
@@ -15,6 +20,7 @@ const emptyCounts: OverviewCounts = {
   requiredSlots: 0,
   plannedSlots: 0,
   unplannedSlots: 0,
+  zeroAttendanceSlots: 0,
   noServiceSlots: 0,
   missingRecipes: 0,
   calculationStale: true,
@@ -46,6 +52,14 @@ function quantity(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function formatDeliveryDate(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    day: "numeric",
+    month: "long",
+  }).format(new Date(value));
+}
+
 export function OverviewPage() {
   const { activeMembership, activeCamp } = useWorkspace();
   const overviewQuery = useQuery({
@@ -53,13 +67,13 @@ export function OverviewPage() {
     enabled: Boolean(supabase && activeMembership && activeCamp),
     queryFn: async () => {
       if (!supabase || !activeMembership || !activeCamp) {
-        return emptyCounts;
+        return { ...emptyCounts, deliveryRows: [] satisfies OverviewDeliveryRow[] };
       }
       const scope = { organizationId: activeMembership.organizationId, campId: activeCamp.id };
       const [participantsResult, recipesResult, deliveriesResult, readinessResult] = await Promise.all([
         supabase.from("participants").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("lifecycle_status", "active"),
         supabase.from("camp_recipe_copies").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId),
-        supabase.from("supply_lists").select("id", { count: "exact", head: true }).eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("kind", "delivery").eq("source_present", true),
+        supabase.from("supply_lists").select("id, title, range_start, status, supply_list_items(completed, source_present)").eq("organization_id", scope.organizationId).eq("camp_id", scope.campId).eq("kind", "delivery").eq("source_present", true).order("range_start", { ascending: true, nullsFirst: false }),
         supabase.rpc("get_camp_readiness", { p_organization_id: scope.organizationId, p_camp_id: scope.campId }).maybeSingle()
       ]);
       const failure = participantsResult.error ?? recipesResult.error ?? deliveriesResult.error ?? readinessResult.error;
@@ -74,6 +88,7 @@ export function OverviewPage() {
         requiredSlots: readiness?.required_slots ?? 0,
         plannedSlots: readiness?.planned_slots ?? 0,
         unplannedSlots: readiness?.unplanned_slots ?? 0,
+        zeroAttendanceSlots: readiness?.zero_attendance_slots ?? 0,
         noServiceSlots: readiness?.no_service_slots ?? 0,
         missingRecipes: readiness?.meals_without_recipe ?? 0,
         calculationStale: readiness?.calculation_stale ?? true,
@@ -87,7 +102,17 @@ export function OverviewPage() {
         supplierOrderIncompleteItems: readiness?.supplier_order_incomplete ?? 0,
         supplierUnresolvedItems: readiness?.supplier_unresolved_items ?? 0,
         procurementReady: readiness?.procurement_ready ?? true,
-        deliveries: deliveriesResult.count ?? 0
+        deliveries: deliveriesResult.data?.length ?? 0,
+        deliveryRows: (deliveriesResult.data ?? []).map((delivery) => ({
+          id: delivery.id,
+          title: delivery.title,
+          rangeStart: delivery.range_start,
+          status: delivery.status,
+          items: (delivery.supply_list_items ?? []).map((item) => ({
+            completed: item.completed,
+            sourcePresent: item.source_present,
+          })),
+        })) satisfies OverviewDeliveryRow[],
       };
     }
   });
@@ -105,6 +130,10 @@ export function OverviewPage() {
   }
 
   const counts: OverviewCounts = overviewQuery.data ?? emptyCounts;
+  const deliveryProgress = overviewDeliveryProgress(
+    overviewQuery.data?.deliveryRows ?? [],
+    counts,
+  );
   const period = formatCampPeriod(activeCamp.startsOn, activeCamp.endsOn);
   const steps = [
     { number: 1, title: "Lägerinställningar", detail: `${period} · ${activeCamp.timezone}`, to: null, done: true },
@@ -118,10 +147,14 @@ export function OverviewPage() {
         ? "Måltidstillfällena är inte bekräftade"
         : counts.unplannedSlots > 0
           ? `${quantity(counts.unplannedSlots, "tillfälle", "tillfällen")} återstår`
-          : `${quantity(counts.plannedSlots, "måltid", "måltider")} planerade · ${quantity(counts.noServiceSlots, "ingen servering", "inga serveringar")}`,
+          : counts.missingRecipes > 0
+            ? `${quantity(counts.missingRecipes, "måltid saknar recept", "måltider saknar recept")}`
+            : counts.zeroAttendanceSlots > 0
+              ? `${quantity(counts.zeroAttendanceSlots, "måltid saknar deltagare", "måltider saknar deltagare")}`
+              : `${quantity(counts.plannedSlots, "måltid", "måltider")} planerade · ${quantity(counts.noServiceSlots, "ingen servering", "inga serveringar")}`,
       to: "/matsedel" as const,
-      done: counts.mealPlanConfirmed && counts.unplannedSlots === 0 && counts.missingRecipes === 0,
-      warning: !counts.mealPlanConfirmed || counts.unplannedSlots > 0 || counts.missingRecipes > 0
+      done: counts.mealPlanConfirmed && counts.unplannedSlots === 0 && counts.missingRecipes === 0 && counts.zeroAttendanceSlots === 0,
+      warning: !counts.mealPlanConfirmed || counts.unplannedSlots > 0 || counts.missingRecipes > 0 || counts.zeroAttendanceSlots > 0
     },
     {
       number: 6,
@@ -153,7 +186,16 @@ export function OverviewPage() {
           || !counts.procurementReady
         ),
     },
-    { number: 7, title: "Leveranser", detail: quantity(counts.deliveries, "leveranslista", "leveranslistor"), to: "/leveranser" as const, done: counts.deliveries > 0 }
+    {
+      number: 7,
+      title: "Leveranser",
+      detail: counts.deliveries > 0
+        ? `${deliveryProgress.complete} av ${deliveryProgress.total} leveranser klara`
+        : "Inga leveranser planerade",
+      to: "/leveranser" as const,
+      done: deliveryProgress.total > 0 && deliveryProgress.complete === deliveryProgress.total,
+      warning: deliveryProgress.blockers.length > 0,
+    }
   ];
   const nextAction = overviewNextAction(counts);
 
@@ -211,6 +253,46 @@ export function OverviewPage() {
           <p className="next-action__note">{nextAction.note}</p>
         </aside>
       </div>
+
+      <section className="overview-delivery-progress" aria-labelledby="delivery-progress-title">
+        <div className="overview-delivery-progress__heading">
+          <div>
+            <p className="overview-delivery-progress__eyebrow">Leveranser i drift</p>
+            <h2 id="delivery-progress-title">{deliveryProgress.total > 0
+              ? `${deliveryProgress.complete} av ${deliveryProgress.total} klara`
+              : "Inga leveranser planerade"}</h2>
+          </div>
+          <Link to={deliveryProgress.to} className="secondary-button">
+            Öppna leveranser <ArrowRight aria-hidden="true" size={18} />
+          </Link>
+        </div>
+
+        <div className="overview-delivery-progress__stages">
+          <div>
+            <span>Pågår nu</span>
+            <strong>{deliveryProgress.current?.title ?? "Ingen aktiv leverans"}</strong>
+            <small>{deliveryProgress.current
+              ? `${deliveryProgress.current.doneItems} av ${deliveryProgress.current.totalItems} varor klara`
+              : deliveryProgress.total > 0 ? "Alla leveranser är klara" : "Skapa leveranser från matsedeln"}</small>
+          </div>
+          <div>
+            <span>Nästa</span>
+            <strong>{deliveryProgress.next?.title ?? "Ingen ytterligare leverans"}</strong>
+            <small>{deliveryProgress.next?.rangeStart
+              ? formatDeliveryDate(deliveryProgress.next.rangeStart, activeCamp.timezone)
+              : "–"}</small>
+          </div>
+        </div>
+
+        {deliveryProgress.blockers.length > 0 ? (
+          <div className="overview-delivery-progress__blockers" role="status">
+            <strong><CircleAlert aria-hidden="true" size={18} /> Blockerar nästa steg</strong>
+            <ul>
+              {deliveryProgress.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          </div>
+        ) : null}
+      </section>
     </section>
   );
 }

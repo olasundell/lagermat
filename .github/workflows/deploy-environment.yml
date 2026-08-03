@@ -150,7 +150,10 @@ jobs:
         if: always()
         run: rm -f .tmp/hosted-edge.env
       - name: Deploy all versioned Edge Functions
-        run: pnpm exec supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api
+        run: >-
+          pnpm exec supabase --workdir .tmp/hosted-supabase functions deploy
+          --project-ref "$SUPABASE_PROJECT_REF"
+          --use-api
       - name: Build and inspect the hosted PWA
         run: node scripts/build-netlify.mjs
       - name: Deploy the fixed Netlify site

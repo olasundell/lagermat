@@ -6,10 +6,12 @@ import {
 } from "./hosted-environment.mjs";
 
 const sourceConfigPath = resolve("supabase/config.toml");
+const sourceFunctionsPath = resolve("supabase/functions");
 const sourceTemplatesPath = resolve("supabase/templates");
 const targetRoot = resolve(".tmp/hosted-supabase");
 const targetSupabase = resolve(targetRoot, "supabase");
 const targetConfigPath = resolve(targetSupabase, "config.toml");
+const targetFunctionsPath = resolve(targetSupabase, "functions");
 const targetTemplatesPath = resolve(targetSupabase, "templates");
 const edgeEnvironmentPath = resolve(".tmp/hosted-edge.env");
 const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT?.trim();
@@ -27,6 +29,7 @@ await writeFile(targetConfigPath, hostedConfig, {
   encoding: "utf8",
   mode: 0o600
 });
+await cp(sourceFunctionsPath, targetFunctionsPath, { recursive: true });
 await cp(sourceTemplatesPath, targetTemplatesPath, { recursive: true });
 
 const edgeEnvironment = [

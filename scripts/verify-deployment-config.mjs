@@ -39,6 +39,7 @@ const assertions = [
   [verifyWorkflow.includes("bash scripts/actionlint.sh"), "Verify måste lintkontrollera GitHub Actions-flöden."],
   [verifyWorkflow.includes("verify-hosted-environment-boundaries.mjs"), "Verify måste kontrollera staging-/produktionsgränsen utan provideranrop."],
   [verifyWorkflow.includes("DEPLOYMENT_ENVIRONMENT: production") && verifyWorkflow.includes("DEPLOYMENT_ENVIRONMENT: staging"), "Verify måste bygga både privat produktion och publik stagingdemo."],
+  [/integration:[\s\S]*?env:\s*\n\s*DEMO_MODE: "false"\s*\n\s*VITE_DEMO_MODE: "false"/.test(verifyWorkflow), "Privat auth-acceptans måste välja DEMO_MODE=false explicit utan att ändra stagingdemots standard."],
   [verifyWorkflow.includes("sed -i '${/^$/d;}' .tmp/database.generated.ts"), "Genererad typkontroll måste normalisera Supabase CLI:s avslutande tomrad."],
   [ignore.includes("*.xlsx") && ignore.includes("supabase/seed/demo_recipes.sql") && ignore.includes(".netlify/") && ignore.includes("output/"), "Repositoryhygienen är ofullständig."],
   [invitationFunction.includes('origin !== appOrigin'), "Inbjudningsfunktionen måste neka alla andra origins."],

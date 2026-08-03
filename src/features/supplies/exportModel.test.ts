@@ -78,6 +78,70 @@ describe("supply export", () => {
     expect(html).toContain("Skapad: 19 juli 2026 14:34");
   });
 
+  it("keeps whole-camp packaging visible in delivery CSV and print", () => {
+    const deliveryDocument = createSupplyExportDocument({
+      list: {
+        ...list,
+        kind: "delivery",
+        title: "Första leveransen",
+        supply_list_items: [{
+          ...list.supply_list_items[0]!,
+          ordered_amount: 11,
+          ordered_unit: "l",
+          package_note: null,
+          order_package_note: "45 × 1 l",
+          order_source_kind: "manual_purchase",
+        }],
+      },
+      organizationName: "Björkstad scoutkår",
+      campName: "Sommarläger 2026",
+      timeZone: "Europe/Stockholm",
+      readiness: { canFinalize: true, problems: [] },
+      generatedAt: new Date("2026-07-19T12:34:00Z"),
+    });
+
+    expect(createSupplyCsv(deliveryDocument)).toContain('"Förpackning för listan";"Beställningsförpackning för hela lägret"');
+    expect(createSupplyCsv(deliveryDocument)).toContain('"";"45 × 1 l"');
+    expect(createPrintableSupplyHtml(deliveryDocument)).toContain("45 × 1 l");
+  });
+
+  it("watermarks synthetic supplier data in ordinary purchase and delivery exports", () => {
+    const purchaseDocument = createSupplyExportDocument({
+      list,
+      organizationName: "Björkstad scoutkår",
+      campName: "Sommarläger 2026",
+      timeZone: "Europe/Stockholm",
+      readiness: { canFinalize: true, problems: [] },
+      syntheticSupplierCanonicalKeys: new Set(["ingredient:aubergine"]),
+    });
+    const deliveryDocument = createSupplyExportDocument({
+      list: {
+        ...list,
+        kind: "delivery",
+        title: "Första leveransen",
+        supply_list_items: [{
+          ...list.supply_list_items[0]!,
+          supplier_order_synthetic_fixture: true,
+        }],
+      },
+      organizationName: "Björkstad scoutkår",
+      campName: "Sommarläger 2026",
+      timeZone: "Europe/Stockholm",
+      readiness: { canFinalize: true, problems: [] },
+    });
+
+    for (const exportDocument of [purchaseDocument, deliveryDocument]) {
+      expect(exportDocument.draft).toBe(true);
+      expect(exportDocument.problems).toContain(
+        "1 rad bygger på lokala syntetiska testartiklar och får inte användas som beställningsunderlag",
+      );
+      expect(createSupplyCsv(exportDocument)).toContain("UNDERLAG MED VARNINGAR");
+      expect(createPrintableSupplyHtml(exportDocument)).toContain(
+        "lokala syntetiska testartiklar",
+      );
+    }
+  });
+
   it("uses the same practical amounts in distribution CSV and print", () => {
     const distributionDocument = createSupplyExportDocument({
       list: {

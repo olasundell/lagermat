@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 import { userFacingError } from "../../lib/userFacingError";
 import { useAuth } from "../auth/AuthContext";
+import { LOCAL_ICA_FIXTURE_WARNING } from "../suppliers/icaStore";
 import { SupplyExportActions } from "../supplies/SupplyExportActions";
 import { SupplySyncStatus } from "../supplies/SupplySyncStatus";
 import {
@@ -133,7 +134,7 @@ function DeliveryDetails({
     <div className="delivery-item__details">
       <label>Beställt antal<input name={`delivery-ordered-amount-${item.id}`} inputMode="decimal" aria-label={`Beställt antal för ${item.item_name}`} value={orderedAmount} onChange={(event) => setOrderedAmount(event.target.value)} /></label>
       <label>Beställd enhet<input name={`delivery-ordered-unit-${item.id}`} aria-label={`Beställd enhet för ${item.item_name}`} value={orderedUnit} onChange={(event) => { setOrderedUnit(event.target.value); setOrderedUnitTouched(true); }} /></label>
-      <label>Förpackning<input name={`delivery-package-note-${item.id}`} value={packageNote} onChange={(event) => setPackageNote(event.target.value)} placeholder="Till exempel 1 säck" /></label>
+      <label>Förpackning för denna leverans<input name={`delivery-package-note-${item.id}`} value={packageNote} onChange={(event) => setPackageNote(event.target.value)} placeholder="Till exempel 1 säck" /></label>
       <label>Kommentar<input name={`delivery-comment-${item.id}`} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Lägg till kommentar" /></label>
       {deliveries.length > 1 ? (
         <label>Flytta till leverans
@@ -160,6 +161,47 @@ function DeliveryDetails({
           </Button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function DeliveryReceiptDetails({
+  item,
+  deliveries,
+}: {
+  item: SupplyItemRow;
+  deliveries: SupplyListRow[];
+}) {
+  const origin = deliveryItemOrigin(item, deliveries);
+  return (
+    <div className="delivery-item__details delivery-item__details--readonly" aria-label={`Sparade leveransuppgifter för ${item.item_name}`}>
+      <dl>
+        <div>
+          <dt>Beställt</dt>
+          <dd>{item.ordered_amount === null
+            ? "Ej angivet"
+            : formatCountedAmount(item.ordered_amount, item.ordered_unit ?? "")}</dd>
+        </div>
+        <div>
+          <dt>Förpackning för denna leverans</dt>
+          <dd>{item.package_note || "Ej angivet"}</dd>
+        </div>
+        <div>
+          <dt>Kommentar</dt>
+          <dd>{item.comment || "Ingen kommentar"}</dd>
+        </div>
+        {item.order_package_note ? (
+          <div>
+            <dt>Beställningsförpackning för hela lägret</dt>
+            <dd>{item.order_package_note}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {item.manually_moved ? (
+        <p className="delivery-move-origin"><MapPin aria-hidden="true" size={16} /> {origin
+          ? <>Flyttad från <strong>{origin.title}</strong>.</>
+          : <>Flyttad manuellt.</>}</p>
+      ) : null}
     </div>
   );
 }
@@ -238,6 +280,9 @@ export function DeliveriesPage() {
   const grouped = groupSupplyItems(visibleItems);
   const done = currentItems.filter((item) => item.completed).length;
   const remaining = currentItems.length - done;
+  const syntheticFixtureCount = currentItems.filter(
+    (item) => item.supplier_order_synthetic_fixture,
+  ).length;
   const duplicateCanonicalKeys = new Set(
     [...currentItems.reduce((counts, item) => {
       counts.set(item.canonical_key, (counts.get(item.canonical_key) ?? 0) + 1);
@@ -443,15 +488,29 @@ export function DeliveriesPage() {
         </label>
 
         <p className="operational-rounding-note">
-          Behoven visas i praktiska mängder för varje leverans. Faktiska
-          ICA-förpackningar fördelas globalt utan dubbel avrundning.
+          Behoven visas i praktiska mängder för varje leverans. Valda
+          inköpsförpackningar fördelas globalt utan dubbel avrundning.
         </p>
+        {syntheticFixtureCount ? (
+          <div className="calculation-required" role="status">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <div>
+              <strong>{LOCAL_ICA_FIXTURE_WARNING}</strong>
+              <p>
+                {syntheticFixtureCount} {syntheticFixtureCount === 1 ? "rad bygger" : "rader bygger"}
+                {" "}på lokal testdata och får inte användas för en riktig leverans.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="delivery-groups">
           {[...grouped.entries()].map(([category, categoryItems]) => (
             <section key={category} className="delivery-group" aria-labelledby={`category-${category}`}>
               <h2 id={`category-${category}`}>{category}</h2>
               {categoryItems.map((item) => {
+                const finalised = selectedDelivery.status === "complete";
+                const detailsLocked = finalised || item.completed;
                 const expanded = expandedId === item.id;
                 const manualAllocationExplanation = manualPurchaseAllocationExplanation(item, purchaseItems);
                 const duplicateSource = duplicateCanonicalKeys.has(item.canonical_key)
@@ -463,7 +522,7 @@ export function DeliveriesPage() {
                   <div key={item.id} className={`delivery-item${expanded ? " delivery-item--expanded" : ""}`}>
                     <div className="delivery-item__row">
                       <label className="delivery-check">
-                        <input name={`delivery-completed-${item.id}`} type="checkbox" checked={item.completed} disabled={savingId === item.id} onChange={() => toggleItem(item)} />
+                        <input name={`delivery-completed-${item.id}`} type="checkbox" checked={item.completed} disabled={savingId === item.id || finalised} onChange={() => toggleItem(item)} />
                         <span aria-hidden="true">{item.completed ? <Check size={22} strokeWidth={3} /> : null}</span>
                         <span className="sr-only">{item.completed ? "Markera som kvar" : "Markera som klar"}: {item.item_name}</span>
                       </label>
@@ -475,6 +534,11 @@ export function DeliveriesPage() {
                         {duplicateSource ? (
                           <small className="delivery-item__source-badge">Ursprung: {duplicateSource.title}</small>
                         ) : null}
+                        {detailsLocked ? (
+                          <small className="delivery-item__locked-note">{finalised
+                            ? "Leveransen är slutmarkerad och kan inte ändras."
+                            : "Kvitterad – markera som kvar för att ändra eller flytta."}</small>
+                        ) : null}
                       </div>
                       <div className="delivery-item__ordered" aria-label={`Beställt för ${item.item_name}`}>
                         <span>{item.ordered_amount === null
@@ -483,15 +547,23 @@ export function DeliveriesPage() {
                         {manualAllocationExplanation ? (
                           <small className="delivery-item__allocation-warning">{manualAllocationExplanation}</small>
                         ) : null}
-                        {item.order_source_kind === "supplier_purchase" && item.package_note ? (
-                          <small>{item.package_note}</small>
+                        {item.order_package_note ? (
+                          <small className="delivery-item__order-package" aria-label={`Beställningsförpackning för hela lägret: ${item.order_package_note}`}>Hela lägret: {item.order_package_note}</small>
+                        ) : null}
+                        {item.supplier_order_synthetic_fixture ? (
+                          <small className="delivery-item__allocation-warning">
+                            {LOCAL_ICA_FIXTURE_WARNING}
+                          </small>
                         ) : null}
                       </div>
                       <Button className="icon-button delivery-item__expand" aria-label={expanded ? `Fäll ihop ${item.item_name}` : `Visa detaljer för ${item.item_name}`} onPress={() => setExpandedId(expanded ? null : item.id)}>
                         {expanded ? <ChevronUp aria-hidden="true" size={22} /> : <ChevronDown aria-hidden="true" size={22} />}
                       </Button>
                     </div>
-                    {expanded ? <DeliveryDetails key={item.row_version} item={item} deliveries={deliveries} activeDeliveryId={selectedDelivery.id} scope={scope!} canMove={networkWritable} onRefresh={refresh} /> : null}
+                    {expanded ? detailsLocked
+                      ? <DeliveryReceiptDetails item={item} deliveries={deliveries} />
+                      : <DeliveryDetails key={item.row_version} item={item} deliveries={deliveries} activeDeliveryId={selectedDelivery.id} scope={scope!} canMove={networkWritable} onRefresh={refresh} />
+                    : null}
                   </div>
                 );
               })}

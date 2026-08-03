@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { EditableSupplyValues } from "../../lib/offlineDb";
-import { changedValues } from "./offlineSync";
+import type { EditableSupplyValues, PendingMutation } from "../../lib/offlineDb";
+import {
+  changedValues,
+  mutationContributesOptimisticOverlay,
+} from "./offlineSync";
 
 const base: EditableSupplyValues = {
   ordered_amount: 12,
@@ -24,5 +27,12 @@ describe("changedValues", () => {
 
   it("skapar ingen mutation när värdena är oförändrade", () => {
     expect(changedValues(base, { ...base })).toEqual({});
+  });
+
+  it("lägger aldrig tillbaka en serveravvisad policykonflikt ovanpå cachen", () => {
+    expect(mutationContributesOptimisticOverlay({ status: "pending" })).toBe(true);
+    expect(mutationContributesOptimisticOverlay({
+      status: "conflict",
+    } satisfies Pick<PendingMutation, "status">)).toBe(false);
   });
 });

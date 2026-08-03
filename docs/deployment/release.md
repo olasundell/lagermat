@@ -24,10 +24,10 @@
 7. Production is built with both demo switches false, no Turnstile values,
    anonymous Auth off and private email/SMTP on.
 
-The current protected deploy workflow predates this environment split and is
-intentionally not executable for it yet. Do not “fix forward” by supplying
-missing values interactively. Wiring the protected environments and changing
-the external deploy command requires separate explicit approval.
+The protected deploy workflow implements this environment split and validates
+all provider values before mutation. Do not “fix forward” by supplying missing
+values interactively: correct the protected environment configuration and
+rerun the exact verified revision instead.
 
 The workflow must never be edited to pass `--include-seed`. If a migration dry-run is unexpected, reject the production approval and fix it in a new commit.
 

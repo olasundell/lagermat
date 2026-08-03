@@ -14,6 +14,25 @@ import { ProcurementPage } from "./ProcurementPage";
 type SupplierTestData = SupplierFoundationSnapshot;
 
 const testState = vi.hoisted(() => ({
+  queryKeys: [] as unknown[][],
+  icaSyncDataUpdatedAt: 1,
+  icaSyncData: {
+    warning: null,
+    retryAfterMs: null,
+    icaSyncProgress: null,
+  } as {
+    warning: string | null;
+    retryAfterMs: number | null;
+    icaSyncProgress: {
+      phase: "syncing" | "complete";
+      completedQueries: string[];
+      totalQueries: number;
+      retryAfterMs: number | null;
+      retryAt: number | null;
+      lastAttemptedAt: number | null;
+      syntheticLocalFixture: boolean;
+    } | null;
+  },
   lists: [] as SupplyListRow[],
   currentCalculation: {
     id: "calculation-1",
@@ -33,10 +52,13 @@ const testState = vi.hoisted(() => ({
   invalidateQueries: vi.fn().mockResolvedValue(undefined),
   saveSupplyItem: vi.fn().mockResolvedValue(undefined),
   approveSafe: vi.fn().mockResolvedValue(undefined),
+  supplierPending: false,
+  supplierFetching: false,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: string[] }) => {
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+    testState.queryKeys.push(queryKey);
     if (queryKey[0] === "supply-lists") {
       return {
         data: { lists: testState.lists, source: "network", cachedAt: null },
@@ -47,6 +69,15 @@ vi.mock("@tanstack/react-query", () => ({
     if (queryKey[0] === "supplier-foundation") {
       return {
         data: testState.supplierData,
+        error: null,
+        isPending: testState.supplierPending,
+        isFetching: testState.supplierFetching,
+      };
+    }
+    if (queryKey[0] === "ica-catalogue-sync") {
+      return {
+        data: testState.icaSyncData,
+        dataUpdatedAt: testState.icaSyncDataUpdatedAt,
         error: null,
         isPending: false,
         isFetching: false,
@@ -231,6 +262,7 @@ function supplierData(overrides: Partial<SupplierTestData> = {}): SupplierTestDa
 }
 
 beforeEach(() => {
+  testState.queryKeys = [];
   testState.lists = [];
   testState.currentCalculation = {
     id: "calculation-1",
@@ -238,10 +270,85 @@ beforeEach(() => {
     status: "current",
   };
   testState.supplierData = supplierData();
+  testState.icaSyncDataUpdatedAt = 1;
+  testState.icaSyncData = {
+    warning: null,
+    retryAfterMs: null,
+    icaSyncProgress: null,
+  };
+  testState.supplierPending = false;
+  testState.supplierFetching = false;
   vi.clearAllMocks();
 });
 
 describe("ProcurementPage", () => {
+  it("keeps one stable supplier foundation cache identity while ICA sync updates", () => {
+    testState.lists = [purchaseList(tomatoItem())];
+
+    const { rerender } = render(<ProcurementPage />);
+    testState.icaSyncDataUpdatedAt = 2;
+    rerender(<ProcurementPage />);
+
+    expect(testState.queryKeys.filter((queryKey) =>
+      queryKey[0] === "supplier-foundation"
+    )).toEqual([
+      ["supplier-foundation", "organization-1", "purchase-list-1", 1],
+      ["supplier-foundation", "organization-1", "purchase-list-1", 1],
+    ]);
+  });
+
+  it("keeps the saved supplier visible without a loading regression during background refresh", () => {
+    testState.lists = [purchaseList(tomatoItem())];
+    testState.supplierData = supplierData({ accounts: [account] });
+    testState.supplierFetching = true;
+
+    render(<ProcurementPage />);
+
+    expect(within(screen.getByLabelText("Sparade leverantörer"))
+      .getByText("ICA Kvantum Sickla")).toBeInTheDocument();
+    expect(screen.queryByText("Läser leverantörer…")).not.toBeInTheDocument();
+  });
+
+  it("shows the loading state before any supplier foundation exists", () => {
+    testState.lists = [purchaseList(tomatoItem())];
+    testState.supplierPending = true;
+
+    render(<ProcurementPage />);
+
+    expect(screen.getByText("Läser leverantörer…")).toBeInTheDocument();
+  });
+
+  it("shows the latest ICA sync warning without waiting for a foundation refetch", () => {
+    testState.lists = [purchaseList(tomatoItem())];
+    testState.supplierData = supplierData({ accounts: [account] });
+    testState.icaSyncData = {
+      warning: "Första synkvarningen",
+      retryAfterMs: null,
+      icaSyncProgress: {
+        phase: "syncing",
+        completedQueries: [],
+        totalQueries: 1,
+        retryAfterMs: null,
+        retryAt: null,
+        lastAttemptedAt: 1,
+        syntheticLocalFixture: false,
+      },
+    };
+
+    const { rerender } = render(<ProcurementPage />);
+    expect(screen.getByText("Första synkvarningen")).toBeInTheDocument();
+
+    testState.icaSyncData = {
+      ...testState.icaSyncData,
+      warning: "Andra synkvarningen",
+    };
+    testState.icaSyncDataUpdatedAt = 2;
+    rerender(<ProcurementPage />);
+
+    expect(screen.queryByText("Första synkvarningen")).not.toBeInTheDocument();
+    expect(screen.getByText("Andra synkvarningen")).toBeInTheDocument();
+  });
+
   it("exposes the selected perspective with aria-pressed", async () => {
     const user = userEvent.setup();
     render(<ProcurementPage />);
@@ -443,6 +550,76 @@ describe("ProcurementPage", () => {
         packageNote: expect.stringContaining("6 burkar"),
       }),
     );
+  });
+
+  it("watermarks a local synthetic ICA proposal in the order row and saved package note", async () => {
+    const user = userEvent.setup();
+    const item = tomatoItem({ ordered_amount: 1, ordered_unit: "kolli" });
+    const fixtureProduct: SupplierProduct = {
+      ...tomatoProduct,
+      id: "fixture-product-tomato",
+      supplier_article_number: "local-fixture-tomato-kg",
+      product_data_source: "import:api",
+      source_metadata: {
+        source: "ica_local_fixture",
+        store_id: "1004021",
+        synthetic_local_fixture: true,
+      },
+    };
+    const match: IngredientSupplierMatch = {
+      id: "fixture-match-tomato",
+      organization_id: "organization-1",
+      canonical_key: item.canonical_key,
+      supplier_product_id: fixtureProduct.id,
+      supplier_account_id: account.id,
+      required_unit: "kg",
+      amount_per_purchase_unit: 2.4,
+      approved_product_fingerprint: fixtureProduct.product_fingerprint,
+      approved_by: "user-1",
+      approved_at: "2026-07-31T10:00:00Z",
+      created_at: "2026-07-31T10:00:00Z",
+      updated_at: "2026-07-31T10:00:00Z",
+    };
+    const candidate: SupplierCatalogueCandidateView = {
+      id: "fixture-candidate-tomato",
+      supplierAccountId: account.id,
+      canonicalKey: item.canonical_key,
+      supplierProductId: fixtureProduct.id,
+      status: "pending",
+      classification: "safe",
+      score: 100,
+      matcherVersion: "deterministic-v2",
+      amountPerPurchaseUnit: 2.4,
+      requiredUnit: "kg",
+      reasons: ["Exakt namn", "Samma mängdenhet", "Verifierad förpackning"],
+      product: fixtureProduct,
+    };
+    testState.lists = [purchaseList(item)];
+    testState.supplierData = supplierData({
+      accounts: [account],
+      products: [fixtureProduct],
+      candidates: [candidate],
+      matches: [match],
+      details: [{ account, product: fixtureProduct, offer: null, match }],
+    });
+
+    render(<ProcurementPage />);
+
+    expect(screen.getAllByText(/LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA/i))
+      .not.toHaveLength(0);
+    expect(screen.queryByText(/Verifierad förpackningsomräkning via ICA Kvantum Sickla/i))
+      .not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Godkänn alla säkra" }));
+    await waitFor(() => expect(testState.saveSupplyItem).toHaveBeenCalledWith(
+      expect.any(Object),
+      "purchase-list-1",
+      item,
+      expect.objectContaining({
+        packageNote: expect.stringContaining(
+          "LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA",
+        ),
+      }),
+    ));
   });
 
   it("shows the consumer packages prominently after approval without a false unit warning", () => {

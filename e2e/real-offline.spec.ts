@@ -89,12 +89,27 @@ function headers(token: string): Record<string, string> {
 }
 
 async function deliveryItems(request: APIRequestContext, token: string): Promise<SupplyItem[]> {
-  const query = new URLSearchParams({
-    select: "id,item_name,row_version,ordered_amount,ordered_unit,package_note,comment,completed,supply_lists!inner(kind,source_present)",
+  const listQuery = new URLSearchParams({
+    select: "id",
     organization_id: `eq.${organizationId}`,
     camp_id: `eq.${campId}`,
-    "supply_lists.kind": "eq.delivery",
-    "supply_lists.source_present": "eq.true",
+    kind: "eq.delivery",
+    source_present: "eq.true",
+    range_start: "not.is.null",
+    order: "range_start.asc",
+    limit: "1",
+  });
+  const listResponse = await request.get(`${apiUrl}/rest/v1/supply_lists?${listQuery}`, { headers: headers(token) });
+  expect(listResponse.ok()).toBe(true);
+  const lists = await listResponse.json() as Array<{ id: string }>;
+  expect(lists).toHaveLength(1);
+
+  const query = new URLSearchParams({
+    select: "id,item_name,row_version,ordered_amount,ordered_unit,package_note,comment,completed",
+    organization_id: `eq.${organizationId}`,
+    camp_id: `eq.${campId}`,
+    supply_list_id: `eq.${lists[0]!.id}`,
+    source_present: "eq.true",
     order: "item_name.asc",
   });
   const response = await request.get(`${apiUrl}/rest/v1/supply_list_items?${query}`, { headers: headers(token) });
@@ -167,10 +182,21 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
   await expect(page.getByRole("heading", { name: /^Leverans 1/ })).toBeVisible();
 
   const token = await accessToken(page);
-  const initialItems = await deliveryItems(request, token);
-  expect(initialItems.length).toBeGreaterThanOrEqual(1);
+  let initialItems = await deliveryItems(request, token);
+  expect(initialItems.length).toBeGreaterThanOrEqual(2);
+  for (const item of initialItems.slice(0, 2)) {
+    const checkbox = page.getByRole("checkbox", { name: new RegExp(item.item_name) });
+    if (await checkbox.isChecked()) {
+      await checkbox.press("Space");
+      await expect(checkbox).not.toBeChecked();
+      await expect.poll(async () =>
+        (await deliveryItems(request, token)).find((row) => row.id === item.id)?.completed
+      ).toBe(false);
+    }
+  }
+  initialItems = await deliveryItems(request, token);
   const syncItem = initialItems[0]!;
-  const conflictItem = initialItems[1] ?? syncItem;
+  const conflictItem = initialItems[1]!;
   await expect(page.getByRole("checkbox", { name: new RegExp(syncItem.item_name) })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: new RegExp(conflictItem.item_name) })).toBeVisible();
 
@@ -190,6 +216,7 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
 
   preview = await startPreview();
   await page.context().setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText(/ändring(?:ar)? väntar/)).toBeHidden();
   await page.reload();
   await expect(page.getByRole("checkbox", { name: new RegExp(syncItem.item_name) })).toBeChecked({ checked: !initialChecked });
@@ -207,6 +234,14 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
   expect(replay.replayed).toBe(true);
   expect(replay.server_version).toBe(receipt.result.server_version);
 
+  const conflictCheckbox = page.getByRole("checkbox", { name: new RegExp(conflictItem.item_name) });
+  if (await conflictCheckbox.isChecked()) {
+    await conflictCheckbox.press("Space");
+    await expect(conflictCheckbox).not.toBeChecked();
+    await expect.poll(async () =>
+      (await deliveryItems(request, token)).find((item) => item.id === conflictItem.id)?.completed
+    ).toBe(false);
+  }
   const latestConflictItem = (await deliveryItems(request, token)).find((item) => item.id === conflictItem.id)!;
   await stopPreview(preview!);
   preview = null;
@@ -240,6 +275,7 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
 
   preview = await startPreview();
   await page.context().setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 15_000 }).toBe(true);
   await expect(page.getByText(`Två versioner av ${conflictItem.item_name}`)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/uppgifter ändrades både här och i den senast sparade versionen: kommentar/)).toBeVisible();

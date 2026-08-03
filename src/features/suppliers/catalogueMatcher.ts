@@ -830,8 +830,10 @@ function verifiedIcaSearchRank(
     return null;
   }
   const source = metadata as Record<string, unknown>;
+  const localFixture = source.source === "ica_local_fixture"
+    && source.synthetic_local_fixture === true;
   if (
-    source.source !== "ica_public_webshop"
+    (source.source !== "ica_public_webshop" && !localFixture)
     || source.store_id !== "1004021"
     || !Array.isArray(source.ica_search_matches)
   ) {

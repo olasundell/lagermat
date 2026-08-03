@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(96);
+select plan(97);
 
 -- Restore only the historical fixture-building privileges inside this rolled
 -- back transaction. Production privilege assertions live in security.test.sql.
@@ -729,32 +729,70 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 
 reset role;
-update public.supply_lists
-set status = 'complete'
-where id = (select target_list_id from atomic_delivery_move_state);
+insert into public.supply_lists (
+  id,
+  organization_id,
+  camp_id,
+  calculation_revision_id,
+  meal_group_id,
+  kind,
+  status,
+  title,
+  range_start,
+  range_end,
+  list_key,
+  source_present
+)
+select
+  'a1800000-0000-4000-8000-000000000067',
+  target.organization_id,
+  target.camp_id,
+  target.calculation_revision_id,
+  target.meal_group_id,
+  target.kind,
+  'complete',
+  'Completed move target',
+  target.range_start,
+  target.range_end,
+  'delivery:test:completed-move-target',
+  true
+from atomic_delivery_move_state state
+join public.supply_lists target on target.id = state.target_list_id;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claim.aal', 'aal2', true);
+select is(
+  (select public.update_supply_item(
+    state.item_id,
+    state.original_row_version,
+    state.original_ordered_amount,
+    state.original_ordered_unit,
+    state.original_package_note,
+    state.original_comment,
+    false
+  )
+  from atomic_delivery_move_state state),
+  (select state.original_row_version + 1 from atomic_delivery_move_state state),
+  'a checked delivery item must be reopened in an exact standalone update before moving'
+);
 select throws_ok(
   $$select public.move_delivery_item(
     state.item_id,
-    state.target_list_id,
-    state.original_row_version,
+    'a1800000-0000-4000-8000-000000000067',
+    item.row_version,
     0.7,
     'kg',
     'Ska inte sparas',
     'Ska inte flyttas',
-    true
+    false
   )
-  from atomic_delivery_move_state state$$,
+  from atomic_delivery_move_state state
+  join public.supply_list_items item on item.id = state.item_id$$,
   '22023',
   'Completed target delivery cannot receive items',
   'a completed delivery cannot silently receive another item'
 );
 reset role;
-update public.supply_lists
-set status = 'draft'
-where id = (select target_list_id from atomic_delivery_move_state);
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claim.aal', 'aal2', true);
@@ -774,9 +812,9 @@ select lives_ok(
     'kg',
     'Flyttad beställning',
     'Till kökstältet',
-    true
+    false
   )$$,
-  'a delivery item and its edited fields move atomically to another current interval'
+  'a reopened delivery item and its edited fields move atomically to another current interval'
 );
 select ok(
   (select list.list_key = 'delivery:auto:2026-08-04'
@@ -785,7 +823,7 @@ select ok(
       and item.ordered_unit = 'kg'
       and item.package_note = 'Flyttad beställning'
       and item.comment = 'Till kökstältet'
-      and item.completed
+      and not item.completed
       and item.manually_moved
    from public.supply_list_items item
    join public.supply_lists list on list.id = item.supply_list_id
@@ -845,7 +883,7 @@ select ok(
       and item.ordered_unit = 'kg'
       and item.package_note = 'Flyttad beställning'
       and item.comment = 'Till kökstältet'
-      and item.completed
+      and not item.completed
    from public.supply_list_items item
    join public.supply_lists list on list.id = item.supply_list_id
    where item.item_key like 'delivery:2026-08-03:%' and item.item_name = 'Linser'),

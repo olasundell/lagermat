@@ -20,7 +20,8 @@ export interface IcaCatalogueSessionClient {
 export interface IcaCatalogueResponse {
   source: {
     provider: "ica";
-    channel: "public-webshop";
+    channel: "public-webshop" | "local-fixture";
+    synthetic?: true;
     complete: boolean;
     endpointVersion?: unknown;
     store: {
@@ -105,9 +106,13 @@ function catalogueResponse(
     });
     seenSearches.add(key);
   }
+  const publicWebshop = source?.channel === "public-webshop"
+    && source.synthetic === undefined;
+  const localFixture = source?.channel === "local-fixture"
+    && source.synthetic === true;
   if (
     source?.provider !== "ica"
-    || source.channel !== "public-webshop"
+    || (!publicWebshop && !localFixture)
     || typeof source.complete !== "boolean"
     || store?.id !== expectedStoreId
     || !Array.isArray(body?.products)
@@ -118,7 +123,8 @@ function catalogueResponse(
   return {
     source: {
       provider: "ica",
-      channel: "public-webshop",
+      channel: localFixture ? "local-fixture" : "public-webshop",
+      ...(localFixture ? { synthetic: true as const } : {}),
       complete: source.complete,
       endpointVersion: source.endpointVersion,
       store: {

@@ -14,7 +14,12 @@ import {
   type SupplierAccount,
   type SupplierMatchDetail,
 } from "./supplierModel";
-import { ICA_KVANTUM_SICKLA, isIcaSicklaAccount } from "./icaStore";
+import {
+  ICA_KVANTUM_SICKLA,
+  isIcaSicklaAccount,
+  isLocalIcaFixtureProduct,
+  LOCAL_ICA_FIXTURE_WARNING,
+} from "./icaStore";
 
 const SUPPLIER_PROVIDERS = [
   { key: "menigo", label: "Menigo" },
@@ -366,8 +371,9 @@ export function SupplierMatchEditor({
       <div className="supplier-match-editor__content">
         {details.map((detail) => {
           const proposal = proposeSupplierOrder(item.required_amount, item.required_unit, detail);
+          const localFixture = isLocalIcaFixtureProduct(detail.product);
           return (
-            <article className="supplier-match-card" key={detail.match.id}>
+            <article className={`supplier-match-card${localFixture ? " supplier-match-card--fixture" : ""}`} key={detail.match.id}>
               <div className="supplier-match-card__heading">
                 <div>
                   <strong>{detail.account.display_name} · {detail.product.display_name}</strong>
@@ -375,6 +381,12 @@ export function SupplierMatchEditor({
                 </div>
                 {detail.offer?.price !== null && detail.offer ? <b>{formatPrice(detail.offer.price, detail.offer.currency)} / {detail.product.purchase_unit}</b> : null}
               </div>
+              {localFixture ? (
+                <p className="supplier-match-warning">
+                  <AlertTriangle aria-hidden="true" size={17} />
+                  {LOCAL_ICA_FIXTURE_WARNING}. Värdena är skapade för lokal provkörning och kommer inte från butiken.
+                </p>
+              ) : null}
               <p>
                 Sparad matchning: 1 {detail.product.purchase_unit} täcker {formatExactAmount(detail.match.amount_per_purchase_unit)} {detail.match.required_unit}.
                 Produktdata: {formatExactAmount(detail.product.package_amount)} {detail.product.package_unit}.
@@ -401,7 +413,9 @@ export function SupplierMatchEditor({
                     {formatExactAmount(proposal.orderedAmount)} {item.required_unit} beställs · {formatExactAmount(proposal.surplusAmount)} {item.required_unit} över behovet
                   </span>
                   <Button className="secondary-button" onPress={() => apply(detail, proposal)} isDisabled={!online || applyingProductId !== null}>
-                    {applyingProductId === detail.product.id ? "Använder…" : "Använd förslaget"}
+                    {applyingProductId === detail.product.id
+                      ? "Använder…"
+                      : localFixture ? "Använd testförslaget" : "Använd förslaget"}
                   </Button>
                 </div>
               ) : (

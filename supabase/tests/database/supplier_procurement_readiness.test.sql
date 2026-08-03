@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(38);
 
 insert into public.camps (
   id,
@@ -363,7 +363,7 @@ select lives_ok(
             where id = 'ca910000-0000-4000-8000-000000000007'
           ),
           'search_query', 'Supplier readiness test ingredient',
-          'search_date', current_date,
+          'search_date', (now() at time zone 'Europe/Stockholm')::date,
           'status', 'complete',
           'retry_at', null,
           'last_error', null
@@ -441,6 +441,7 @@ select is(
 );
 
 reset role;
+select set_config('request.jwt.claim.role', '', true);
 
 insert into public.supplier_products (
   id,
@@ -473,7 +474,11 @@ insert into public.supplier_products (
   now(),
   jsonb_build_object(
     'source', 'ica_public_webshop',
-    'store_id', '1004021'
+    'store_id', '1004021',
+    'ica_search_matches', jsonb_build_array(jsonb_build_object(
+      'query', 'Supplier readiness test ingredient',
+      'rank', 0
+    ))
   ),
   jsonb_build_object(
     'normalization_version', 'ica-public-catalogue-v2',
@@ -482,6 +487,8 @@ insert into public.supplier_products (
   '11111111-1111-1111-1111-111111111111'
 );
 
+reset role;
+select set_config('request.jwt.claim.role', '', true);
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -637,6 +644,75 @@ select is(
 );
 
 -- 17
+select public.record_supplier_catalogue_search_states(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  current_setting('scoutmat_test.readiness_account_id')::uuid,
+  jsonb_build_array(jsonb_build_object(
+    'canonical_key', (
+      select canonical_key
+      from public.supply_list_items
+      where id = 'ca910000-0000-4000-8000-000000000007'
+    ),
+    'search_query', 'Supplier readiness test ingredient',
+    'search_date', (now() at time zone 'Europe/Stockholm')::date,
+    'status', 'error',
+    'retry_at', now() + interval '1 minute',
+    'last_error', 'synthetic current fetch failure'
+  ))
+);
+
+select is(
+  (
+    select
+      supplier_ready_items::text
+        || '|'
+        || supplier_unresolved_items::text
+        || '|'
+        || procurement_ready::text
+    from public.get_supplier_procurement_readiness(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      'ca910000-0000-4000-8000-000000000001'
+    )
+  ),
+  '0|1|false',
+  'a failed current ICA search cannot reuse an approved stale order as ready'
+);
+
+select is(
+  (
+    select
+      supplier_pending_items::text
+        || '|'
+        || supplier_no_match::text
+    from public.get_supplier_procurement_readiness(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+      'ca910000-0000-4000-8000-000000000001'
+    )
+  ),
+  '1|0',
+  'a failed current ICA search remains unresolved rather than becoming no match'
+);
+
+select public.record_supplier_catalogue_search_states(
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
+  'ca910000-0000-4000-8000-000000000001',
+  current_setting('scoutmat_test.readiness_account_id')::uuid,
+  jsonb_build_array(jsonb_build_object(
+    'canonical_key', (
+      select canonical_key
+      from public.supply_list_items
+      where id = 'ca910000-0000-4000-8000-000000000007'
+    ),
+    'search_query', 'Supplier readiness test ingredient',
+    'search_date', (now() at time zone 'Europe/Stockholm')::date,
+    'status', 'complete',
+    'retry_at', null,
+    'last_error', null
+  ))
+);
+
+-- 19
 select is(
   (
     select
@@ -691,10 +767,8 @@ select is(
 select ok(
   (
     select bool_and(
-      package_note like '%av totalt 4 förpackningar%'
-      and package_note not like '%.000000%'
-      and package_note like '%0,5 kg/förpackning%'
-      and package_note like '%ICA-READINESS-TEST%'
+      order_package_note = '4 förpackningar à 500 g'
+      and package_note is null
     )
     from public.supply_list_items
     where id in (
@@ -702,7 +776,7 @@ select ok(
       'ca910000-0000-4000-8000-000000000013'
     )
   ),
-  'delivery rows explain their package share, size and ICA article'
+  'delivery rows retain the human whole-camp package snapshot without inventing a delivery package'
 );
 
 -- 20
@@ -823,8 +897,8 @@ select is(
       'ca910000-0000-4000-8000-000000000024'
     )
   ),
-  '17|28|45',
-  '45 l is allocated once across deliveries with stable largest remainder'
+  '18|27|45',
+  '45 l is allocated chronologically so the first delivery covers its dated need'
 );
 
 -- 25
@@ -878,8 +952,7 @@ set local role authenticated;
 -- 26
 select is(
   (
-    select string_agg(trim_scale(ordered_amount)::text, '|' order by id)
-      || '|' || trim_scale(sum(ordered_amount))::text
+    select count(*) filter (where ordered_amount is null)::integer
     from public.supply_list_items
     where id in (
       'ca910000-0000-4000-8000-000000000023',
@@ -887,8 +960,8 @@ select is(
       'ca910000-0000-4000-8000-000000000026'
     )
   ),
-  '16|25|4|45',
-  'a regenerated delivery row reuses the global order without changing its total'
+  3,
+  'a regenerated delivery that makes dated need exceed the global order clears every automatic share'
 );
 
 select set_config(
@@ -955,8 +1028,19 @@ select is(
 -- 30
 select is(
   (
-    select string_agg(trim_scale(ordered_amount)::text, '|' order by id)
-      || '|' || trim_scale(sum(ordered_amount))::text
+    select
+      count(*) filter (
+        where id = 'ca910000-0000-4000-8000-000000000023'
+          and ordered_amount = 10
+      )::text
+      || '|'
+      || count(*) filter (
+        where id in (
+          'ca910000-0000-4000-8000-000000000024',
+          'ca910000-0000-4000-8000-000000000026'
+        )
+          and ordered_amount is null
+      )::text
     from public.supply_list_items
     where id in (
       'ca910000-0000-4000-8000-000000000023',
@@ -964,8 +1048,8 @@ select is(
       'ca910000-0000-4000-8000-000000000026'
     )
   ),
-  '10|30|5|45',
-  'a manual delivery override is deducted before the remaining global order is allocated'
+  '1|2',
+  'an insufficient global order preserves the manual override and clears the remaining automatic shares'
 );
 
 -- 31

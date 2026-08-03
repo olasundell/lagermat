@@ -33,11 +33,13 @@
 .supplier-match-editor { grid-column: 1 / -1; margin-top: 2px; border-top-color: var(--border); }
 .supplier-match-editor__content { display: grid; gap: 12px; padding-top: 14px; }
 .supplier-match-card { display: grid; gap: 8px; padding: 14px; background: #f7faf7; border: 1px solid #b7cdbb; border-radius: 5px; }
+.supplier-match-card--fixture { background: #fff8e8; border-color: #d99a42; }
 .supplier-match-card__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .supplier-match-card__heading > div { display: grid; gap: 3px; }
 .supplier-match-card__heading span { color: var(--muted); font-size: 11px; }
 .supplier-match-card__heading b { color: var(--green); font-size: 13px; white-space: nowrap; }
 .supplier-match-card > p { margin: 0; color: #4c5459; font-size: 12px; line-height: 1.5; }
+.supplier-match-card > .supplier-match-warning { color: #7a3d00; }
 .supplier-match-card > small { color: var(--muted); }
 .supplier-proposal { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding-top: 10px; border-top: 1px solid #c9d8cc; }
 .supplier-proposal > svg { color: var(--green); }

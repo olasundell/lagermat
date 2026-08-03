@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_DEV_AUTO_LOGIN?: string;
   readonly VITE_DEV_AUTO_LOGIN_EMAIL?: string;
   readonly VITE_DEV_AUTO_LOGIN_PASSWORD?: string;
+  /** Marks the explicit local ICA fixture launcher; never contains a secret. */
+  readonly VITE_LOCAL_ICA_CATALOGUE_FIXTURE?: string;
   /** Explicitly enables the anonymous, synthetic demo client experience. */
   readonly VITE_DEMO_MODE?: string;
   /** Public Cloudflare Turnstile site key. Never put the secret here. */

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { normaliseIcaCatalogueResponse } from "../src/features/suppliers/icaCatalogue.ts";
 import {
   buildIcaSearchUrl,
   ICA_SICKLA_STORE_ID,
@@ -15,6 +17,7 @@ const ICA_USER_AGENT =
 const REQUEST_BODY_LIMIT = 4_096;
 const ICA_BODY_LIMIT = 1_500_000;
 const SUPABASE_BODY_LIMIT = 64_000;
+const SUPABASE_PUBLISH_BODY_LIMIT = 5_500_000;
 const ICA_TIMEOUT_MS = 8_000;
 const SUPABASE_TIMEOUT_MS = 5_000;
 const CACHE_TTL_MS = 2 * 60_000;
@@ -32,6 +35,10 @@ type FetchLike = (
 export interface IcaCatalogueEnvironment {
   supabaseUrl?: string;
   supabasePublishableKey?: string;
+  /** Server-only. Never expose this value through a VITE_ variable. */
+  supabaseServiceRoleKey?: string;
+  /** Development-only opt-in. It is rejected unless Supabase is local. */
+  localIcaFixture?: string;
 }
 
 export interface IcaCatalogueHandlerOptions {
@@ -45,6 +52,8 @@ export interface IcaCatalogueHandlerOptions {
 interface ServerConfiguration {
   supabaseUrl: URL;
   publishableKey: string;
+  serviceRoleKey: string;
+  localIcaFixture: boolean;
 }
 
 interface CachedSearch {
@@ -128,10 +137,21 @@ function serverConfiguration(
 ): ServerConfiguration | null {
   const rawUrl = environment.supabaseUrl?.trim();
   const publishableKey = environment.supabasePublishableKey?.trim();
-  if (!rawUrl || !publishableKey || publishableKey.length > 4_096) return null;
+  const serviceRoleKey = environment.supabaseServiceRoleKey?.trim();
+  if (
+    !rawUrl
+    || !publishableKey
+    || publishableKey.length > 4_096
+    || !serviceRoleKey
+    || serviceRoleKey.length > 4_096
+  ) return null;
   if (
     /^(?:sb_secret_|supabase_secret_)/.test(publishableKey)
     || jwtRole(publishableKey) === "service_role"
+    || !(
+      /^(?:sb_secret_|supabase_secret_)/.test(serviceRoleKey)
+      || jwtRole(serviceRoleKey) === "service_role"
+    )
   ) {
     return null;
   }
@@ -149,7 +169,12 @@ function serverConfiguration(
     ) {
       return null;
     }
-    return { supabaseUrl, publishableKey };
+    return {
+      supabaseUrl,
+      publishableKey,
+      serviceRoleKey,
+      localIcaFixture: local && environment.localIcaFixture === "true",
+    };
   } catch {
     return null;
   }
@@ -284,6 +309,23 @@ function supabaseHeaders(
   };
 }
 
+function supabaseServiceHeaders(
+  configuration: ServerConfiguration,
+): HeadersInit {
+  const headers: Record<string, string> = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "apikey": configuration.serviceRoleKey,
+  };
+  // Supabase's newer sb_secret keys authenticate through `apikey` and are
+  // deliberately not JWTs. The legacy local service_role key still needs the
+  // matching Bearer header.
+  if (jwtRole(configuration.serviceRoleKey) === "service_role") {
+    headers.Authorization = `Bearer ${configuration.serviceRoleKey}`;
+  }
+  return headers;
+}
+
 async function verifyUser(
   fetcher: FetchLike,
   configuration: ServerConfiguration,
@@ -377,6 +419,96 @@ async function hasActiveMembership(
     "supabase",
   );
   return Array.isArray(payload) && payload.length === 1;
+}
+
+type IcaCataloguePublishSource =
+  | "ica_public_webshop"
+  | "ica_local_fixture";
+
+function dateInStockholm(timestamp: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Stockholm",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+async function publishIcaCatalogueProducts(
+  fetcher: FetchLike,
+  configuration: ServerConfiguration,
+  organizationId: string,
+  actorUserId: string,
+  source: IcaCataloguePublishSource,
+  products: ProductWithSearchMatches[],
+  completedQueries: readonly string[],
+  refreshDate: string,
+): Promise<void> {
+  const normalized = normaliseIcaCatalogueResponse({
+    productGroups: [{ decoratedProducts: products }],
+  }, {
+    storeId: ICA_SICKLA_STORE_ID,
+    completedQueries,
+    source,
+  });
+  const body = JSON.stringify({
+    p_organization_id: organizationId,
+    p_actor_user_id: actorUserId,
+    p_source: source,
+    p_refresh_date: refreshDate,
+    p_completed_queries: completedQueries,
+    p_rows: normalized.rows,
+  });
+  if (new TextEncoder().encode(body).byteLength > SUPABASE_PUBLISH_BODY_LIMIT) {
+    throw new UpstreamError("supabase", "catalogue_publish_too_large");
+  }
+
+  let response: Response;
+  try {
+    response = await fetcher(
+      new URL(
+        "/rest/v1/rpc/publish_ica_catalogue_rows_service",
+        configuration.supabaseUrl,
+      ),
+      {
+        method: "POST",
+        headers: supabaseServiceHeaders(configuration),
+        body,
+        redirect: "error",
+        signal: AbortSignal.timeout(SUPABASE_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new UpstreamError("supabase", "catalogue_publish_network_error");
+  }
+
+  if (!response.ok) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new UpstreamError(
+      "supabase",
+      "catalogue_publish_failed",
+      response.status,
+    );
+  }
+
+  const payload = await readResponseJson(
+    response,
+    SUPABASE_BODY_LIMIT,
+    "supabase",
+  );
+  if (
+    !payload
+    || typeof payload !== "object"
+    || Array.isArray(payload)
+    || !("status" in payload)
+    || payload.status !== "finalized"
+  ) {
+    throw new UpstreamError(
+      "supabase",
+      "invalid_catalogue_publish_payload",
+      response.status,
+    );
+  }
 }
 
 function pruneCache(state: HandlerState, now: number): void {
@@ -561,6 +693,86 @@ interface ProductSearchMatch {
   rank: number;
 }
 
+function localFixtureQueryKey(query: string): string {
+  return query
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase("sv-SE");
+}
+
+function localFixtureIdentifier(
+  query: string,
+  unit: string,
+  variant = "ica",
+): string {
+  const queryKey = localFixtureQueryKey(query);
+  const queryHash = createHash("sha256")
+    .update(queryKey, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+  return `local-${queryHash}-${unit}-${variant}`;
+}
+
+function localFixtureProducts(query: string): ProductWithSearchMatches[] {
+  const queryKey = localFixtureQueryKey(query);
+  if (queryKey === "testvara utan träff") return [];
+
+  // Give every synthetic query a fixed store-specific product in each physical
+  // dimension. The matching layer selects only the dimension-compatible row.
+  // "Ris" deliberately has two brand variants per dimension so local
+  // acceptance also exercises the planner's ambiguous-review path.
+  const packages = [
+    ["kg", "1 kg"],
+    ["l", "1 l"],
+    ["st", "1 st"],
+  ] as const;
+  const brands = queryKey === "ris"
+    ? [{ name: "ICA", key: "ica", price: "10.00" }, {
+      name: "ICA Basic",
+      key: "ica-basic",
+      price: "9.50",
+    }]
+    : [{ name: "ICA", key: "ica", price: "10.00" }];
+
+  return packages.flatMap(([unit, packSizeDescription]) =>
+    brands.map((brand) => ({
+      productId: localFixtureIdentifier(query, unit, brand.key),
+      retailerProductId: localFixtureIdentifier(query, unit, brand.key),
+      name: `${query} ${packSizeDescription} ${brand.name}`,
+      brand: brand.name,
+      packSizeDescription,
+      type: "REGULAR",
+      price: { amount: brand.price, currency: "SEK" },
+      promoPrice: null,
+      unitPrice: null,
+      available: true,
+      catchweight: null,
+      categoryPath: ["Syntetisk lokal ICA-fixture"],
+      countryOfOrigin: null,
+      scoutmatSearchMatches: [{ query, rank: 0 }],
+    }))
+  );
+}
+
+function localFixtureResponse(queries: string[], now: () => number) {
+  return {
+    source: {
+      provider: "ica",
+      channel: "local-fixture",
+      synthetic: true,
+      complete: true,
+      store: { id: ICA_SICKLA_STORE_ID, name: ICA_SICKLA_STORE_NAME },
+      searches: queries.map((query) => ({
+        query,
+        fetchedAt: new Date(now()).toISOString(),
+        cache: "fixture",
+      })),
+    },
+    products: queries.flatMap(localFixtureProducts),
+  };
+}
+
 type ProductWithSearchMatches = IcaCatalogueProduct & {
   scoutmatSearchMatches: ProductSearchMatch[];
 };
@@ -705,6 +917,37 @@ export function createIcaCatalogueHandler(
       );
     }
 
+    if (configuration.localIcaFixture) {
+      const fixture = localFixtureResponse(body.queries, now);
+      try {
+        await publishIcaCatalogueProducts(
+          fetcher,
+          configuration,
+          body.organizationId,
+          userId,
+          "ica_local_fixture",
+          fixture.products,
+          body.queries,
+          dateInStockholm(now()),
+        );
+      } catch (error) {
+        const detail = error instanceof UpstreamError
+          ? { reason: error.reason, upstreamStatus: error.upstreamStatus }
+          : { reason: "unexpected_error", upstreamStatus: null };
+        logger.error(JSON.stringify({
+          stage: "publish_ica_catalogue",
+          storeId: ICA_SICKLA_STORE_ID,
+          source: "ica_local_fixture",
+          ...detail,
+        }));
+        return jsonResponse(
+          { error: "Det lokala ICA-testsortimentet kunde inte sparas just nu." },
+          502,
+        );
+      }
+      return jsonResponse(fixture, 200);
+    }
+
     const rateLimit = consumeRateLimit(
       state,
       userId,
@@ -737,6 +980,17 @@ export function createIcaCatalogueHandler(
           requestedSearches: body.queries.length,
         }));
       }
+      const products = mergeProducts(outcome.results);
+      await publishIcaCatalogueProducts(
+        fetcher,
+        configuration,
+        body.organizationId,
+        userId,
+        "ica_public_webshop",
+        products,
+        outcome.results.map((result) => result.query),
+        dateInStockholm(now()),
+      );
       return jsonResponse({
         source: {
           provider: "ica",
@@ -753,19 +1007,26 @@ export function createIcaCatalogueHandler(
             cache,
           })),
         },
-        products: mergeProducts(outcome.results),
+        products,
       }, 200);
     } catch (error) {
       const detail = error instanceof UpstreamError
         ? { reason: error.reason, upstreamStatus: error.upstreamStatus }
         : { reason: "unexpected_error", upstreamStatus: null };
       logger.error(JSON.stringify({
-        stage: "fetch_public_ica_catalogue",
+        stage: error instanceof UpstreamError && error.service === "supabase"
+          ? "publish_ica_catalogue"
+          : "fetch_public_ica_catalogue",
         storeId: ICA_SICKLA_STORE_ID,
         ...detail,
       }));
       return jsonResponse(
-        { error: "ICA:s publika katalog kunde inte hämtas just nu." },
+        {
+          error: error instanceof UpstreamError
+              && error.service === "supabase"
+            ? "ICA-sortimentet kunde inte sparas just nu."
+            : "ICA:s publika katalog kunde inte hämtas just nu.",
+        },
         502,
       );
     }

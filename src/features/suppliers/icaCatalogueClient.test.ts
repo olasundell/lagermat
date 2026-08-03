@@ -132,6 +132,30 @@ describe("fetchIcaCatalogueBatch", () => {
     )).rejects.toThrow("oväntat format");
   });
 
+  it("accepts an explicitly marked local Sickla fixture without accepting generic fixtures", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      source: {
+        provider: "ica",
+        channel: "local-fixture",
+        synthetic: true,
+        complete: true,
+        store: { id: storeId, name: "ICA Kvantum Sickla" },
+        searches: [{ query: "Mjölk", cache: "fixture" }],
+      },
+      products: [{ retailerProductId: "local-mjolk-l" }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    await expect(fetchIcaCatalogueBatch(
+      client(), organizationId, storeId, ["Mjölk"], fetcher,
+    )).resolves.toMatchObject({
+      source: { channel: "local-fixture", synthetic: true },
+      products: [{ retailerProductId: "local-mjolk-l" }],
+    });
+  });
+
   it("rejects catalogue progress for searches that were not requested", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       source: {

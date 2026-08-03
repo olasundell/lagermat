@@ -16,6 +16,7 @@ export function SupplyExportActions({
   timeZone,
   disabled,
   practicalAmounts,
+  syntheticSupplierCanonicalKeys,
 }: {
   scope: SupplyScope;
   list: SupplyListRow;
@@ -24,6 +25,7 @@ export function SupplyExportActions({
   timeZone: string;
   disabled: boolean;
   practicalAmounts?: ReadonlyMap<string, PracticalSupplyAmount>;
+  syntheticSupplierCanonicalKeys?: ReadonlySet<string>;
 }) {
   const readinessQuery = useQuery({
     queryKey: ["supply-export-readiness", scope.organizationId, scope.campId],
@@ -43,6 +45,7 @@ export function SupplyExportActions({
       timeZone,
       readiness: readinessQuery.data,
       practicalAmounts,
+      syntheticSupplierCanonicalKeys,
     });
   }
 

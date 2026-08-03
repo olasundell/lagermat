@@ -372,6 +372,136 @@ describe("SupplierCataloguePanel", () => {
     expect(onRetrySync).toHaveBeenCalledOnce();
   });
 
+  it("calls a failed ICA fetch failed rather than matched or still fetching", () => {
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      syncWarning: "ICA:s sortiment kunde inte hämtas just nu.",
+      syncProgress: {
+        phase: "error",
+        completedQueries: [],
+        totalQueries: 1,
+        retryAfterMs: 60_000,
+        retryAt: Date.now() + 60_000,
+        lastAttemptedAt: Date.now(),
+      },
+    });
+
+    expect(screen.getByLabelText("ICA-matchningsstatus"))
+      .toHaveTextContent("1 misslyckades");
+    expect(screen.getByRole("heading", { name: "ICA-sökning misslyckades" }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Ofärdiga råvarusökningar markeras som misslyckade/i))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Hämtas från ICA" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("counts failed ICA searches by distinct query rather than duplicated supply rows", () => {
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      items: [item, {
+        ...item,
+        id: "item-2",
+        item_key: "purchase:ris-2",
+        canonical_key: "ingredient:ris-2",
+        item_name: " RIS ",
+      }],
+      syncProgress: {
+        phase: "error",
+        completedQueries: [],
+        totalQueries: 1,
+        retryAfterMs: 60_000,
+        retryAt: Date.now() + 60_000,
+        lastAttemptedAt: Date.now(),
+      },
+    });
+
+    expect(screen.getByLabelText("ICA-matchningsstatus"))
+      .toHaveTextContent("1 misslyckades");
+    expect(screen.getByText("1 råvarusökning väntar på ett nytt försök"))
+      .toBeInTheDocument();
+  });
+
+  it("labels a successful local fixture truthfully without also styling it as an error", () => {
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      syncWarning: "Lokalt syntetiskt ICA-sortiment används för denna utvecklingsmiljö.",
+      syncProgress: {
+        phase: "complete",
+        completedQueries: ["Ris"],
+        totalQueries: 1,
+        retryAfterMs: null,
+        retryAt: null,
+        lastAttemptedAt: Date.now(),
+        syntheticLocalFixture: true,
+      },
+    });
+
+    expect(screen.getByText("Lokala syntetiska testartiklar används", {
+      exact: false,
+    })).toBeInTheDocument();
+    expect(screen.getByText(/De är inte butikens artiklar, priser eller lagersaldo/i))
+      .toBeInTheDocument();
+    expect(screen.getByText("Lokalt testläge")).toBeInTheDocument();
+    expect(screen.queryByText(/Sortiment, ordinarie priser och förpackningsstorlekar kommer från/i))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Lokalt syntetiskt ICA-sortiment används för denna utvecklingsmiljö."))
+      .not.toBeInTheDocument();
+  });
+
+  it("marks a synthetic fixture on the candidate itself even if the page mode is stale", () => {
+    const fixtureProduct: SupplierProduct = {
+      ...product,
+      product_data_source: "import:api",
+      packaging_metadata: {
+        normalization_version: "ica-public-catalogue-v2",
+      },
+      source_metadata: {
+        source: "ica_local_fixture",
+        store_id: "1004021",
+        synthetic_local_fixture: true,
+      },
+    };
+
+    renderPanel({
+      accounts: [{
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      }],
+      candidates: [{ ...candidate, product: fixtureProduct }],
+      syncProgress: {
+        phase: "complete",
+        completedQueries: ["Ris"],
+        totalQueries: 1,
+        retryAfterMs: null,
+        retryAt: null,
+        lastAttemptedAt: Date.now(),
+        syntheticLocalFixture: false,
+      },
+    });
+
+    expect(screen.getByText(
+      "LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA",
+    )).toBeInTheDocument();
+  });
+
   it("återanvänder ett inläst godkännande efter omladdning", () => {
     renderPanel({
       approvedMatches: [{

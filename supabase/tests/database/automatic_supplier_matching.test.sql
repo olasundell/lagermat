@@ -1172,22 +1172,16 @@ select ok(
   ),
   'automatic provisioning creates the selected store and audits the mutation'
 );
-select set_config(
-  'scoutmat_test.ica_import_run',
-  public.start_supplier_import(
-    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-    current_setting('scoutmat_test.ica_account_id')::uuid,
-    null,
-    'ica-kvantum-sickla-1004021',
-    'api',
-    repeat('d', 64)
-  )::text,
-  true
-);
-select public.stage_supplier_import_rows(
+reset role;
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select public.publish_ica_catalogue_rows_service(
   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  current_setting('scoutmat_test.ica_account_id')::uuid,
-  current_setting('scoutmat_test.ica_import_run')::uuid,
+  '11111111-1111-1111-1111-111111111111',
+  'ica_public_webshop',
+  '2026-07-31',
+  jsonb_build_array('Krossade tomater'),
   jsonb_build_array(jsonb_build_object(
     'source_row', 1,
     'raw_data', jsonb_build_object(
@@ -1208,17 +1202,16 @@ select public.stage_supplier_import_rows(
         'store_id', '1004021'
       ),
       'packaging_metadata', jsonb_build_object(
+        'normalization_version', 'ica-public-catalogue-v2',
         'inner_unit_count', 3,
         'inner_unit_label', 'stycken'
       )
     )
   ))
 );
-select public.finalize_supplier_import(
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
-  current_setting('scoutmat_test.ica_account_id')::uuid,
-  current_setting('scoutmat_test.ica_import_run')::uuid
-);
+
+reset role;
+select set_config('request.jwt.claim.role', '', true);
 
 -- 40
 select ok(

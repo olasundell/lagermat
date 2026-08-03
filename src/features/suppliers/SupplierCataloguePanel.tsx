@@ -26,10 +26,16 @@ import {
 } from "./catalogueImportModel";
 import { demoSupplierCatalogueTable } from "./demoSupplierCatalogue";
 import {
+  countDistinctIcaCatalogueQueries,
   splitIcaUnmatchedItems,
   type IcaCatalogueSyncProgress,
 } from "./icaCatalogueSyncModel";
-import { ICA_KVANTUM_SICKLA, isIcaSicklaAccount } from "./icaStore";
+import {
+  ICA_KVANTUM_SICKLA,
+  isIcaSicklaAccount,
+  isLocalIcaFixtureProduct,
+  LOCAL_ICA_FIXTURE_WARNING,
+} from "./icaStore";
 import {
   describeSupplierPurchaseQuantity,
   type SupplierAccount,
@@ -135,6 +141,7 @@ function CandidateCard({
   onApprove: () => Promise<void>;
   onReject: () => Promise<void>;
 }) {
+  const localFixture = isLocalIcaFixtureProduct(candidate.product);
   return (
     <article className="supplier-review-card">
       <div className="supplier-review-card__heading">
@@ -152,6 +159,11 @@ function CandidateCard({
         {formatExactAmount(candidate.product.package_amount)} {candidate.product.package_unit} per{" "}
         {candidate.product.purchase_unit}. {candidateOrderSummary(item, candidate)}.
       </p>
+      {localFixture ? (
+        <p className="supplier-fixture-warning" role="note">
+          <FlaskConical aria-hidden="true" size={16} /> {LOCAL_ICA_FIXTURE_WARNING}
+        </p>
+      ) : null}
       <ul className="supplier-review-reasons">
         {candidate.reasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
       </ul>
@@ -252,6 +264,9 @@ export function SupplierCataloguePanel({
     icaSicklaSelected && loading,
   );
   const pendingItems = icaSicklaSelected ? icaUnmatched.pending : [];
+  const failedItems = icaSicklaSelected ? icaUnmatched.failed : [];
+  const pendingQueryCount = countDistinctIcaCatalogueQueries(pendingItems);
+  const failedQueryCount = countDistinctIcaCatalogueQueries(failedItems);
   const noMatchItems = icaSicklaSelected
     ? icaUnmatched.noMatch
     : unmatchedItems;
@@ -443,12 +458,16 @@ export function SupplierCataloguePanel({
           <span className="eyebrow"><Sparkles aria-hidden="true" size={17} /> Automatisk artikelmatchning</span>
           <h2 id="supplier-catalogue-heading">
             {icaSicklaSelected
-              ? "ICA-sortimentet matchas automatiskt"
+              ? syncProgress?.syntheticLocalFixture
+                ? "Lokala testartiklar matchas automatiskt"
+                : "ICA-sortimentet matchas automatiskt"
               : "Importera katalogen – granska bara undantagen"}
           </h2>
           <p>
             {icaSicklaSelected
-              ? "Scoutmat hämtar butikens verkliga artiklar och räknar om behovet till hela köpbara förpackningar."
+              ? syncProgress?.syntheticLocalFixture
+                ? "Scoutmat använder tydligt märkta testartiklar för att prova automatisk matchning och hela köpbara förpackningar lokalt."
+                : "Scoutmat hämtar butikens verkliga artiklar och räknar om behovet till hela köpbara förpackningar."
               : "Scoutmat läser grossistens fil, räknar ut kollistorlekar och minns varje godkänd matchning."}
           </p>
         </div>
@@ -462,17 +481,32 @@ export function SupplierCataloguePanel({
       ) : null}
       {icaSicklaSelected ? (
         <p className="supplier-foundation__notice">
-          <Check aria-hidden="true" size={17} />
-          <span>
-            Sortiment, ordinarie priser och förpackningsstorlekar kommer från{" "}
-            <a href={ICA_KVANTUM_SICKLA.storeUrl} target="_blank" rel="noreferrer">
-              {ICA_KVANTUM_SICKLA.name}
-            </a>
-            . Ingen Dabas-nyckel eller ICA-inloggning behövs.
-          </span>
+          {syncProgress?.syntheticLocalFixture
+            ? <FlaskConical aria-hidden="true" size={17} />
+            : <Check aria-hidden="true" size={17} />}
+          {syncProgress?.syntheticLocalFixture ? (
+            <span>
+              Lokala syntetiska testartiklar används för det valda leverantörskontot.
+              De är inte butikens artiklar, priser eller lagersaldo.
+            </span>
+          ) : (
+            <span>
+              Sortiment, ordinarie priser och förpackningsstorlekar kommer från{" "}
+              <a href={ICA_KVANTUM_SICKLA.storeUrl} target="_blank" rel="noreferrer">
+                {ICA_KVANTUM_SICKLA.name}
+              </a>
+              . Ingen Dabas-nyckel eller ICA-inloggning behövs.
+            </span>
+          )}
         </p>
       ) : null}
-      {syncWarning ? (
+      {icaSicklaSelected && syncProgress?.phase === "error" ? (
+        <p className="supplier-foundation__notice">
+          <AlertTriangle aria-hidden="true" size={17} />
+          ICA-sökningen misslyckades. Ofärdiga råvarusökningar markeras som misslyckade; tidigare sparade ICA-artiklar behåller sin tydliga källa.
+        </p>
+      ) : null}
+      {syncWarning && !(syncProgress?.phase === "complete" && syncProgress.syntheticLocalFixture) ? (
         <div
           className={
             syncProgress?.phase === "syncing"
@@ -524,7 +558,9 @@ export function SupplierCataloguePanel({
         </label>
         {icaSicklaSelected ? (
           <span className="supplier-foundation__safety">
-            {loading ? "Hämtar från ICA…" : "Automatiskt från ICA"}
+            {syncProgress?.syntheticLocalFixture
+              ? "Lokalt testläge"
+              : loading ? "Hämtar från ICA…" : "Automatiskt från ICA"}
           </span>
         ) : (
           <label className="supplier-file-button">
@@ -559,7 +595,7 @@ export function SupplierCataloguePanel({
           </span>
           <span>
             <PackageSearch aria-hidden="true" size={16} />
-            {pendingItems.length} hämtas
+            {syncProgress.phase === "error" ? `${failedQueryCount} misslyckades` : `${pendingQueryCount} hämtas`}
           </span>
           <span>
             <AlertTriangle aria-hidden="true" size={16} />
@@ -694,21 +730,46 @@ export function SupplierCataloguePanel({
                 <div>
                   <PackageSearch aria-hidden="true" size={20} />
                   <span>
-                    <h3 id="pending-suggestions-heading">Hämtas från ICA</h3>
-                    <small>{pendingItems.length} råvarusökningar återstår</small>
+                    <h3 id="pending-suggestions-heading">
+                      {syncProgress?.syntheticLocalFixture
+                        ? "Hämtas från den lokala testkatalogen"
+                        : "Hämtas från ICA"}
+                    </h3>
+                    <small>
+                      {pendingQueryCount} {pendingQueryCount === 1 ? "råvarusökning återstår" : "råvarusökningar återstår"}
+                    </small>
                   </span>
                 </div>
               </div>
               <p className="supplier-review-empty">
-                Scoutmat fortsätter automatiskt. Det här är inte artiklar utan
-                träff. Sökningen fortsätter även när du arbetar på andra sidor,
-                och du behöver inte matcha dem för hand.
+                Det här är råvaror som ännu inte har sökts klart, inte artiklar
+                utan träff. Scoutmat fortsätter automatiskt även på andra sidor;
+                du behöver inte matcha dem för hand.
               </p>
               <ul className="supplier-review-reasons">
                 {pendingItems.map((item) => (
                   <li key={item.canonical_key}>{item.item_name}</li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+
+          {icaSicklaSelected && failedItems.length ? (
+            <section aria-labelledby="failed-suggestions-heading">
+              <div className="supplier-review-section__heading">
+                <div>
+                  <AlertTriangle aria-hidden="true" size={20} />
+                  <span>
+                    <h3 id="failed-suggestions-heading">ICA-sökning misslyckades</h3>
+                    <small>
+                      {failedQueryCount} {failedQueryCount === 1
+                        ? "råvarusökning väntar på ett nytt försök"
+                        : "råvarusökningar väntar på ett nytt försök"}
+                    </small>
+                  </span>
+                </div>
+              </div>
+              <p className="supplier-review-empty">Inga ICA-artiklar eller matchningar visas från den misslyckade hämtningen.</p>
             </section>
           ) : null}
 
@@ -720,7 +781,9 @@ export function SupplierCataloguePanel({
                   <h3 id="no-suggestions-heading">Ingen träff</h3>
                   <small>
                     {icaSicklaSelected
-                      ? "Sök bland hämtade artiklar från ICA Sickla"
+                      ? syncProgress?.syntheticLocalFixture
+                        ? "Sök bland lokala syntetiska testartiklar"
+                        : "Sök bland hämtade artiklar från ICA Sickla"
                       : "Sök i den importerade katalogen"}
                   </small>
                 </span>

@@ -40,6 +40,7 @@ export interface PendingMutation {
   changes: EditableSupplyChanges;
   status: "pending" | "conflict";
   conflicts: SupplyConflictField[];
+  policyReason?: "reopen_required" | "finalised_delivery" | null;
   serverVersion: number | null;
   serverValues: EditableSupplyValues | null;
   createdAt: string;

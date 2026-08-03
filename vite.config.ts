@@ -8,12 +8,19 @@ const NETLIFY_LOCAL_ENVIRONMENT = [
   "VITE_SUPABASE_URL",
   "VITE_SUPABASE_PUBLISHABLE_KEY",
   "VITE_SUPABASE_ANON_KEY",
+  // Copied only into the local Netlify function process. Vite exposes browser
+  // variables exclusively through the VITE_ prefix, so this remains server-only.
+  "SUPABASE_SECRET_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "LOCAL_ICA_CATALOGUE_FIXTURE",
 ] as const;
 
 export default defineConfig(({ mode }) => {
-  // Vite loads these values for browser code, while the Netlify emulator reads
-  // its function environment from the process. Copy only the public Supabase
-  // values needed by the local function runtime.
+  // Vite loads these values from local env files, while the Netlify emulator
+  // reads its function environment from the process. Non-VITE_ secrets copied
+  // here remain server-only; Vite never exposes them to browser modules. The
+  // ICA fixture flag is an explicit local opt-in, and the handler rejects it
+  // against a hosted Supabase URL.
   const loadedEnvironment = loadEnv(mode, process.cwd(), "");
   for (const variableName of NETLIFY_LOCAL_ENVIRONMENT) {
     const value = loadedEnvironment[variableName];

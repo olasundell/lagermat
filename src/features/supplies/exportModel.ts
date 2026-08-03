@@ -37,6 +37,7 @@ export interface SupplyExportInput {
   readiness: SupplyExportReadiness;
   generatedAt?: Date;
   practicalAmounts?: ReadonlyMap<string, PracticalSupplyAmount>;
+  syntheticSupplierCanonicalKeys?: ReadonlySet<string>;
 }
 
 const csvColumns = [
@@ -56,7 +57,8 @@ const csvColumns = [
   "Beräkningens enhet",
   "Beställt antal",
   "Beställd enhet",
-  "Förpackning",
+  "Förpackning för listan",
+  "Beställningsförpackning för hela lägret",
   "Kommentar",
   "Klar"
 ] as const;
@@ -100,11 +102,27 @@ function groupedItems(items: SupplyItemRow[]): Array<{ category: string; items: 
   return [...groups.entries()].map(([category, categoryItems]) => ({ category, items: categoryItems }));
 }
 
+function packageDescription(item: SupplyItemRow): string {
+  const descriptions = item.package_note ? [`Denna lista: ${item.package_note}`] : [];
+  if (item.order_package_note) descriptions.push(`Hela lägret: ${item.order_package_note}`);
+  return descriptions.join(" · ");
+}
+
 export function createSupplyExportDocument(input: SupplyExportInput): SupplyExportDocument {
   const generatedAt = (input.generatedAt ?? new Date()).toISOString();
   const items = input.list.supply_list_items
     .filter((item) => item.source_present)
     .sort((left, right) => left.category.localeCompare(right.category, "sv") || left.item_name.localeCompare(right.item_name, "sv"));
+  const syntheticSupplierItemCount = items.filter((item) =>
+    item.supplier_order_synthetic_fixture === true
+    || input.syntheticSupplierCanonicalKeys?.has(item.canonical_key)
+  ).length;
+  const syntheticProblem = syntheticSupplierItemCount
+    ? `${syntheticSupplierItemCount} ${syntheticSupplierItemCount === 1 ? "rad bygger" : "rader bygger"} på lokala syntetiska testartiklar och får inte användas som beställningsunderlag`
+    : null;
+  const problems = syntheticProblem
+    ? [...input.readiness.problems, syntheticProblem]
+    : input.readiness.problems;
   return {
     kind: input.list.kind,
     fileStem: `lagermat-${slug(input.campName)}-${slug(input.list.title)}`,
@@ -116,8 +134,8 @@ export function createSupplyExportDocument(input: SupplyExportInput): SupplyExpo
     deliveryDate: input.list.kind === "delivery" ? input.list.range_start : undefined,
     generatedAt,
     timeZone: input.timeZone,
-    draft: !input.readiness.canFinalize,
-    problems: input.readiness.problems,
+    draft: !input.readiness.canFinalize || syntheticSupplierItemCount > 0,
+    problems,
     items,
     practicalAmounts: input.practicalAmounts,
   };
@@ -146,6 +164,7 @@ export function createSupplyCsv(document: SupplyExportDocument): string {
       rawDecimal(item.ordered_amount),
       item.ordered_unit ?? "",
       item.package_note ?? "",
+      item.order_package_note ?? "",
       item.comment ?? "",
       item.completed ? "ja" : "nej",
     ];
@@ -185,7 +204,7 @@ export function createPrintableSupplyHtml(document: SupplyExportDocument): strin
             return escapeHtml(required.display);
           })()}</td>
           <td>${item.ordered_amount === null ? "-" : escapeHtml(formatCountedAmount(item.ordered_amount, item.ordered_unit ?? ""))}</td>
-          <td>${escapeHtml(item.package_note) || "-"}</td>
+          <td>${escapeHtml(packageDescription(item)) || "-"}</td>
           <td>${escapeHtml(item.comment) || "-"}</td>
         </tr>`).join("")}
     </tbody>`).join("");

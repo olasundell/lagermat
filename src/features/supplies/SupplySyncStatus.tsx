@@ -64,11 +64,27 @@ export function SupplySyncStatus({
       {state.conflicts.map((mutation) => (
         <article className="sync-conflict" key={mutation.id}>
           <AlertTriangle aria-hidden="true" size={20} />
-          <div><strong>Två versioner av {mutation.itemName}</strong><p>Följande uppgifter ändrades både här och i den senast sparade versionen: {mutation.conflicts.map((conflict) => fieldLabels[conflict.field] ?? conflict.field).join(", ")}. Välj vilken version du vill behålla.</p></div>
-          <div className="sync-conflict__actions">
-            <Button className="secondary-button" onPress={() => resolve(mutation, "server")}>Behåll senast sparade</Button>
-            <Button className="primary-button" onPress={() => resolve(mutation, "local")}>Spara min version</Button>
-          </div>
+          {mutation.policyReason ? (
+            <>
+              <div>
+                <strong>Ändringen av {mutation.itemName} kan inte sparas</strong>
+                <p>{mutation.policyReason === "finalised_delivery"
+                  ? "Leveransen är slutmarkerad och kan inte ändras. Ta bort den osparade ändringen."
+                  : "Varan är kvitterad. Ta bort den osparade ändringen, markera sedan varan som kvar innan du ändrar den."}</p>
+              </div>
+              <div className="sync-conflict__actions">
+                <Button className="secondary-button" onPress={() => resolve(mutation, "server")}>Ta bort osparad ändring</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div><strong>Två versioner av {mutation.itemName}</strong><p>Följande uppgifter ändrades både här och i den senast sparade versionen: {mutation.conflicts.map((conflict) => fieldLabels[conflict.field] ?? conflict.field).join(", ")}. Välj vilken version du vill behålla.</p></div>
+              <div className="sync-conflict__actions">
+                <Button className="secondary-button" onPress={() => resolve(mutation, "server")}>Behåll senast sparade</Button>
+                <Button className="primary-button" onPress={() => resolve(mutation, "local")}>Spara min version</Button>
+              </div>
+            </>
+          )}
         </article>
       ))}
     </aside>

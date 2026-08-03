@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { Json } from "../../types/database";
 import type { SupplyItemRow } from "../supplies/supplyModel";
 import { demoSupplierCataloguePreview } from "./demoSupplierCatalogue";
+import { normaliseIcaCatalogueResponse } from "./icaCatalogue";
+import {
+  isIcaCatalogueProductForCompletedSearch,
+  isIcaSicklaCatalogueProduct,
+  isLocalIcaFixtureProduct,
+} from "./icaStore";
 import {
   applySupplierSemanticReranks,
   buildIngredientContextsFromCalculationLines,
@@ -172,6 +179,117 @@ describe("supplier catalogue workflow", () => {
       required_unit: "l",
       amount_per_purchase_unit: 3.6,
     });
+  });
+
+  it("lets an explicitly labelled local ICA fixture reach candidate generation", () => {
+    const fixtureAccount = {
+      ...account,
+      provider_key: "ica",
+      provider_location_id: "1004021",
+    } satisfies SupplierAccount;
+    const normalised = normaliseIcaCatalogueResponse({
+      productGroups: [{ decoratedProducts: [{
+        retailerProductId: "local-krossade-tomater-kg",
+        productId: "local-krossade-tomater-kg",
+        name: "Krossade tomater",
+        brand: "ICA",
+        packSizeDescription: "1 kg",
+        price: { amount: "10.00", currency: "SEK" },
+        available: true,
+        scoutmatSearchMatches: [{ query: "Krossade tomater", rank: 0 }],
+      }] }],
+    }, {
+      storeId: "1004021",
+      completedQueries: ["Krossade tomater"],
+      source: "ica_local_fixture",
+    });
+    const fixturePackaging = {
+      normalization_version: "ica-public-catalogue-v2",
+      source_pack_size_description: "1 kg",
+      effective_pack_size_description: "1 kg",
+      package_size_source: "pack_size_description",
+      package_dimension: "mass",
+    } satisfies Json;
+    const fixtureMetadata = {
+      source: "ica_local_fixture",
+      store_id: "1004021",
+      synthetic_local_fixture: true,
+      ica_search_matches: [{ query: "Krossade tomater", rank: 0 }],
+    } satisfies Json;
+    expect(normalised.rows[0]?.normalized_data).toMatchObject({
+      packaging_metadata: fixturePackaging,
+      metadata: fixtureMetadata,
+    });
+    const fixtureProduct = {
+      ...product,
+      supplier_account_id: fixtureAccount.id,
+      supplier_article_number: "local-krossade-tomater-kg",
+      display_name: "Krossade tomater",
+      normalized_search_name: "krossade tomater",
+      package_amount: 1,
+      package_unit: "kg",
+      product_data_source: "import:api",
+      source_updated_at: "2026-07-31T09:00:00Z",
+      packaging_metadata: fixturePackaging,
+      source_metadata: fixtureMetadata,
+    } satisfies SupplierProduct;
+    const fixtureItem = {
+      ...item,
+      item_name: "Krossade tomater",
+      required_unit: "kg",
+    } satisfies SupplyItemRow;
+
+    expect(isIcaSicklaCatalogueProduct(fixtureProduct)).toBe(true);
+    expect(isLocalIcaFixtureProduct(fixtureProduct)).toBe(true);
+    expect(isIcaCatalogueProductForCompletedSearch(
+      fixtureProduct,
+      "krossade TOMATER",
+      "2026-07-31",
+      true,
+    )).toBe(true);
+    expect(isIcaCatalogueProductForCompletedSearch(
+      fixtureProduct,
+      "Krossade tomater",
+      "2026-07-30",
+      true,
+    )).toBe(false);
+    expect(isIcaCatalogueProductForCompletedSearch(
+      fixtureProduct,
+      "Havregryn",
+      "2026-07-31",
+      true,
+    )).toBe(false);
+    expect(isIcaCatalogueProductForCompletedSearch(
+      fixtureProduct,
+      "Krossade tomater",
+      "2026-07-31",
+      false,
+    )).toBe(false);
+    expect(isIcaSicklaCatalogueProduct({
+      ...fixtureProduct,
+      source_metadata: {
+        source: "ica_local_fixture",
+        store_id: "1004021",
+      },
+    })).toBe(false);
+    expect(buildSupplierMatchCandidatePayloads({
+      organizationId: fixtureAccount.organization_id,
+      supplierAccountId: fixtureAccount.id,
+      items: [fixtureItem],
+      accounts: [fixtureAccount],
+      products: [fixtureProduct],
+      offers: [],
+      approvedMatches: [],
+      rejectedFingerprintsByCanonicalKey: new Map(),
+      asOfDate: "2026-07-31",
+    })).toEqual([
+      expect.objectContaining({
+        canonical_key: fixtureItem.canonical_key,
+        supplier_product_id: fixtureProduct.id,
+        status: "safe",
+        score: 100,
+      }),
+    ]);
   });
 
   it("skapar ett säkerhetsfiltrerat kandidatfält och gör en semantisk träff granskningspliktig", () => {

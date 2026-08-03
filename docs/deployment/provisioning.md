@@ -29,17 +29,20 @@ Each GitHub environment needs these values:
 | Secret | `SUPABASE_PUBLISHABLE_KEY` | Browser-safe key; protected here to avoid drift |
 | Secret | `SMTP_USER` | Resend SMTP user |
 | Secret | `SMTP_PASS` | Resend SMTP/API credential |
+| Secret | `SCOUTNET_SOURCE_REFERENCE_SECRET` | Stable production-only HMAC secret for opaque Scoutnet source references |
 
 Staging additionally needs the public variable `TURNSTILE_SITE_KEY` and the
 protected secret `TURNSTILE_SECRET_KEY`. It must not receive any SMTP variable
-or secret. Production requires the SMTP values above and must not receive
-either Turnstile value. `VITE_DEMO_MODE` is derived from the protected
-environment's `DEMO_MODE`; it is not a third independent switch.
+or secret, including `SCOUTNET_SOURCE_REFERENCE_SECRET`. Production requires
+the SMTP and Scoutnet values above and must not receive either Turnstile value.
+`VITE_DEMO_MODE` is derived from the protected environment's `DEMO_MODE`; it is
+not a third independent switch.
 
 The exact generated configuration and the currently known provider inventory
-are in [demo-environments.md](demo-environments.md). The deploy workflow must
-remain disabled until its environment wiring and explicit empty Netlify
-Functions directory have been reviewed under a separate deployment approval.
+are in [demo-environments.md](demo-environments.md). The deploy workflow maps
+these protected environment values and publishes Netlify with an explicit
+empty Functions directory; its fail-closed validation must pass before any
+provider mutation.
 
 Use separate provider tokens where practical. Rotate them after personnel or ownership changes and at the interval recorded in the operations log.
 

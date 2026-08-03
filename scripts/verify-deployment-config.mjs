@@ -27,6 +27,7 @@ const assertions = [
   [deployWorkflow.includes("workflow_run:"), "Distribution måste följa ett godkänt Verify-flöde."],
   [/db push[^\n]*--dry-run/.test(reusableDeploy), "Fjärrmigrering måste torrköras."],
   [reusableDeploy.includes("environment: production") === false, "Miljön måste väljas av det anropande flödet."],
+  [/jobs:\n {2}deploy:[\s\S]*?\n {4}env:\n[\s\S]*?\n {6}DEPLOYMENT_ENVIRONMENT: \$\{\{ inputs\.environment_name \}\}[\s\S]*?\n {4}steps:/.test(reusableDeploy), "Deployjobbet måste exponera vald miljö för samtliga miljömedvetna steg."],
   [!reusableDeploy.includes("--include-seed"), "Produktionsflödet får aldrig inkludera seed."],
   [reusableDeploy.includes("netlify-cli@26.2.0"), "Netlify CLI-versionen måste vara låst."],
   [reusableDeploy.includes("stage-hosted-supabase-config.mjs") && reusableDeploy.includes("--workdir .tmp/hosted-supabase"), "Hosted Supabase-konfiguration måste använda den typkorrekta temporära konfigurationen."],

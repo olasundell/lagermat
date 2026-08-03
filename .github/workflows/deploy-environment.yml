@@ -160,7 +160,7 @@ jobs:
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: >-
-          pnpm dlx netlify-cli@26.2.0 deploy
+          pnpm --package=netlify-cli@26.2.0 dlx netlify deploy
           --dir=dist
           --functions=.tmp/netlify-static-functions
           --no-build

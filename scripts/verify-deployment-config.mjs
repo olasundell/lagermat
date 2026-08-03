@@ -42,7 +42,11 @@ const assertions = [
   [reusableDeploy.includes("environment: production") === false, "Miljön måste väljas av det anropande flödet."],
   [/jobs:\n {2}deploy:[\s\S]*?\n {4}env:\n[\s\S]*?\n {6}DEPLOYMENT_ENVIRONMENT: \$\{\{ inputs\.environment_name \}\}[\s\S]*?\n {4}steps:/.test(reusableDeploy), "Deployjobbet måste exponera vald miljö för samtliga miljömedvetna steg."],
   [!reusableDeploy.includes("--include-seed"), "Produktionsflödet får aldrig inkludera seed."],
-  [reusableDeploy.includes("netlify-cli@26.2.0"), "Netlify CLI-versionen måste vara låst."],
+  [
+    reusableDeploy.includes("pnpm --package=netlify-cli@26.2.0 dlx netlify deploy")
+      && !reusableDeploy.includes("pnpm dlx netlify-cli@26.2.0 deploy"),
+    "Netlify CLI-versionen och den explicita netlify-binären måste vara låsta."
+  ],
   [reusableDeploy.includes("stage-hosted-supabase-config.mjs"), "Hosted Supabase-konfiguration måste först genereras i den skyddade temporära katalogen."],
   [
     hostedSupabaseStaging.includes('const sourceFunctionsPath = resolve("supabase/functions");')

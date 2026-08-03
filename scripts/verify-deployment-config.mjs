@@ -18,6 +18,7 @@ const hostedSmoke = await readFile("scripts/smoke-hosted.mjs", "utf8");
 const hostedBoundary = await readFile("scripts/hosted-environment.mjs", "utf8");
 const hostedBoundaryVerification = await readFile("scripts/verify-hosted-environment-boundaries.mjs", "utf8");
 const hostedBuild = await readFile("scripts/build-netlify.mjs", "utf8");
+const hostedSupabaseStaging = await readFile("scripts/stage-hosted-supabase-config.mjs", "utf8");
 const configPushStep = reusableDeploy.match(
   / {6}- name: Push hosted Auth and SMTP configuration[\s\S]*?(?=\n {6}- name: |$)/
 )?.[0] ?? "";
@@ -26,6 +27,9 @@ const removeForbiddenSecretStep = reusableDeploy.match(
 )?.[0] ?? "";
 const setProtectedSecretStep = reusableDeploy.match(
   / {6}- name: Set protected Edge Function environment[\s\S]*?(?=\n {6}- name: |$)/
+)?.[0] ?? "";
+const deployFunctionsStep = reusableDeploy.match(
+  / {6}- name: Deploy all versioned Edge Functions[\s\S]*?(?=\n {6}- name: |$)/
 )?.[0] ?? "";
 
 const assertions = [
@@ -40,6 +44,12 @@ const assertions = [
   [!reusableDeploy.includes("--include-seed"), "Produktionsflödet får aldrig inkludera seed."],
   [reusableDeploy.includes("netlify-cli@26.2.0"), "Netlify CLI-versionen måste vara låst."],
   [reusableDeploy.includes("stage-hosted-supabase-config.mjs"), "Hosted Supabase-konfiguration måste först genereras i den skyddade temporära katalogen."],
+  [
+    hostedSupabaseStaging.includes('const sourceFunctionsPath = resolve("supabase/functions");')
+      && hostedSupabaseStaging.includes('const targetFunctionsPath = resolve(targetSupabase, "functions");')
+      && hostedSupabaseStaging.includes("await cp(sourceFunctionsPath, targetFunctionsPath, { recursive: true });"),
+    "Den skyddade temporära Supabase-katalogen måste innehålla hela det versionsbundna Functions-trädet."
+  ],
   [
     configPushStep.includes("working-directory: .tmp/hosted-supabase")
       && configPushStep.includes("../../node_modules/.bin/supabase config push")
@@ -69,6 +79,12 @@ const assertions = [
       && setProtectedSecretStep.includes('--project-ref "$SUPABASE_PROJECT_REF"')
       && !setProtectedSecretStep.includes("--workdir"),
     "Edge Function-hemligheter måste sättas från den typkorrekta temporära Supabase-katalogen med dess skyddade syskonfil."
+  ],
+  [
+    deployFunctionsStep.includes("pnpm exec supabase --workdir .tmp/hosted-supabase functions deploy")
+      && deployFunctionsStep.includes('--project-ref "$SUPABASE_PROJECT_REF"')
+      && deployFunctionsStep.includes("--use-api"),
+    "Edge Functions måste deployas med den renderade hostade Supabase-konfigurationen som explicit workdir."
   ],
   [reusableDeploy.includes("rm -f .tmp/hosted-edge.env"), "Den skyddade temporära Edge Function-filen måste alltid raderas från repo-roten."],
   [reusableDeploy.includes("--functions=.tmp/netlify-static-functions") && reusableDeploy.includes("--no-build"), "Netlify-publiceringen måste använda den verifierade statiska artefakten och en uttryckligen tom Functions-katalog."],

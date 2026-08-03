@@ -18,6 +18,9 @@ const hostedSmoke = await readFile("scripts/smoke-hosted.mjs", "utf8");
 const hostedBoundary = await readFile("scripts/hosted-environment.mjs", "utf8");
 const hostedBoundaryVerification = await readFile("scripts/verify-hosted-environment-boundaries.mjs", "utf8");
 const hostedBuild = await readFile("scripts/build-netlify.mjs", "utf8");
+const configPushStep = reusableDeploy.match(
+  / {6}- name: Push hosted Auth and SMTP configuration[\s\S]*?(?=\n {6}- name: |$)/
+)?.[0] ?? "";
 
 const assertions = [
   [netlify.includes('command = "node scripts/build-netlify.mjs"'), "Netlify måste använda det härdade byggsteget."],
@@ -30,7 +33,15 @@ const assertions = [
   [/jobs:\n {2}deploy:[\s\S]*?\n {4}env:\n[\s\S]*?\n {6}DEPLOYMENT_ENVIRONMENT: \$\{\{ inputs\.environment_name \}\}[\s\S]*?\n {4}steps:/.test(reusableDeploy), "Deployjobbet måste exponera vald miljö för samtliga miljömedvetna steg."],
   [!reusableDeploy.includes("--include-seed"), "Produktionsflödet får aldrig inkludera seed."],
   [reusableDeploy.includes("netlify-cli@26.2.0"), "Netlify CLI-versionen måste vara låst."],
-  [reusableDeploy.includes("stage-hosted-supabase-config.mjs") && reusableDeploy.includes("--workdir .tmp/hosted-supabase"), "Hosted Supabase-konfiguration måste använda den typkorrekta temporära konfigurationen."],
+  [reusableDeploy.includes("stage-hosted-supabase-config.mjs"), "Hosted Supabase-konfiguration måste först genereras i den skyddade temporära katalogen."],
+  [
+    configPushStep.includes("working-directory: .tmp/hosted-supabase")
+      && configPushStep.includes("../../node_modules/.bin/supabase config push")
+      && configPushStep.includes('--project-ref "$SUPABASE_PROJECT_REF"')
+      && configPushStep.includes("--yes")
+      && !configPushStep.includes("--workdir"),
+    "Hosted Supabase config push måste köras från den typkorrekta temporära katalogen utan CLI:ns opålitliga --workdir-flagga."
+  ],
   [reusableDeploy.includes("DEMO_MODE: ${{ vars.DEMO_MODE }}") && reusableDeploy.includes("VITE_DEMO_MODE: ${{ vars.DEMO_MODE }}"), "Deployflödet måste härleda klientens demoläge från samma skyddade miljövariabel som servern."],
   [reusableDeploy.includes("TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}") && reusableDeploy.includes("VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}"), "Stagingflödet måste koppla Turnstiles hemliga och publika värden till rätt exekveringsyta."],
   [reusableDeploy.includes("SCOUTNET_SOURCE_REFERENCE_SECRET: ${{ secrets.SCOUTNET_SOURCE_REFERENCE_SECRET }}"), "Det privata produktionsflödet måste kunna sätta Scoutnets serverhemlighet utan Vite-exponering."],

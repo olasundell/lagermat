@@ -76,7 +76,11 @@ jobs:
       - name: Apply database migrations without seed data
         run: pnpm exec supabase db push --linked --password "$SUPABASE_DB_PASSWORD" --yes
       - name: Push hosted Auth and SMTP configuration
-        run: pnpm exec supabase config push --workdir .tmp/hosted-supabase --project-ref "$SUPABASE_PROJECT_REF" --yes
+        working-directory: .tmp/hosted-supabase
+        run: >-
+          ../../node_modules/.bin/supabase config push
+          --project-ref "$SUPABASE_PROJECT_REF"
+          --yes
       - name: Remove mode-forbidden Edge Function secret
         run: |
           if [ "$DEMO_MODE" = "true" ]; then

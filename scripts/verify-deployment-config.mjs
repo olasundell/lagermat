@@ -24,6 +24,9 @@ const configPushStep = reusableDeploy.match(
 const removeForbiddenSecretStep = reusableDeploy.match(
   / {6}- name: Remove mode-forbidden Edge Function secret[\s\S]*?(?=\n {6}- name: |$)/
 )?.[0] ?? "";
+const setProtectedSecretStep = reusableDeploy.match(
+  / {6}- name: Set protected Edge Function environment[\s\S]*?(?=\n {6}- name: |$)/
+)?.[0] ?? "";
 
 const assertions = [
   [netlify.includes('command = "node scripts/build-netlify.mjs"'), "Netlify måste använda det härdade byggsteget."],
@@ -59,7 +62,15 @@ const assertions = [
       && !removeForbiddenSecretStep.includes("|| true"),
     "Borttagning av mode-förbjudna Edge-hemligheter måste vara idempotent utan att maskera list-, format- eller providerfel."
   ],
-  [reusableDeploy.includes("supabase secrets set") && reusableDeploy.includes("--env-file .tmp/hosted-edge.env") && reusableDeploy.includes("rm -f .tmp/hosted-edge.env"), "Edge Function-miljön måste sättas från och sedan radera den skyddade temporära filen."],
+  [
+    setProtectedSecretStep.includes("working-directory: .tmp/hosted-supabase")
+      && setProtectedSecretStep.includes("../../node_modules/.bin/supabase secrets set")
+      && setProtectedSecretStep.includes("--env-file ../hosted-edge.env")
+      && setProtectedSecretStep.includes('--project-ref "$SUPABASE_PROJECT_REF"')
+      && !setProtectedSecretStep.includes("--workdir"),
+    "Edge Function-hemligheter måste sättas från den typkorrekta temporära Supabase-katalogen med dess skyddade syskonfil."
+  ],
+  [reusableDeploy.includes("rm -f .tmp/hosted-edge.env"), "Den skyddade temporära Edge Function-filen måste alltid raderas från repo-roten."],
   [reusableDeploy.includes("--functions=.tmp/netlify-static-functions") && reusableDeploy.includes("--no-build"), "Netlify-publiceringen måste använda den verifierade statiska artefakten och en uttryckligen tom Functions-katalog."],
   [verifyWorkflow.includes("bash scripts/actionlint.sh"), "Verify måste lintkontrollera GitHub Actions-flöden."],
   [verifyWorkflow.includes("verify-hosted-environment-boundaries.mjs"), "Verify måste kontrollera staging-/produktionsgränsen utan provideranrop."],

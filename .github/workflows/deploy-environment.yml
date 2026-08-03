@@ -141,9 +141,10 @@ jobs:
               ;;
           esac
       - name: Set protected Edge Function environment
+        working-directory: .tmp/hosted-supabase
         run: >-
-          pnpm exec supabase secrets set
-          --env-file .tmp/hosted-edge.env
+          ../../node_modules/.bin/supabase secrets set
+          --env-file ../hosted-edge.env
           --project-ref "$SUPABASE_PROJECT_REF"
       - name: Remove staged Edge Function secrets
         if: always()

@@ -27,6 +27,7 @@ jobs:
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
       AUTH_CALLBACK_URL: ${{ format('{0}/auth/callback', vars.APP_ORIGIN) }}
       AUTH_EMAIL_MAX_FREQUENCY: ${{ vars.AUTH_EMAIL_MAX_FREQUENCY }}
+      DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment_name }}
       DEMO_MODE: ${{ vars.DEMO_MODE }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       NETLIFY_SITE_ID: ${{ vars.NETLIFY_SITE_ID }}
@@ -63,8 +64,6 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Validate protected environment configuration
-        env:
-          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment_name }}
         run: node scripts/validate-deployment-environment.mjs "$DEPLOYMENT_ENVIRONMENT"
       - name: Verify hosted repository configuration
         run: node scripts/verify-deployment-config.mjs --hosted

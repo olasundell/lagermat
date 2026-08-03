@@ -287,6 +287,12 @@ export function renderHostedSupabaseConfig(source, configuration) {
   rendered = replaceSectionSetting(
     rendered,
     "auth",
+    "enable_signup",
+    demoEnabled ? "true" : "false"
+  );
+  rendered = replaceSectionSetting(
+    rendered,
+    "auth",
     "enable_anonymous_sign_ins",
     demoEnabled ? "true" : "false"
   );

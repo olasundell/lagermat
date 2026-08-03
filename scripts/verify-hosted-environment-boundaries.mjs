@@ -135,6 +135,7 @@ const productionConfig = renderHostedSupabaseConfig(
 
 for (const [contents, required] of [
   [stagingConfig, [
+    "enable_signup = true",
     "enable_anonymous_sign_ins = true",
     "[auth.captcha]\nenabled = true\nprovider = \"turnstile\"",
     "[auth.email]\n# Stagingdemot använder bara anonym Auth.\n# E-postprovidern och alla inbjudningsflöden är avstängda.\nenable_signup = false",
@@ -147,6 +148,7 @@ for (const [contents, required] of [
     "# SCOUTNET_RECONCILIATION_MODE utelämnas i hostade miljöer."
   ]],
   [productionConfig, [
+    "enable_signup = false",
     "enable_anonymous_sign_ins = false",
     "[auth.email.smtp]\nenabled = true",
     "port = 587",

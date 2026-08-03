@@ -21,6 +21,9 @@ const hostedBuild = await readFile("scripts/build-netlify.mjs", "utf8");
 const configPushStep = reusableDeploy.match(
   / {6}- name: Push hosted Auth and SMTP configuration[\s\S]*?(?=\n {6}- name: |$)/
 )?.[0] ?? "";
+const removeForbiddenSecretStep = reusableDeploy.match(
+  / {6}- name: Remove mode-forbidden Edge Function secret[\s\S]*?(?=\n {6}- name: |$)/
+)?.[0] ?? "";
 
 const assertions = [
   [netlify.includes('command = "node scripts/build-netlify.mjs"'), "Netlify måste använda det härdade byggsteget."],
@@ -45,7 +48,17 @@ const assertions = [
   [reusableDeploy.includes("DEMO_MODE: ${{ vars.DEMO_MODE }}") && reusableDeploy.includes("VITE_DEMO_MODE: ${{ vars.DEMO_MODE }}"), "Deployflödet måste härleda klientens demoläge från samma skyddade miljövariabel som servern."],
   [reusableDeploy.includes("TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}") && reusableDeploy.includes("VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}"), "Stagingflödet måste koppla Turnstiles hemliga och publika värden till rätt exekveringsyta."],
   [reusableDeploy.includes("SCOUTNET_SOURCE_REFERENCE_SECRET: ${{ secrets.SCOUTNET_SOURCE_REFERENCE_SECRET }}"), "Det privata produktionsflödet måste kunna sätta Scoutnets serverhemlighet utan Vite-exponering."],
-  [reusableDeploy.includes("supabase secrets unset SCOUTNET_SOURCE_REFERENCE_SECRET") && reusableDeploy.includes("supabase secrets unset TURNSTILE_SECRET_KEY"), "Deployflödet måste radera den Edge-hemlighet som är förbjuden i respektive läge."],
+  [removeForbiddenSecretStep.includes("SCOUTNET_SOURCE_REFERENCE_SECRET") && removeForbiddenSecretStep.includes("TURNSTILE_SECRET_KEY") && removeForbiddenSecretStep.includes('supabase secrets unset "$forbidden_secret"'), "Deployflödet måste välja och radera den Edge-hemlighet som är förbjuden i respektive läge."],
+  [
+    removeForbiddenSecretStep.includes("supabase secrets list")
+      && removeForbiddenSecretStep.includes("--output json")
+      && removeForbiddenSecretStep.includes("JSON.parse")
+      && removeForbiddenSecretStep.includes("Array.isArray")
+      && removeForbiddenSecretStep.includes("secret.name === process.env.FORBIDDEN_SECRET")
+      && removeForbiddenSecretStep.includes('case "$forbidden_secret_state" in')
+      && !removeForbiddenSecretStep.includes("|| true"),
+    "Borttagning av mode-förbjudna Edge-hemligheter måste vara idempotent utan att maskera list-, format- eller providerfel."
+  ],
   [reusableDeploy.includes("supabase secrets set") && reusableDeploy.includes("--env-file .tmp/hosted-edge.env") && reusableDeploy.includes("rm -f .tmp/hosted-edge.env"), "Edge Function-miljön måste sättas från och sedan radera den skyddade temporära filen."],
   [reusableDeploy.includes("--functions=.tmp/netlify-static-functions") && reusableDeploy.includes("--no-build"), "Netlify-publiceringen måste använda den verifierade statiska artefakten och en uttryckligen tom Functions-katalog."],
   [verifyWorkflow.includes("bash scripts/actionlint.sh"), "Verify måste lintkontrollera GitHub Actions-flöden."],

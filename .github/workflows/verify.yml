@@ -90,6 +90,11 @@ jobs:
     name: Database and browser integration
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    # This suite deliberately exercises the private email/invitation profile.
+    # The release path still deploys staging first with DEMO_MODE=true.
+    env:
+      DEMO_MODE: "false"
+      VITE_DEMO_MODE: "false"
     steps:
       - name: Check out the exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

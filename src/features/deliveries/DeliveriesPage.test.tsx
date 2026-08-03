@@ -264,7 +264,7 @@ describe("delivery calculation guard", () => {
     fireEvent.change(screen.getByLabelText("Beställd enhet för Aubergine"), {
       target: { value: "kg" },
     });
-    fireEvent.change(screen.getByLabelText("Förpackning"), {
+    fireEvent.change(screen.getByLabelText("Förpackning för denna leverans"), {
       target: { value: "3 lådor" },
     });
     fireEvent.change(screen.getByLabelText("Kommentar"), {
@@ -404,18 +404,20 @@ describe("delivery calculation guard", () => {
     expect(screen.getByRole("button", { name: /Markera leverans klar/ })).toBeDisabled();
   });
 
-  it("shows the allocated ICA package share on the delivery row", async () => {
+  it("shows the current ICA allocation separately from the whole-camp packaging", async () => {
     const allocatedItem: SupplyItemRow = {
       ...items[1]!,
       ordered_amount: 3,
       ordered_unit: "förpackning",
-      package_note: "3 av totalt 15 förpackningar · 0,14 kg/förpackning · Bacon skivat 140g (ICA 12345)",
+      package_note: null,
+      order_package_note: "15 × 140 g · Bacon skivat 140g (ICA 12345)",
       order_source_kind: "supplier_purchase",
       supplier_order_source_item_id: "purchase-item-1",
       supplier_order_account_id: "ica-sickla",
       supplier_order_product_id: "ica-bacon",
       supplier_order_total_units: 15,
-      supplier_order_product_fingerprint: "a".repeat(64)
+      supplier_order_product_fingerprint: "a".repeat(64),
+      supplier_order_synthetic_fixture: true,
     };
     mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
     mocks.fetchSupplyLists.mockResolvedValue({
@@ -427,8 +429,102 @@ describe("delivery calculation guard", () => {
     renderPage();
 
     expect(await screen.findByLabelText("Beställt för Bregott")).toHaveTextContent("3 förpackningar");
-    expect(screen.getByText(/3 av totalt 15 förpackningar/)).toBeInTheDocument();
-    expect(screen.getByText(/Bacon skivat 140g/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Beställningsförpackning för hela lägret: 15 × 140 g · Bacon skivat 140g (ICA 12345)")).toHaveTextContent("Hela lägret: 15 × 140 g");
+    expect(screen.getAllByText("LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA"))
+      .toHaveLength(2);
+    expect(screen.getByText(/1 rad bygger på lokal testdata/)).toBeInTheDocument();
+    expect(screen.getByText(/Valda inköpsförpackningar fördelas globalt/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/Faktiska ICA-förpackningar/))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(/3 av totalt 15 förpackningar/)).not.toBeInTheDocument();
+  });
+
+  it("preserves a manual whole-camp package description on allocated deliveries", async () => {
+    const allocatedItem: SupplyItemRow = {
+      ...items[0]!,
+      item_name: "Havredryck",
+      required_amount: 10.9,
+      required_unit: "l",
+      ordered_amount: 11,
+      ordered_unit: "l",
+      package_note: null,
+      order_package_note: "45 × 1 l",
+      order_source_kind: "manual_purchase",
+      manual_order_source_item_id: "purchase-item-1",
+      manual_order_total_amount: 45,
+      manual_order_unit: "l",
+    };
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [{ ...staleDelivery, supply_list_items: [allocatedItem] }],
+      source: "server",
+      cachedAt: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByLabelText("Beställt för Havredryck")).toHaveTextContent("11 l");
+    expect(screen.getByLabelText("Beställningsförpackning för hela lägret: 45 × 1 l")).toHaveTextContent("Hela lägret: 45 × 1 l");
+  });
+
+  it("keeps receipt history readable but requires an active checked item to be reopened before editing or moving it", async () => {
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [{
+        ...staleDelivery,
+        calculation_revisions: { revision_number: 2, status: "current" },
+        supply_list_items: [{
+          ...items[1]!,
+          completed: true,
+          package_note: "2 kylbackar",
+          comment: "Mottaget av Kim",
+        }],
+      }],
+      source: "server",
+      cachedAt: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Kvitterad – markera som kvar för att ändra eller flytta.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Markera som kvar: Bregott" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Visa detaljer för Bregott" }));
+    expect(screen.getByLabelText("Sparade leveransuppgifter för Bregott"))
+      .toHaveTextContent("2 kylbackar");
+    expect(screen.getByLabelText("Sparade leveransuppgifter för Bregott"))
+      .toHaveTextContent("Mottaget av Kim");
+    expect(screen.queryByRole("button", { name: "Spara beställning" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("makes every item in a finalised delivery read-only", async () => {
+    mocks.fetchCurrentCalculation.mockResolvedValue({ id: "calculation-1" });
+    mocks.fetchSupplyLists.mockResolvedValue({
+      lists: [{
+        ...staleDelivery,
+        status: "complete",
+        calculation_revisions: { revision_number: 2, status: "current" },
+        supply_list_items: [{
+          ...items[1]!,
+          completed: true,
+          package_note: "2 kylbackar",
+          comment: "Mottaget av Kim",
+        }],
+      }],
+      source: "server",
+      cachedAt: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Leveransen är slutmarkerad och kan inte ändras.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Markera som kvar: Bregott" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Visa detaljer för Bregott" }));
+    expect(screen.getByLabelText("Sparade leveransuppgifter för Bregott"))
+      .toHaveTextContent("Mottaget av Kim");
+    expect(screen.queryByRole("button", { name: "Spara beställning" }))
+      .not.toBeInTheDocument();
   });
 
   it("explains an unallocated whole-camp manual order beside the empty delivery order", async () => {

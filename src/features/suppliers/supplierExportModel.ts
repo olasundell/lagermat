@@ -10,6 +10,10 @@ import {
   type SupplierMatchDetail,
   type SupplierOrderProposal,
 } from "./supplierModel";
+import {
+  isLocalIcaFixtureProduct,
+  LOCAL_ICA_FIXTURE_WARNING,
+} from "./icaStore";
 
 export interface SupplierUnderlayLine {
   item: SupplyItemRow;
@@ -54,6 +58,7 @@ const csvColumns = [
   "Exakt beräkning",
   "Beräkningens enhet",
   "Matchningsstatus",
+  "Artikelkälla",
   "Leverantörens artikelnummer",
   "GTIN",
   "Artikelbenämning",
@@ -157,12 +162,18 @@ export function createSupplierOrderUnderlay(input: SupplierOrderUnderlayInput): 
   const unknownAvailabilityCount = lines.filter((line) =>
     line.detail?.offer?.availability_status === "unknown"
   ).length;
+  const syntheticFixtureCount = lines.filter((line) =>
+    line.detail && isLocalIcaFixtureProduct(line.detail.product)
+  ).length;
   const supplierProblems = [
     unmatchedCount ? `${unmatchedCount} ${unmatchedCount === 1 ? "råvara saknar" : "råvaror saknar"} artikelmatchning` : null,
     unitConflictCount ? `${unitConflictCount} ${unitConflictCount === 1 ? "matchning har" : "matchningar har"} enhetskonflikt` : null,
     invalidCount ? `${invalidCount} ${invalidCount === 1 ? "artikel kan" : "artiklar kan"} inte beställas` : null,
     missingOfferCount ? `${missingOfferCount} ${missingOfferCount === 1 ? "matchad rad saknar" : "matchade rader saknar"} aktuellt pris och tillgänglighetsbesked` : null,
     unknownAvailabilityCount ? `${unknownAvailabilityCount} ${unknownAvailabilityCount === 1 ? "artikel har" : "artiklar har"} okänd tillgänglighet` : null,
+    syntheticFixtureCount
+      ? `${syntheticFixtureCount} ${syntheticFixtureCount === 1 ? "rad använder" : "rader använder"} lokala syntetiska testartiklar och får inte användas som beställningsunderlag`
+      : null,
   ].filter((problem): problem is string => Boolean(problem));
   const problems = [...input.readiness.problems, ...supplierProblems];
 
@@ -198,6 +209,9 @@ export function createSupplierOrderCsv(underlay: SupplierOrderUnderlay): string 
       rawDecimal(line.item.required_amount),
       line.item.required_unit,
       matchStatus(line),
+      detail && isLocalIcaFixtureProduct(detail.product)
+        ? LOCAL_ICA_FIXTURE_WARNING
+        : detail?.product.product_data_source ?? "",
       detail?.product.supplier_article_number ?? "",
       detail?.product.gtin ?? "",
       detail?.product.display_name ?? "",

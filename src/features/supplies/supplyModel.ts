@@ -14,6 +14,7 @@ export interface SupplyItemRow {
   ordered_amount: number | null;
   ordered_unit: string | null;
   package_note: string | null;
+  order_package_note?: string | null;
   comment: string | null;
   completed: boolean;
   row_version: number;
@@ -28,6 +29,7 @@ export interface SupplyItemRow {
   supplier_order_product_id?: string | null;
   supplier_order_total_units?: number | null;
   supplier_order_product_fingerprint?: string | null;
+  supplier_order_synthetic_fixture?: boolean;
 }
 
 export interface SupplyListRow {

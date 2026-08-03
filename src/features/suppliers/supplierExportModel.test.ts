@@ -113,7 +113,7 @@ describe("supplier order underlay", () => {
     const csv = createSupplierOrderCsv(underlay);
     expect(csv).toContain('"UNDERLAG – INGEN ORDER HAR SKICKATS"');
     expect(csv).toContain(
-      '"5,5";"kg";"5.5";"kg";"MATCHAD";"R-3000";"07300000000000"',
+      '"5,5";"kg";"5.5";"kg";"MATCHAD";"manual";"R-3000";"07300000000000"',
     );
     expect(csv).toContain('"2";"6";"0.5";"3";"kg";"199.5";"SEK"');
     expect(csv).not.toContain("specialkost");
@@ -180,5 +180,44 @@ describe("supplier order underlay", () => {
     expect(createSupplierOrderCsv(underlay)).toContain(
       `"'=HYPERLINK(""https://example.invalid"")"`,
     );
+  });
+
+  it("gör lokala ICA-testartiklar omöjliga att förväxla med ett riktigt beställningsunderlag", () => {
+    const fixtureDetail = detail();
+    fixtureDetail.account = {
+      ...supplier,
+      provider_key: "ica",
+      provider_location_id: "1004021",
+      display_name: "ICA Kvantum Sickla",
+    };
+    fixtureDetail.product = {
+      ...fixtureDetail.product,
+      supplier_account_id: fixtureDetail.account.id,
+      supplier_article_number: "local-abc123-kg",
+      display_name: "Ris",
+      product_data_source: "import:api",
+      source_metadata: {
+        source: "ica_local_fixture",
+        store_id: "1004021",
+        synthetic_local_fixture: true,
+      },
+    };
+
+    const underlay = createSupplierOrderUnderlay({
+      organizationName: "Björkstad scoutkår",
+      campName: "Sommarläger 2026",
+      supplier: fixtureDetail.account,
+      items: [item()],
+      details: [fixtureDetail],
+      readiness: { canFinalize: true, problems: [] },
+    });
+    const csv = createSupplierOrderCsv(underlay);
+
+    expect(underlay.draft).toBe(true);
+    expect(underlay.problems).toContain(
+      "1 rad använder lokala syntetiska testartiklar och får inte användas som beställningsunderlag",
+    );
+    expect(csv).toContain('"LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA"');
+    expect(csv).toContain('"UNDERLAG MED VARNINGAR"');
   });
 });

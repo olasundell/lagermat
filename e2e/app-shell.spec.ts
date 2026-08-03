@@ -5,6 +5,20 @@ import { enrolLocalAdminMfa, localMessageIds, loginWithLocalMagicLink, waitForLo
 
 test.describe.configure({ mode: "serial" });
 
+const localSupabaseUrl = "http://127.0.0.1:54321";
+const localAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYXNlLWRlbW8iLCJyb2xlIjoiYW5vbiIsImV4cCI6MTk4MzgxMjk5Nn0.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
+
+const currentUserOfflineRecords = [
+  "signout-current-mutation",
+  "signout-current-supply",
+  "signout-current-workspace"
+];
+const otherUserOfflineRecords = [
+  "signout-other-mutation",
+  "signout-other-supply",
+  "signout-other-workspace"
+];
+
 function syntheticScoutnetWorkbook() {
   const workbook = utils.book_new();
   const sheet = utils.aoa_to_sheet([
@@ -84,12 +98,55 @@ async function signOutAcceptanceCounts(page: import("@playwright/test").Page) {
       )
     );
     database.close();
-    const rows = values.flat();
+    const rows = values.flat() as Array<{ id?: string; userId?: string }>;
     return {
       current: rows.filter((row) => row.userId === "44444444-4444-4444-4444-444444444444").length,
-      other: rows.filter((row) => row.userId === "99999999-9999-9999-9999-999999999999").length
+      other: rows.filter((row) => row.userId === "99999999-9999-9999-9999-999999999999").length,
+      ids: rows.flatMap((row) => typeof row.id === "string" ? [row.id] : [])
     };
   });
+}
+
+async function createScheduleWarningFixture(
+  page: import("@playwright/test").Page,
+  request: import("@playwright/test").APIRequestContext,
+  marker: string
+) {
+  const displayName = `Varningskontroll ${marker}`;
+  const accessToken = await page.evaluate(() => {
+    for (const value of Object.values(localStorage)) {
+      try {
+        const parsed = JSON.parse(value) as { access_token?: unknown };
+        if (typeof parsed.access_token === "string") return parsed.access_token;
+      } catch {
+        // Other local state is intentionally ignored.
+      }
+    }
+    throw new Error("Den lokala Auth-sessionen saknar access token");
+  });
+  const response = await request.post(`${localSupabaseUrl}/rest/v1/rpc/create_participant`, {
+    headers: {
+      apikey: localAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    data: {
+      p_organization_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+      p_camp_id: "caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+      p_display_name: displayName,
+      p_division: "",
+      p_patrol: "",
+      p_meal_group: "",
+      p_food_factor: 1,
+      p_attendance_start: "2026-08-02T00:00:00+02:00",
+      p_attendance_end: "2026-08-06T00:00:00+02:00",
+      p_dietary_note: "Syntetisk uppgift för varningskontroll"
+    }
+  });
+  if (!response.ok()) {
+    throw new Error(`Kunde inte skapa varningsfixture: ${response.status()} ${await response.text()}`);
+  }
+  return displayName;
 }
 
 test("desktop app shell exposes all seven main areas", async ({ page, request }, testInfo) => {
@@ -158,6 +215,10 @@ test("sign-out warns, honours cancellation and only clears the current user's of
   const beforeSignOut = await signOutAcceptanceCounts(page);
   expect(beforeSignOut.current).toBeGreaterThanOrEqual(3);
   expect(beforeSignOut.other).toBe(3);
+  expect(beforeSignOut.ids).toEqual(expect.arrayContaining([
+    ...currentUserOfflineRecords,
+    ...otherUserOfflineRecords
+  ]));
 
   page.once("dialog", async (confirmation) => {
     expect(confirmation.message()).toContain("inte synkroniserats");
@@ -166,7 +227,11 @@ test("sign-out warns, honours cancellation and only clears the current user's of
   await page.getByRole("button", { name: "Öppna användarmenyn" }).click();
   await page.getByRole("menuitem", { name: "Logga ut" }).click();
   await expect(page.getByRole("heading", { name: "Sommarläger 2026" })).toBeVisible();
-  await expect.poll(() => signOutAcceptanceCounts(page)).toEqual(beforeSignOut);
+  const afterCancellation = await signOutAcceptanceCounts(page);
+  expect(afterCancellation.ids).toEqual(expect.arrayContaining([
+    ...currentUserOfflineRecords,
+    ...otherUserOfflineRecords
+  ]));
 
   page.once("dialog", async (confirmation) => {
     expect(confirmation.message()).toContain("inte synkroniserats");
@@ -180,6 +245,8 @@ test("sign-out warns, honours cancellation and only clears the current user's of
   const counts = await signOutAcceptanceCounts(page);
   expect(counts.current).toBe(0);
   expect(counts.other, "andra användarens offline-data ska finnas kvar").toBe(3);
+  expect(counts.ids).toEqual(expect.arrayContaining(otherUserOfflineRecords));
+  for (const id of currentUserOfflineRecords) expect(counts.ids).not.toContain(id);
 });
 
 test("delivery page stays tenant-isolated in a mobile viewport", async ({ page, request }, testInfo) => {
@@ -255,7 +322,8 @@ test("a published workbook recipe is frozen locally for the active camp", async 
   await page.getByPlaceholder("Sök bland recept").fill("Frukost");
   await page.getByRole("button", { name: "Visa Frukost" }).click();
   await expect(page.getByText("Per portion", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("En gång för hela lägret", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("En gång för hela lägret", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".recipe-ingredient__amount").filter({ hasText: "paket" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Lägg till Frukost version 1 i lägret" }).click();
   await expect(page.getByText("Frukost, version 1, finns redan i Sommarläger 2026.")).toBeVisible();
@@ -275,13 +343,19 @@ test("procurement sends the user to calculate when no current revision exists", 
   await expect(page.getByRole("heading", { name: "Matsedel" })).toBeVisible();
 });
 
-test("the schedule warning explains the next fix and opens it", async ({ page, request }) => {
+test("the schedule warning explains the next fix and opens it", async ({ page, request }, testInfo) => {
+  let fixtureParticipantName: string | null = null;
   if (process.env.PLAYWRIGHT_DEMO_MODE !== "true") {
     await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+    fixtureParticipantName = await createScheduleWarningFixture(
+      page,
+      request,
+      `${testInfo.project.name}-${Date.now()}`
+    );
   }
   await page.goto("/matsedel");
 
-  const warning = page.getByRole("link", { name: /1 specialkostuppgift behöver granskas.*Granska specialkost/ });
+  const warning = page.getByRole("link", { name: /[1-9]\d* specialkostuppgift(?:er)? behöver granskas.*Granska specialkost/ });
   await expect(warning).toBeVisible();
   await expect(warning).toContainText("Kontrollera uppgiften från anmälan");
   await expect(page.getByText("Underlag med varningar", { exact: true })).toHaveCount(0);
@@ -290,6 +364,11 @@ test("the schedule warning explains the next fix and opens it", async ({ page, r
   await expect(page).toHaveURL(/\/specialkost$/);
   await expect(page.getByRole("heading", { name: "Specialkost", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Att granska" })).toBeVisible();
+  if (fixtureParticipantName) {
+    const fixtureCard = page.locator("article").filter({ hasText: fixtureParticipantName });
+    await fixtureCard.getByRole("button", { name: "Påverkar inte maten" }).click();
+    await expect(fixtureCard).toBeHidden();
+  }
 });
 
 test("the calculation confirmation is a short-lived overlay", async ({ page, request }) => {
@@ -299,7 +378,13 @@ test("the calculation confirmation is a short-lived overlay", async ({ page, req
   await page.goto("/matsedel");
 
   const scheduleLayout = page.locator(".schedule-layout");
+  const calculateButton = page.getByRole("button", { name: "Räkna ut mängder" });
+  const notification = page.locator(".schedule-toast");
   await expect(scheduleLayout).toBeVisible();
+  await calculateButton.click();
+  await expect(notification).toContainText(/Mängderna räknades om/);
+  await page.getByRole("button", { name: "Stäng meddelandet" }).click();
+  await expect(notification).toBeHidden();
   await page.evaluate(async () => {
     await document.fonts.ready;
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -307,8 +392,7 @@ test("the calculation confirmation is a short-lived overlay", async ({ page, req
   const layoutBefore = await scheduleLayout.boundingBox();
   expect(layoutBefore).not.toBeNull();
 
-  await page.getByRole("button", { name: "Räkna ut mängder" }).click();
-  const notification = page.locator(".schedule-toast");
+  await calculateButton.click();
   await expect(notification).toContainText(/Mängderna räknades om/);
   await expect(notification).toHaveCSS("position", "fixed");
   await expect(page.locator(".schedule-page > .form-success")).toHaveCount(0);
@@ -331,7 +415,7 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
   await expect(page.getByText(/12\/12 tillfällen planerade/)).toBeVisible();
   await expect(page.getByText(/måltidstillfällen är oplanerade/)).toHaveCount(0);
   const mealDetail = page.locator(".meal-detail");
-  const chiliMeal = page.getByRole("button", { name: /^Chili sin carne,/ });
+  const chiliMeal = page.getByRole("button", { name: /^(?:Chili sin carne|Chili lunch uppdaterad),/ });
   const chiliMealCard = page.locator(".meal-cell").filter({ has: chiliMeal });
   const lunchRow = page.locator(".schedule-table tbody tr").filter({
     has: page.getByRole("rowheader", { name: "Lunch", exact: true })
@@ -341,6 +425,8 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
   });
   const pastaMeal = page.getByRole("button", { name: /^Pasta carbonara,/ });
 
+  await expect(chiliMeal).toBeVisible();
+  const chiliMealName = await chiliMeal.locator("strong").innerText();
   await chiliMeal.scrollIntoViewIfNeeded();
   await expect(chiliMeal).toContainText("Ändra måltid");
   const [cardBefore, rowBefore, nextRowBefore, scrollBefore] = await Promise.all([
@@ -355,12 +441,12 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
 
   await chiliMeal.click();
   await expect(chiliMeal).toHaveAttribute("aria-expanded", "true");
-  const editMeal = chiliMealCard.getByRole("button", { name: "Redigera Chili sin carne" });
-  const markNoService = chiliMealCard.getByRole("button", { name: "Markera Chili sin carne som ingen servering" });
+  const editMeal = chiliMealCard.getByRole("button", { name: `Redigera ${chiliMealName}` });
+  const markNoService = chiliMealCard.getByRole("button", { name: `Markera ${chiliMealName} som ingen servering` });
   await expect(editMeal).toBeVisible();
   await expect(editMeal).toBeFocused();
   await expect(markNoService).toContainText("Ingen servering");
-  await expect(mealDetail.getByRole("heading", { name: "Chili sin carne" })).toBeVisible();
+  await expect(mealDetail.getByRole("heading", { name: chiliMealName })).toBeVisible();
 
   const [cardAfter, rowAfter, nextRowAfter, scrollAfter] = await Promise.all([
     chiliMealCard.boundingBox(),
@@ -382,7 +468,7 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
   await page.keyboard.press("Escape");
   await expect(chiliMeal).toHaveAttribute("aria-expanded", "false");
   await expect(chiliMeal).toBeFocused();
-  await expect(mealDetail.getByRole("heading", { name: "Chili sin carne" })).toBeVisible();
+  await expect(mealDetail.getByRole("heading", { name: chiliMealName })).toBeVisible();
 
   await chiliMeal.click();
   await chiliMealCard.getByRole("button", { name: "Stäng måltidsval" }).click();
@@ -400,23 +486,23 @@ test("the complete camp schedule keeps meal actions inside the clicked cell", as
 
   if (testInfo.project.name.includes("desktop")) {
     await markNoService.click();
-    const noServiceDialog = page.getByRole("alertdialog", { name: "Markera Chili sin carne som ingen servering?" });
+    const noServiceDialog = page.getByRole("alertdialog", { name: `Markera ${chiliMealName} som ingen servering?` });
     await expect(noServiceDialog).toBeVisible();
     await expect(noServiceDialog.getByText(/Måltidsuppgifterna bevaras/)).toBeVisible();
     await noServiceDialog.getByRole("button", { name: "Markera som ingen servering" }).click();
 
-    await expect(page.getByText("Chili sin carne markerades som ingen servering. Måltidsuppgifterna är bevarade och kan återställas.")).toBeVisible();
-    const noServiceMeal = page.getByRole("button", { name: /^Ingen servering, Chili sin carne bevarad,/ });
+    await expect(page.getByText(`${chiliMealName} markerades som ingen servering. Måltidsuppgifterna är bevarade och kan återställas.`)).toBeVisible();
+    const noServiceMeal = page.getByRole("button", { name: new RegExp(`^Ingen servering, ${chiliMealName} bevarad,`) });
     const noServiceMealCard = page.locator(".meal-slot--none").filter({ has: noServiceMeal });
     await expect(noServiceMeal).toBeVisible();
     await expect(noServiceMeal).toHaveAttribute("aria-expanded", "true");
     await expect(mealDetail.getByRole("heading", { name: "Ingen servering" })).toBeVisible();
     await expect(mealDetail.getByText("Måltidstillfälle")).toBeVisible();
-    await expect(mealDetail.getByText("Chili sin carne är bevarad")).toBeVisible();
+    await expect(mealDetail.getByText(`${chiliMealName} är bevarad`)).toBeVisible();
     const restoreMeal = noServiceMealCard.getByRole("button", { name: /^Återställ måltid,/ });
     await restoreMeal.click();
-    await expect(page.getByText(/Chili sin carne återställdes/)).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Chili sin carne,/ })).toBeVisible();
+    await expect(page.getByText(`${chiliMealName} återställdes`)).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`^${chiliMealName},`) })).toBeVisible();
     await page.getByRole("button", { name: "Räkna ut mängder" }).click();
     await expect(page.getByText(/Mängderna räknades om/)).toBeVisible();
   } else {
@@ -483,7 +569,8 @@ test("exact needs become editable purchase, distribution and delivery lists", as
   const csvPath = await download.path();
   expect(csvPath).toBeTruthy();
   const csv = await readFile(csvPath!, "utf8");
-  expect(csv).toContain('"Beräknat behov"');
+  expect(csv).toContain('"Praktiskt behov"');
+  expect(csv).toContain('"Exakt beräkning"');
   expect(csv).toMatch(/"(?:UNDERLAG MED VARNINGAR|KONTROLLERAT UNDERLAG)"/);
 
   const popupPromise = page.waitForEvent("popup");

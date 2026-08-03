@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SupplyItemRow } from "../supplies/supplyModel";
 import {
+  countDistinctIcaCatalogueQueries,
   splitIcaUnmatchedItems,
   type IcaCatalogueSyncProgress,
 } from "./icaCatalogueSyncModel";
@@ -40,6 +41,14 @@ function progress(
 }
 
 describe("ICA catalogue sync status", () => {
+  it("counts queries with the same sanitising rules as the catalogue request", () => {
+    expect(countDistinctIcaCatalogueQueries([
+      item("  Krossade\u0000   tomater  "),
+      item("krossade tomater"),
+      item("x"),
+    ])).toBe(1);
+  });
+
   it("separates completed searches without a match from searches still running", () => {
     const result = splitIcaUnmatchedItems([
       item("Havregryn"),
@@ -76,5 +85,33 @@ describe("ICA catalogue sync status", () => {
 
     expect(result.pending).toHaveLength(1);
     expect(result.noMatch).toEqual([]);
+  });
+
+  it("keeps a failed ICA fetch distinct from a search that is still progressing", () => {
+    const result = splitIcaUnmatchedItems([
+      item("Mjölk"),
+    ], progress({
+      phase: "error",
+      retryAfterMs: 60_000,
+    }), false);
+
+    expect(result.pending).toEqual([]);
+    expect(result.noMatch).toEqual([]);
+    expect(result.failed.map((candidate) => candidate.item_name)).toEqual(["Mjölk"]);
+  });
+
+  it("keeps searches completed before a later failure as no-match", () => {
+    const result = splitIcaUnmatchedItems([
+      item("Mjölk"),
+      item("Havregryn"),
+    ], progress({
+      phase: "error",
+      completedQueries: ["Mjölk"],
+      retryAfterMs: 60_000,
+    }), false);
+
+    expect(result.pending).toEqual([]);
+    expect(result.noMatch.map((candidate) => candidate.item_name)).toEqual(["Mjölk"]);
+    expect(result.failed.map((candidate) => candidate.item_name)).toEqual(["Havregryn"]);
   });
 });

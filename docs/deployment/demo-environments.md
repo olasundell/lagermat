@@ -55,14 +55,26 @@ must use all three flags:
 --dir=dist --functions=.tmp/netlify-static-functions --no-build
 ```
 
-The protected deploy workflow has deliberately not been rewired by this local
-change. Until it passes the explicit empty `--functions` directory and the
-validated environment variables, it must be treated as fail-closed and must
-not be run.
+The protected deploy workflow now maps the environment-scoped `DEMO_MODE` to
+both the server and client build, maps the staging-only Turnstile site key and
+secret to their separate public/protected contexts, and sets the generated
+Edge Function environment through a temporary mode-0600 file that is removed
+immediately after use. Netlify receives the already verified static artefact
+with the explicit empty `--functions` directory and `--no-build`.
 
-## Read-only provider inventory, 2026-07-31
+Before setting the allowed Edge Function secret, the workflow removes the
+mode-forbidden counterpart: Scoutnet's source-reference secret from staging or
+Turnstile's secret from production. A failed removal stops the release, so a
+stale secret cannot silently cross the staging/production boundary.
 
-The connected Netlify account was inspected read-only:
+The workflow remains fail-closed when any environment value is absent or
+contradictory. Staging must not define SMTP or the Scoutnet HMAC secret;
+production must not define Turnstile values and still requires its private
+SMTP and Scoutnet configuration.
+
+## Provider inventory and constrained action, 2026-07-31
+
+The connected staging providers were inspected before publication:
 
 - `lagermat-staging` exists at
   `https://lagermat-staging.netlify.app`, site ID
@@ -74,6 +86,20 @@ The connected Netlify account was inspected read-only:
   `0337a6f7-0d86-4eab-a791-fd5d8a1c07d3`.
 - Neither site currently exposes project-level Netlify environment variables
   through the connected context.
+- Supabase staging is project `datiqfdwpalnuttfkthf` in `eu-north-1`. It was
+  inactive and was restored; the provider now reports `ACTIVE_HEALTHY`.
+- The restored project still has migrations only through
+  `20260721090307_add_private_template_deny_policies.sql`, and its only deployed
+  Edge Function is `invite-member` version 2. No database migration, Auth
+  configuration, secret, Edge Function or Netlify artefact was published in
+  this pass.
+
+Publication remains fail-closed because a real Turnstile widget restricted to
+`lagermat-staging.netlify.app` and its separate site/secret keys are not
+available in the authorised provider contexts. Cloudflare's public test keys
+must not be used for the public demo. Configure the real site key as the
+staging variable `TURNSTILE_SITE_KEY` and the secret as the protected staging
+secret `TURNSTILE_SECRET_KEY` before resuming the backend-first deploy.
 
 This inventory is time-sensitive and not deployment approval. Before any
 publication, re-read both sites and verify:
@@ -87,5 +113,5 @@ publication, re-read both sites and verify:
 6. no production, custom-domain, analytics or real-data changes; and
 7. fresh explicit user approval for the external staging deployment.
 
-No provider setting, secret, site or deployment was changed while preparing
-this boundary.
+The Supabase staging project restore is the only provider mutation recorded in
+this pass. Netlify staging and all production providers remain unchanged.

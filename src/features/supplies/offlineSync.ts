@@ -12,6 +12,7 @@ export interface CachedListResult {
 export interface MutationServerResult {
   status: "applied" | "conflict";
   replayed: boolean;
+  policy_reason?: "reopen_required" | "finalised_delivery";
   item_id: string;
   server_version: number;
   server_values: EditableSupplyValues;
@@ -50,6 +51,12 @@ export function changedValues(base: EditableSupplyValues, desired: EditableSuppl
   return changes;
 }
 
+export function mutationContributesOptimisticOverlay(
+  mutation: Pick<PendingMutation, "status">,
+): boolean {
+  return mutation.status === "pending";
+}
+
 export async function cacheSupplyLists(scope: SupplyScope, lists: SupplyListRow[]): Promise<void> {
   await offlineDb.supplySnapshots.put({
     id: snapshotId(scope),
@@ -61,7 +68,12 @@ export async function cacheSupplyLists(scope: SupplyScope, lists: SupplyListRow[
   });
 
   const mutations = await offlineDb.mutations
-    .filter((mutation) => mutation.userId === scope.userId && mutation.organizationId === scope.organizationId && mutation.campId === scope.campId)
+    .filter((mutation) =>
+      mutation.userId === scope.userId
+      && mutation.organizationId === scope.organizationId
+      && mutation.campId === scope.campId
+      && mutationContributesOptimisticOverlay(mutation)
+    )
     .sortBy("createdAt");
   for (const mutation of mutations) await updateCachedItem(scope, mutation.entityId, mutation.changes);
 }
@@ -96,7 +108,12 @@ async function overlayRemainingMutations(scope: SupplyScope, itemId: string): Pr
   const remaining = await offlineDb.mutations
     .where("entityId")
     .equals(itemId)
-    .filter((mutation) => mutation.userId === scope.userId && mutation.organizationId === scope.organizationId && mutation.campId === scope.campId)
+    .filter((mutation) =>
+      mutation.userId === scope.userId
+      && mutation.organizationId === scope.organizationId
+      && mutation.campId === scope.campId
+      && mutationContributesOptimisticOverlay(mutation)
+    )
     .sortBy("createdAt");
   for (const mutation of remaining) await updateCachedItem(scope, itemId, mutation.changes);
 }
@@ -124,6 +141,7 @@ export async function queueSupplyItemChange(
     changes,
     status: "pending",
     conflicts: [],
+    policyReason: null,
     serverVersion: null,
     serverValues: null,
     createdAt: new Date().toISOString(),
@@ -168,10 +186,18 @@ export async function syncPendingMutations(scope: SupplyScope): Promise<void> {
       await offlineDb.mutations.update(mutation.id, {
         status: "conflict",
         conflicts: result.conflicts,
+        policyReason: result.policy_reason ?? null,
         serverVersion: result.server_version,
         serverValues: result.server_values,
         lastError: null
       });
+      await updateCachedItem(
+        scope,
+        mutation.entityId,
+        result.server_values,
+        result.server_version,
+      );
+      await overlayRemainingMutations(scope, mutation.entityId);
       notifyOfflineStateChanged();
       continue;
     }
@@ -192,7 +218,7 @@ export async function resolveConflictWithServer(scope: SupplyScope, mutation: Pe
 }
 
 export async function resolveConflictWithLocal(scope: SupplyScope, mutation: PendingMutation): Promise<void> {
-  if (!mutation.serverValues || !mutation.serverVersion) return;
+  if (mutation.policyReason || !mutation.serverValues || !mutation.serverVersion) return;
   const replacement: PendingMutation = {
     ...mutation,
     id: crypto.randomUUID(),
@@ -200,6 +226,7 @@ export async function resolveConflictWithLocal(scope: SupplyScope, mutation: Pen
     baseValues: mutation.serverValues,
     status: "pending",
     conflicts: [],
+    policyReason: null,
     serverVersion: null,
     serverValues: null,
     createdAt: new Date().toISOString(),

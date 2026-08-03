@@ -36,6 +36,7 @@ export interface IcaCatalogueNormalisationOptions {
   storeId: string;
   query?: string;
   completedQueries?: readonly string[];
+  source?: "ica_public_webshop" | "ica_local_fixture";
 }
 
 export interface IcaCatalogueNormalisationResult {
@@ -563,7 +564,7 @@ function normaliseProduct(
     inner_unit_label: inner.label,
   });
   const metadata = compactRecord({
-    source: "ica_public_webshop",
+    source: options.source ?? "ica_public_webshop",
     store_id: options.storeId,
     query,
     ica_search_association_version: 1,
@@ -578,6 +579,7 @@ function normaliseProduct(
     ica_catchweight: jsonValue(product.catchweight),
     ica_category_path: path.length ? path : null,
     ica_image_url: imageUrl,
+    synthetic_local_fixture: options.source === "ica_local_fixture" || null,
   });
   const normalizedData = compactRecord({
     supplier_article_number: articleNumber,

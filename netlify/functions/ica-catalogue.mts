@@ -22,6 +22,10 @@ function environment(): IcaCatalogueEnvironment {
       ?? Netlify.env.get("VITE_SUPABASE_PUBLISHABLE_KEY")
       ?? Netlify.env.get("SUPABASE_ANON_KEY")
       ?? Netlify.env.get("VITE_SUPABASE_ANON_KEY"),
+    supabaseServiceRoleKey:
+      Netlify.env.get("SUPABASE_SECRET_KEY")
+      ?? Netlify.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    localIcaFixture: Netlify.env.get("LOCAL_ICA_CATALOGUE_FIXTURE"),
   };
 }
 

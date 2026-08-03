@@ -197,4 +197,42 @@ describe("SupplierMatchEditor", () => {
     expect(screen.getByText("Artikeln är markerad som tillfälligt slut", { exact: false })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Använd förslaget" })).not.toBeInTheDocument();
   });
+
+  it("märker ett lokalt ICA-testförslag i själva operatörskortet", async () => {
+    const fixtureDetail: SupplierMatchDetail = {
+      ...detail,
+      account: {
+        ...account,
+        provider_key: "ica",
+        provider_location_id: "1004021",
+        display_name: "ICA Kvantum Sickla",
+      },
+      product: {
+        ...detail.product,
+        product_data_source: "import:api",
+        source_metadata: {
+          source: "ica_local_fixture",
+          store_id: "1004021",
+          synthetic_local_fixture: true,
+        },
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <SupplierMatchEditor
+        item={item}
+        accounts={[fixtureDetail.account]}
+        details={[fixtureDetail]}
+        online
+        onSave={vi.fn()}
+        onApplyProposal={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("1 leverantörsmatchning"));
+    expect(screen.getByText(/LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA/i))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Använd testförslaget" }))
+      .toBeInTheDocument();
+  });
 });

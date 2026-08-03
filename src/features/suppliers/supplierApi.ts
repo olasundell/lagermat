@@ -24,6 +24,7 @@ import type {
 import { CATALOGUE_MATCHER_VERSION } from "./catalogueMatcher";
 import { hasCurrentIcaCataloguePackaging } from "./icaCatalogue";
 import {
+  isIcaCatalogueProductForCompletedSearch,
   isIcaSicklaAccount,
   isIcaSicklaCatalogueProduct,
 } from "./icaStore";
@@ -31,6 +32,22 @@ import {
 export interface SupplierScope {
   organizationId: string;
   campId?: string;
+}
+
+interface CompletedIcaSearchState {
+  supplier_account_id: string;
+  canonical_key: string;
+  search_query: string;
+  search_date: string;
+}
+
+function stockholmDate(value: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Stockholm",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
 }
 
 export interface SupplierFoundationSnapshot {
@@ -447,7 +464,10 @@ export async function fetchSupplierFoundation(
     };
   }
 
-  const [preferredMatches, openCandidates] = await Promise.all([
+  const icaAccountIds = accounts
+    .filter(isIcaSicklaAccount)
+    .map((account) => account.id);
+  const [preferredMatches, openCandidates, completedIcaSearches] = await Promise.all([
     collectPages(async (offset, pageSize) => {
       const { data, error } = await client
         .from("preferred_supplier_matches")
@@ -474,6 +494,24 @@ export async function fetchSupplierFoundation(
       if (error) throw error;
       return data ?? [];
     }),
+    scope.campId && icaAccountIds.length
+      ? collectPages(async (offset, pageSize) => {
+          const { data, error } = await client
+            .from("supplier_catalogue_search_states")
+            .select("supplier_account_id, canonical_key, search_query, search_date")
+            .eq("organization_id", scope.organizationId)
+            .eq("camp_id", scope.campId!)
+            .eq("status", "complete")
+            .eq("search_date", stockholmDate())
+            .in("supplier_account_id", icaAccountIds)
+            .in("canonical_key", uniqueCanonicalKeys)
+            .order("supplier_account_id")
+            .order("canonical_key")
+            .range(offset, offset + pageSize - 1);
+          if (error) throw error;
+          return (data ?? []) as CompletedIcaSearchState[];
+        })
+      : Promise.resolve([] as CompletedIcaSearchState[]),
   ]);
   const productIds = [...new Set([
     ...preferredMatches.map((preferred) => preferred.supplier_product_id),
@@ -495,8 +533,42 @@ export async function fetchSupplierFoundation(
         && hasCurrentIcaCataloguePackaging(product)
       );
   });
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const currentIcaProductForCanonical = (
+    supplierAccountId: string,
+    canonicalKey: string,
+    supplierProductId: string,
+  ): boolean => {
+    const account = accountsById.get(supplierAccountId);
+    if (!isIcaSicklaAccount(account)) return true;
+    const product = productsById.get(supplierProductId);
+    if (!product) return false;
+    return completedIcaSearches.some((search) =>
+      search.supplier_account_id === supplierAccountId
+      && search.canonical_key === canonicalKey
+      && isIcaCatalogueProductForCompletedSearch(
+        product,
+        search.search_query,
+        search.search_date,
+      )
+    );
+  };
+  const eligiblePreferredMatches = preferredMatches.filter((preferred) =>
+    currentIcaProductForCanonical(
+      preferred.supplier_account_id,
+      preferred.canonical_key,
+      preferred.supplier_product_id,
+    )
+  );
+  const eligibleOpenCandidates = openCandidates.filter((candidate) =>
+    currentIcaProductForCanonical(
+      candidate.supplier_account_id,
+      candidate.canonical_key,
+      candidate.supplier_product_id,
+    )
+  );
   const currentPreferred = currentPreferredMatches(
-    preferredMatches,
+    eligiblePreferredMatches,
     matches,
     products,
   );
@@ -506,7 +578,7 @@ export async function fetchSupplierFoundation(
   const currentMatches = matches.filter((match) => currentMatchIds.has(match.id));
   const relevantProductIds = new Set([
     ...currentPreferred.map((preferred) => preferred.supplier_product_id),
-    ...openCandidates.map((candidate) => candidate.supplier_product_id),
+    ...eligibleOpenCandidates.map((candidate) => candidate.supplier_product_id),
   ]);
   const relevantProducts = products.filter((product) => relevantProductIds.has(product.id));
   const fetchedOffers = await fetchRowsByProductIds(
@@ -522,7 +594,7 @@ export async function fetchSupplierFoundation(
     offers,
     matches: currentMatches,
     details: buildDetails(accounts, relevantProducts, offers, currentMatches),
-    candidates: candidateViews(openCandidates, relevantProducts),
+    candidates: candidateViews(eligibleOpenCandidates, relevantProducts),
     columnProfiles,
     approvedMatches: currentPreferred.map((preferred) => ({
       supplierAccountId: preferred.supplier_account_id,

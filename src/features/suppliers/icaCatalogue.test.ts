@@ -146,6 +146,22 @@ describe("ICA:s publika katalogformat", () => {
     });
   });
 
+  it("marks the explicit local ICA fixture in persisted source metadata", () => {
+    const result = normaliseIcaCatalogueResponse(response(product()), {
+      storeId: "1004021",
+      completedQueries: ["Krossade tomater"],
+      source: "ica_local_fixture",
+    });
+
+    expect(result.rows[0]?.normalized_data).toMatchObject({
+      metadata: {
+        source: "ica_local_fixture",
+        store_id: "1004021",
+        synthetic_local_fixture: true,
+      },
+    });
+  });
+
   it("ger två ICA-förpackningar och sex innerenheter för ett behov på 1,7373 kg", () => {
     const result = normaliseIcaCatalogueResponse(response(product()), {
       storeId: "1004021",

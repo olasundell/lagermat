@@ -2061,10 +2061,11 @@ export type Database = {
           id: string
           item_key: string
           item_name: string
-          manually_moved: boolean
           manual_order_source_item_id: string | null
           manual_order_total_amount: number | null
           manual_order_unit: string | null
+          manually_moved: boolean
+          order_package_note: string | null
           order_source_kind: string | null
           ordered_amount: number | null
           ordered_unit: string | null
@@ -2079,6 +2080,7 @@ export type Database = {
           supplier_order_product_fingerprint: string | null
           supplier_order_product_id: string | null
           supplier_order_source_item_id: string | null
+          supplier_order_synthetic_fixture: boolean
           supplier_order_total_units: number | null
           supply_list_id: string
           updated_at: string
@@ -2094,10 +2096,11 @@ export type Database = {
           id?: string
           item_key: string
           item_name: string
-          manually_moved?: boolean
           manual_order_source_item_id?: string | null
           manual_order_total_amount?: number | null
           manual_order_unit?: string | null
+          manually_moved?: boolean
+          order_package_note?: string | null
           order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
@@ -2112,6 +2115,7 @@ export type Database = {
           supplier_order_product_fingerprint?: string | null
           supplier_order_product_id?: string | null
           supplier_order_source_item_id?: string | null
+          supplier_order_synthetic_fixture?: boolean
           supplier_order_total_units?: number | null
           supply_list_id: string
           updated_at?: string
@@ -2127,10 +2131,11 @@ export type Database = {
           id?: string
           item_key?: string
           item_name?: string
-          manually_moved?: boolean
           manual_order_source_item_id?: string | null
           manual_order_total_amount?: number | null
           manual_order_unit?: string | null
+          manually_moved?: boolean
+          order_package_note?: string | null
           order_source_kind?: string | null
           ordered_amount?: number | null
           ordered_unit?: string | null
@@ -2145,6 +2150,7 @@ export type Database = {
           supplier_order_product_fingerprint?: string | null
           supplier_order_product_id?: string | null
           supplier_order_source_item_id?: string | null
+          supplier_order_synthetic_fixture?: boolean
           supplier_order_total_units?: number | null
           supply_list_id?: string
           updated_at?: string
@@ -2309,6 +2315,10 @@ export type Database = {
         Args: { p_camp_id: string; p_organization_id: string }
         Returns: string
       }
+      calculate_camp_pre_zero_attendance: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: string
+      }
       camp_input_digest: {
         Args: { p_camp_id: string; p_organization_id: string }
         Returns: string
@@ -2430,9 +2440,9 @@ export type Database = {
           procurement_ready: boolean
           required_slots: number
           supplier_items_total: number
-          supplier_pending_items: number
           supplier_no_match: number
           supplier_order_incomplete: number
+          supplier_pending_items: number
           supplier_ready_items: number
           supplier_review_suggestions: number
           supplier_safe_suggestions: number
@@ -2440,13 +2450,6 @@ export type Database = {
           unplanned_slots: number
           unresolved_dietary_needs: number
           zero_attendance_slots: number
-        }[]
-      }
-      get_zero_attendance_meals: {
-        Args: { p_camp_id: string; p_organization_id: string }
-        Returns: {
-          meal_id: string
-          meal_slot_id: string
         }[]
       }
       get_demo_session_status: {
@@ -2486,9 +2489,9 @@ export type Database = {
         Returns: {
           procurement_ready: boolean
           supplier_items_total: number
-          supplier_pending_items: number
           supplier_no_match: number
           supplier_order_incomplete: number
+          supplier_pending_items: number
           supplier_ready_items: number
           supplier_review_suggestions: number
           supplier_safe_suggestions: number
@@ -2513,6 +2516,17 @@ export type Database = {
           p_organization_id: string
         }
         Returns: Json
+      }
+      get_zero_attendance_meals: {
+        Args: { p_camp_id: string; p_organization_id: string }
+        Returns: {
+          meal_id: string
+          meal_slot_id: string
+        }[]
+      }
+      ica_supplier_product_has_allowed_provenance: {
+        Args: { p_source_metadata: Json; p_store_id: string }
+        Returns: boolean
       }
       import_participant_batch: {
         Args: {
@@ -2555,6 +2569,12 @@ export type Database = {
           user_id: string
         }[]
       }
+      manual_purchase_unit_dimension: {
+        Args: { p_unit: string }
+        Returns: string
+      }
+      manual_purchase_unit_factor: { Args: { p_unit: string }; Returns: number }
+      manual_purchase_unit_family: { Args: { p_unit: string }; Returns: string }
       move_delivery_item:
         | {
             Args: {
@@ -2570,7 +2590,7 @@ export type Database = {
               p_completed: boolean
               p_expected_version: number
               p_item_id: string
-              p_ordered_amount: number | null
+              p_ordered_amount: number
               p_ordered_unit: string
               p_package_note: string
               p_target_list_id: string
@@ -2598,6 +2618,17 @@ export type Database = {
           user_id: string
         }[]
       }
+      publish_ica_catalogue_rows_service: {
+        Args: {
+          p_actor_user_id: string
+          p_completed_queries: Json
+          p_organization_id: string
+          p_refresh_date: string
+          p_rows: Json
+          p_source: string
+        }
+        Returns: Json
+      }
       record_supplier_catalogue_search_states: {
         Args: {
           p_camp_id: string
@@ -2616,6 +2647,7 @@ export type Database = {
         }
         Returns: Json
       }
+      request_jwt_database_role: { Args: never; Returns: string }
       review_dietary_need: {
         Args: { p_dietary_need_id: string; p_tag_labels: string[] }
         Returns: undefined
@@ -2764,6 +2796,14 @@ export type Database = {
         }
         Returns: number
       }
+      set_supply_list_status_pre_completed_delivery_lock: {
+        Args: {
+          p_expected_version: number
+          p_list_id: string
+          p_status: Database["public"]["Enums"]["supply_list_status"]
+        }
+        Returns: number
+      }
       set_supply_list_status_pre_meal_readiness: {
         Args: {
           p_expected_version: number
@@ -2791,6 +2831,16 @@ export type Database = {
           p_supplier_account_id: string
         }
         Returns: string
+      }
+      supplier_delivery_override_purchase_units: {
+        Args: {
+          p_amount: number
+          p_amount_per_purchase_unit: number
+          p_purchase_unit: string
+          p_required_unit: string
+          p_unit: string
+        }
+        Returns: number
       }
       supplier_expected_amount: {
         Args: {
@@ -2867,11 +2917,43 @@ export type Database = {
         Args: { p_meal_id: string; p_recipe_version_id: string }
         Returns: string
       }
+      sync_manual_purchase_delivery_allocations: {
+        Args: {
+          p_camp_id: string
+          p_canonical_key?: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
+      sync_manual_purchase_delivery_allocations_proportional_legacy: {
+        Args: {
+          p_camp_id: string
+          p_canonical_key?: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
       sync_supplier_order_delivery_allocations: {
         Args: {
           p_camp_id: string
           p_canonical_key?: string
           p_organization_id: string
+        }
+        Returns: Json
+      }
+      sync_supplier_order_delivery_allocations_proportional_legacy: {
+        Args: {
+          p_camp_id: string
+          p_canonical_key?: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
+      temporal_delivery_allocation_plan: {
+        Args: {
+          p_allocation_scale: number
+          p_rows: Json
+          p_total_amount: number
         }
         Returns: Json
       }

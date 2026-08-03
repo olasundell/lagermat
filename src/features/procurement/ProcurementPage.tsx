@@ -46,7 +46,11 @@ import {
   type SupplierAccount,
   type SupplierMatchDetail,
 } from "../suppliers/supplierModel";
-import { isIcaSicklaAccount } from "../suppliers/icaStore";
+import {
+  isIcaSicklaAccount,
+  isLocalIcaFixtureProduct,
+  LOCAL_ICA_FIXTURE_WARNING,
+} from "../suppliers/icaStore";
 import { useIcaCatalogueSync } from "../suppliers/useIcaCatalogueSync";
 import {
   filterProcurementItems,
@@ -101,6 +105,9 @@ function OrderEditor({
       && detail.product.purchase_unit.trim().toLocaleLowerCase("sv-SE")
         === orderedUnit.trim().toLocaleLowerCase("sv-SE")
     );
+  const verifiedOrderUsesFixture = verifiedSupplierOrder
+    ? isLocalIcaFixtureProduct(verifiedSupplierOrder.detail.product)
+    : false;
 
   async function save() {
     if (Number.isNaN(parsedAmount)) {
@@ -134,8 +141,10 @@ function OrderEditor({
           Beräknat behov {practicalRequirement.display}
         </span>
         {verifiedSupplierOrder?.proposal.status === "ready" ? (
-          <div className="order-editor__supplier-summary">
-            <PackageCheck aria-hidden="true" size={17} />
+          <div className={`order-editor__supplier-summary${verifiedOrderUsesFixture ? " order-editor__supplier-summary--fixture" : ""}`}>
+            {verifiedOrderUsesFixture
+              ? <AlertTriangle aria-hidden="true" size={17} />
+              : <PackageCheck aria-hidden="true" size={17} />}
             <span>
               <strong>
                 Köp {describeSupplierPurchaseQuantity(
@@ -145,7 +154,9 @@ function OrderEditor({
                   verifiedSupplierOrder.detail.match.required_unit,
                 )}
               </strong>
-              <small>Verifierad förpackningsomräkning via {verifiedSupplierOrder.detail.account.display_name}</small>
+              <small>{verifiedOrderUsesFixture
+                ? `${LOCAL_ICA_FIXTURE_WARNING}. Endast för lokal provkörning.`
+                : `Verifierad förpackningsomräkning via ${verifiedSupplierOrder.detail.account.display_name}`}</small>
             </span>
           </div>
         ) : null}
@@ -177,7 +188,9 @@ function OrderEditor({
           await saveSupplyItem(scope, listId, item, {
             orderedAmount: proposal.purchaseUnits,
             orderedUnit: detail.product.purchase_unit,
-            packageNote: proposal.packageNote,
+            packageNote: isLocalIcaFixtureProduct(detail.product)
+              ? `${LOCAL_ICA_FIXTURE_WARNING} · ${proposal.packageNote}`
+              : proposal.packageNote,
             comment,
             completed: item.completed,
           });
@@ -231,7 +244,6 @@ export function ProcurementPage() {
       scope?.organizationId,
       purchaseList?.id,
       purchaseList?.version,
-      icaSyncQuery.dataUpdatedAt,
     ],
     enabled: Boolean(scope && purchaseList && offlineState.online && !cached),
     queryFn: async () => {
@@ -255,11 +267,7 @@ export function ProcurementPage() {
       }
       return {
         ...foundation,
-        catalogueWarnings: [...new Set([
-          ...catalogueWarnings,
-          ...(icaSyncQuery.data?.warning ? [icaSyncQuery.data.warning] : []),
-        ])],
-        icaSyncProgress: icaSyncQuery.data?.icaSyncProgress ?? null,
+        catalogueWarnings: [...new Set(catalogueWarnings)],
       };
     },
   });
@@ -268,6 +276,13 @@ export function ProcurementPage() {
   const supplierCandidates = supplierQuery.data?.candidates ?? [];
   const supplierColumnProfiles = supplierQuery.data?.columnProfiles ?? [];
   const approvedSupplierMatches = supplierQuery.data?.approvedMatches ?? [];
+  const supplierCatalogueWarnings = [...new Set([
+    ...(supplierQuery.data?.catalogueWarnings ?? []),
+    ...(icaSyncQuery.data?.warning ? [icaSyncQuery.data.warning] : []),
+  ])];
+  const syntheticSupplierCanonicalKeys = new Set(supplierDetails
+    .filter((detail) => isLocalIcaFixtureProduct(detail.product))
+    .map((detail) => detail.match.canonical_key));
   const purchaseCategories = [...new Set(purchaseItems.map((item) => item.category))]
     .sort((left, right) => left.localeCompare(right, "sv"));
   const visiblePurchaseItemIds = filterProcurementItems({
@@ -350,7 +365,9 @@ export function ProcurementPage() {
       await saveSupplyItem(scope, purchaseList.id, item, {
         orderedAmount: proposal.purchaseUnits,
         orderedUnit: candidate.product.purchase_unit,
-        packageNote: proposal.packageNote,
+        packageNote: isLocalIcaFixtureProduct(candidate.product)
+          ? `${LOCAL_ICA_FIXTURE_WARNING} · ${proposal.packageNote}`
+          : proposal.packageNote,
         comment: item.comment ?? "",
         completed: item.completed,
       });
@@ -442,6 +459,9 @@ export function ProcurementPage() {
           practicalAmounts={perspective === "distribution"
             ? practicalDistributionAmounts
             : practicalPurchaseAmounts}
+          syntheticSupplierCanonicalKeys={perspective === "purchase"
+            ? syntheticSupplierCanonicalKeys
+            : undefined}
         />
       ) : null}
 
@@ -455,7 +475,7 @@ export function ProcurementPage() {
             key={`supplier-accounts:${scope!.organizationId}`}
             accounts={supplierAccounts}
             online={networkWritable}
-            loading={supplierQuery.isPending || supplierQuery.isFetching}
+            loading={supplierQuery.isPending}
             onSave={async (input) => {
               await saveSupplierAccount(scope!, input);
               await refreshSuppliers();
@@ -474,12 +494,8 @@ export function ProcurementPage() {
               || icaSyncQuery.isPending
               || icaSyncQuery.isFetching
             }
-            syncWarning={supplierQuery.data?.catalogueWarnings?.join(" ") ?? null}
-            syncProgress={
-              icaSyncQuery.data?.icaSyncProgress
-              ?? supplierQuery.data?.icaSyncProgress
-              ?? null
-            }
+            syncWarning={supplierCatalogueWarnings.join(" ") || null}
+            syncProgress={icaSyncQuery.data?.icaSyncProgress ?? null}
             onRetrySync={icaSyncQuery.retryNow}
             onImport={async (supplierAccountId, preview, mapping) => {
               const result = await importSupplierCatalogueAndMatch(

@@ -269,6 +269,18 @@ function replaceWholeSection(source, sectionName, replacement) {
     + source.slice(end).replace(/^\n+/, "");
 }
 
+function removeWholeSection(source, sectionName) {
+  const { start, end } = sectionBounds(source, sectionName);
+  return source.slice(0, start)
+    + source.slice(end).replace(/^\n+/, "");
+}
+
+function sectionNamesWithPrefix(source, prefix) {
+  return [...source.matchAll(/^\[([^\]]+)\]\s*$/gm)]
+    .map((match) => match[1])
+    .filter((sectionName) => sectionName.startsWith(prefix));
+}
+
 export function renderHostedSupabaseConfig(source, configuration) {
   const { demoEnabled, smtpPort } = configuration;
   let rendered = source;
@@ -299,6 +311,15 @@ export function renderHostedSupabaseConfig(source, configuration) {
         "# E-postprovidern och alla inbjudningsflöden är avstängda."
       ].join("\n")
     );
+
+    // New Supabase Free projects using the default email provider reject all
+    // template fields, even when email signup and SMTP are disabled.
+    for (const sectionName of sectionNamesWithPrefix(
+      rendered,
+      "auth.email.template."
+    )) {
+      rendered = removeWholeSection(rendered, sectionName);
+    }
   }
   rendered = replaceSectionSetting(
     rendered,

@@ -251,8 +251,16 @@ begin
     -- different server requests. Preserve all current-day associations instead
     -- of replacing the earlier batch with the later one.
     for row_index in 0..(jsonb_array_length(p_rows) - 1) loop
-      incoming_metadata :=
-        p_rows -> row_index -> 'normalized_data' -> 'metadata';
+      -- Keep the catalogue refresh date in trusted server metadata. The
+      -- generic importer records source_updated_at as persistence time, which
+      -- cannot identify batches from the same logical refresh when a payload
+      -- is backdated or crosses midnight.
+      incoming_metadata := jsonb_set(
+        p_rows -> row_index -> 'normalized_data' -> 'metadata',
+        '{ica_refresh_date}',
+        to_jsonb(p_refresh_date::text),
+        true
+      );
       existing_metadata := null;
 
       select product.source_metadata
@@ -266,8 +274,8 @@ begin
         )
         and product.product_data_source = 'import:api'
         and product.source_metadata ->> 'source' = normalized_source
-        and (product.source_updated_at at time zone 'Europe/Stockholm')::date
-          = p_refresh_date;
+        and product.source_metadata ->> 'ica_refresh_date'
+          = p_refresh_date::text;
 
       if existing_metadata is not null then
         if jsonb_typeof(existing_metadata -> 'ica_search_matches') = 'array'
@@ -385,14 +393,14 @@ begin
             true
           );
         end if;
-
-        p_rows := jsonb_set(
-          p_rows,
-          array[row_index::text, 'normalized_data', 'metadata'],
-          incoming_metadata,
-          false
-        );
       end if;
+
+      p_rows := jsonb_set(
+        p_rows,
+        array[row_index::text, 'normalized_data', 'metadata'],
+        incoming_metadata,
+        false
+      );
     end loop;
 
     source_fingerprint := encode(
@@ -564,8 +572,8 @@ begin
       and product.active
       and product.product_data_source = 'import:api'
       and product.source_metadata ->> 'source' = normalized_source
-      and (product.source_updated_at at time zone 'Europe/Stockholm')::date
-        = p_refresh_date
+      and product.source_metadata ->> 'ica_refresh_date'
+        = p_refresh_date::text
       and exists (
         select 1
         from jsonb_array_elements(

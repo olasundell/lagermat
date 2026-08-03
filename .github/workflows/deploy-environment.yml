@@ -84,10 +84,62 @@ jobs:
       - name: Remove mode-forbidden Edge Function secret
         run: |
           if [ "$DEMO_MODE" = "true" ]; then
-            pnpm exec supabase secrets unset SCOUTNET_SOURCE_REFERENCE_SECRET --project-ref "$SUPABASE_PROJECT_REF" --yes
+            forbidden_secret="SCOUTNET_SOURCE_REFERENCE_SECRET"
           else
-            pnpm exec supabase secrets unset TURNSTILE_SECRET_KEY --project-ref "$SUPABASE_PROJECT_REF" --yes
+            forbidden_secret="TURNSTILE_SECRET_KEY"
           fi
+
+          if ! secrets_json="$(
+            pnpm exec supabase secrets list \
+              --output json \
+              --project-ref "$SUPABASE_PROJECT_REF"
+          )"; then
+            echo "Failed to list remote Edge Function secrets." >&2
+            exit 1
+          fi
+
+          if ! forbidden_secret_state="$(
+            SECRETS_JSON="$secrets_json" \
+            FORBIDDEN_SECRET="$forbidden_secret" \
+            node --input-type=module -e '
+              const secrets = JSON.parse(process.env.SECRETS_JSON ?? "");
+              if (
+                !Array.isArray(secrets)
+                || secrets.some(
+                  (secret) =>
+                    typeof secret !== "object"
+                    || secret === null
+                    || typeof secret.name !== "string"
+                )
+              ) {
+                throw new Error("Supabase secrets list returned an unexpected shape.");
+              }
+
+              console.log(
+                secrets.some((secret) => secret.name === process.env.FORBIDDEN_SECRET)
+                  ? "present"
+                  : "absent"
+              );
+            '
+          )"; then
+            echo "Failed to validate the remote Edge Function secret list." >&2
+            exit 1
+          fi
+
+          case "$forbidden_secret_state" in
+            present)
+              pnpm exec supabase secrets unset "$forbidden_secret" \
+                --project-ref "$SUPABASE_PROJECT_REF" \
+                --yes
+              ;;
+            absent)
+              echo "$forbidden_secret is already absent."
+              ;;
+            *)
+              echo "Unexpected forbidden secret state: $forbidden_secret_state" >&2
+              exit 1
+              ;;
+          esac
       - name: Set protected Edge Function environment
         run: >-
           pnpm exec supabase secrets set

@@ -1,7 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import netlify from "@netlify/vite-plugin";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const NETLIFY_LOCAL_ENVIRONMENT = [
@@ -14,6 +14,23 @@ const NETLIFY_LOCAL_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "LOCAL_ICA_CATALOGUE_FIXTURE",
 ] as const;
+
+function omitHostedContentSecurityPolicyInDev(): Plugin {
+  return {
+    name: "omit-hosted-content-security-policy-in-dev",
+    configureServer(server) {
+      // @netlify/vite-plugin 2.12.9 advertises a headers.enabled option but
+      // does not forward it to NetlifyDev. Its middleware can therefore load
+      // a generated dist/_headers file and apply the hosted CSP to Vite's
+      // inline React Refresh preamble. Remove only that response header after
+      // Netlify has evaluated the request; hosted output is unaffected.
+      server.middlewares.use((_request, response, next) => {
+        response.removeHeader("Content-Security-Policy");
+        next();
+      });
+    }
+  };
+}
 
 export default defineConfig(({ mode }) => {
   // Vite loads these values from local env files, while the Netlify emulator
@@ -32,6 +49,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       netlify(),
+      omitHostedContentSecurityPolicyInDev(),
       react(),
       tailwindcss(),
       VitePWA({

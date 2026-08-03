@@ -216,8 +216,12 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
 
   preview = await startPreview();
   await page.context().setOffline(false);
+  await expect.poll(
+    () => page.evaluate(() => navigator.onLine),
+    { timeout: 15_000 },
+  ).toBe(true);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByText(/ändring(?:ar)? väntar/)).toBeHidden();
+  await expect(page.getByText(/ändring(?:ar)? väntar/)).toBeHidden({ timeout: 15_000 });
   await page.reload();
   await expect(page.getByRole("checkbox", { name: new RegExp(syncItem.item_name) })).toBeChecked({ checked: !initialChecked });
 
@@ -275,8 +279,8 @@ test("a physically stopped app server preserves cache, queue, replay safety and 
 
   preview = await startPreview();
   await page.context().setOffline(false);
-  await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect.poll(() => page.evaluate(() => navigator.onLine), { timeout: 15_000 }).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText(`Två versioner av ${conflictItem.item_name}`)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/uppgifter ändrades både här och i den senast sparade versionen: kommentar/)).toBeVisible();
   await expect(page.getByRole("button", { name: /Markera leverans klar/ })).toBeDisabled();

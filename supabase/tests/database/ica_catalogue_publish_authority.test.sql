@@ -261,6 +261,7 @@ select ok(
       )
       and source_metadata -> 'ica_completed_searches'
         @> jsonb_build_array('Krossade tomater', 'Tomater')
+      and source_metadata ->> 'ica_refresh_date' = '2026-07-31'
   ),
   'overlapping same-day server batches merge their ICA search associations'
 );
@@ -394,6 +395,7 @@ select ok(
       and latest_import_run_id =
         (current_setting('scoutmat_test.ica_next_day_result')::jsonb
           ->> 'import_run_id')::uuid
+      and source_metadata ->> 'ica_refresh_date' = '2026-08-01'
   ),
   'an identical next-day response creates a fresh import and refreshes the product'
 );

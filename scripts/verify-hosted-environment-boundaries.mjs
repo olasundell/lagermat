@@ -170,6 +170,29 @@ assert(
   !stagingConfig.includes('host = "env(SMTP_HOST)"'),
   "Staging blev beroende av SMTP."
 );
+const requiredEmailTemplateSections = [
+  "auth.email.template.invite",
+  "auth.email.template.magic_link"
+];
+const sourceEmailTemplateSections = [
+  ...source.matchAll(/^\[(auth\.email\.template\.[^\]]+)\]\s*$/gm)
+].map((match) => match[1]);
+for (const sectionName of requiredEmailTemplateSections) {
+  assert(
+    sourceEmailTemplateSections.includes(sectionName),
+    `Källkonfigurationen saknar e-postmallen ${sectionName}.`
+  );
+}
+for (const sectionName of sourceEmailTemplateSections) {
+  assert(
+    !stagingConfig.includes(`[${sectionName}]`),
+    `Staging försökte ändra e-postmallen ${sectionName}.`
+  );
+  assert(
+    productionConfig.includes(`[${sectionName}]`),
+    `Produktion förlorade e-postmallen ${sectionName}.`
+  );
+}
 assert(
   hostedBuildSource.includes(".tmp/netlify-static-functions")
   && hostedBuildSource.includes("--functions=.tmp/netlify-static-functions")

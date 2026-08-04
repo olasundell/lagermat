@@ -855,7 +855,7 @@ export function createIcaCatalogueHandler(
 
   return async (request: Request): Promise<Response> => {
     if (!isAllowedBrowserRequest(request, allowedOrigin)) {
-      return respondJson(
+      return jsonResponse(
         { error: "Anropet kommer från en otillåten webbplats." },
         403,
       );

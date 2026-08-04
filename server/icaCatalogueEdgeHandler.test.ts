@@ -87,14 +87,31 @@ describe("ICA catalogue Supabase Edge handler contract", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("rejects a different browser origin before authentication", async () => {
+  it("rejects a different browser origin without CORS headers before authentication", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const response = await edgeHandler(fetcher)(request("https://evil.example"));
 
     expect(response.status).toBe(403);
+    expect(response.headers.has("Access-Control-Allow-Origin")).toBe(false);
     await expect(response.json()).resolves.toEqual({
       error: "Anropet kommer från en otillåten webbplats.",
     });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects a different-origin preflight without allowing that origin", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await edgeHandler(fetcher)(new Request(functionUrl, {
+      method: "OPTIONS",
+      headers: {
+        "Origin": "https://evil.example",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+      },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(response.headers.has("Access-Control-Allow-Origin")).toBe(false);
     expect(fetcher).not.toHaveBeenCalled();
   });
 

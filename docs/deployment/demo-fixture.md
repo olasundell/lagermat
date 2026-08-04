@@ -1,8 +1,15 @@
 # Canonical hosted demo fixture
 
-The Björkstad demo is a versioned, synthetic template. It is the only data
-source permitted for the public staging demo. It contains no real participant,
+The Björkstad demo is a versioned, synthetic template. It is the only fixture
+input permitted for the public staging demo. It contains no real participant,
 dietary, supplier, price or stock data.
+
+This boundary applies to the versioned fixture. An active staging demo may
+temporarily fetch real product names, package data and prices from ICA's public
+catalogue through the authenticated `ica-catalogue` Edge Function. Those
+tenant-scoped runtime rows are not fixture input. They become inaccessible at
+the exact 24-hour expiry and are deleted with the isolated demo organisation by
+the next hourly cleanup.
 
 The source of truth is:
 

@@ -7,11 +7,13 @@ import {
 
 const sourceConfigPath = resolve("supabase/config.toml");
 const sourceFunctionsPath = resolve("supabase/functions");
+const sourceSharedPath = resolve("shared");
 const sourceTemplatesPath = resolve("supabase/templates");
 const targetRoot = resolve(".tmp/hosted-supabase");
 const targetSupabase = resolve(targetRoot, "supabase");
 const targetConfigPath = resolve(targetSupabase, "config.toml");
 const targetFunctionsPath = resolve(targetSupabase, "functions");
+const targetSharedPath = resolve(targetRoot, "shared");
 const targetTemplatesPath = resolve(targetSupabase, "templates");
 const edgeEnvironmentPath = resolve(".tmp/hosted-edge.env");
 const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT?.trim();
@@ -30,6 +32,11 @@ await writeFile(targetConfigPath, hostedConfig, {
   mode: 0o600
 });
 await cp(sourceFunctionsPath, targetFunctionsPath, { recursive: true });
+// The staging-only ICA function imports platform-neutral code from the
+// repository root. Keep the dependency graph complete in both staged
+// workdirs: production disables the function in config, but older CLI
+// bundlers may still resolve every versioned function directory.
+await cp(sourceSharedPath, targetSharedPath, { recursive: true });
 await cp(sourceTemplatesPath, targetTemplatesPath, { recursive: true });
 
 const edgeEnvironment = [

@@ -50,7 +50,8 @@ Use separate provider tokens where practical. Rotate them after personnel or own
 
 1. Create a staging project containing no personal data. Enable anonymous Auth
    only through the generated staging configuration; disable the email provider
-   and do not configure SMTP.
+   and do not configure SMTP. The only permitted real data is temporary public
+   ICA catalogue data, isolated to an expiring synthetic demo organisation.
 2. Create a production Pro project in North EU (Stockholm). Confirm the region before creation because it is a data-location and latency decision.
 3. Add only named operators, require MFA on every account, enable SSL enforcement, and restrict direct database access to approved operator/CI addresses where operationally possible.
 4. Confirm public sign-up is disabled and redirects contain only the tier's exact `APP_ORIGIN` and `${APP_ORIGIN}/auth/callback`.
@@ -79,7 +80,7 @@ The workflow pushes the versioned Supabase configuration. It deliberately never 
 
 ## 5. First release
 
-Complete the privacy gate and the two [recipe-catalogue approvals](recipe-catalogue.md), run the normal staged release, then invoke the privileged hosted bootstrap command once for each project. Staging uses test identities and synthetic camp data. Production uses the approved first administrator and creates no fake users or camps.
+Complete the privacy gate and the two [recipe-catalogue approvals](recipe-catalogue.md), run the normal staged release, then invoke the privileged hosted bootstrap command once for each project. Staging uses test identities and synthetic camp data; authenticated ICA searches may add temporary public catalogue rows to the isolated demo organisation. Production uses the approved first administrator and creates no fake users or camps.
 
 Run it from a trusted operator terminal. Supply the environment-specific secret key through the process environment, never as a command-line argument or in shell history:
 

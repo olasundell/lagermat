@@ -425,6 +425,12 @@ verify_jwt = true
 import_map = "./functions/supplier-catalogue/deno.json"
 entrypoint = "./functions/supplier-catalogue/index.ts"
 
+[functions.ica-catalogue]
+enabled = true
+verify_jwt = true
+import_map = "./functions/ica-catalogue/deno.json"
+entrypoint = "./functions/ica-catalogue/index.ts"
+
 [functions.start-demo]
 enabled = true
 verify_jwt = true

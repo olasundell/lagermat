@@ -152,6 +152,29 @@ describe("ICA catalogue query planning", () => {
     })).toEqual(["Okänd råvara"]);
   });
 
+  it("never reuses mixed fixture and public provenance for either runtime", () => {
+    const input = {
+      entries: [{ canonicalKey: "ingredient:milk", query: "Mjölk" }],
+      persistedStates: [{
+        canonical_key: "ingredient:milk",
+        search_query: "Mjölk",
+        search_date: "2026-07-31",
+        status: "complete" as const,
+      }],
+      searchDate: "2026-07-31",
+      cachedSource: "mixed" as const,
+    };
+
+    expect(completedIcaCatalogueQueriesFromState({
+      ...input,
+      runtimeSource: "public",
+    })).toEqual([]);
+    expect(completedIcaCatalogueQueriesFromState({
+      ...input,
+      runtimeSource: "fixture",
+    })).toEqual([]);
+  });
+
   it("accepts only today's complete state for the same ingredient and normalised query", () => {
     const entries = [{ canonicalKey: "ingredient:milk", query: "Mjölk" }];
     const base = {

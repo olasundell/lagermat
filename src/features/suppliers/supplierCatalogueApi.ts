@@ -331,6 +331,7 @@ async function fetchIcaCatalogueRows(
       scope.organizationId,
       ICA_KVANTUM_SICKLA.id,
       batch,
+      ICA_CATALOGUE_RUNTIME_SOURCE,
     );
     source = data.source.channel === "local-fixture"
       ? "ica_local_fixture"

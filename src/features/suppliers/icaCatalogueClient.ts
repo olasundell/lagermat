@@ -1,4 +1,7 @@
+import type { IcaCatalogueRuntimeSource } from "./icaCatalogueRuntime";
+
 const ICA_CATALOGUE_ENDPOINT = "/api/ica-catalogue";
+const ICA_CATALOGUE_FUNCTION = "ica-catalogue";
 const RESPONSE_BODY_LIMIT = 4_000_000;
 
 type FetchLike = (
@@ -13,6 +16,18 @@ export interface IcaCatalogueSessionClient {
         session: { access_token: string } | null;
       };
       error: { message: string } | null;
+    }>;
+  };
+  functions: {
+    invoke<T = unknown>(
+      functionName: string,
+      options: {
+        body: Record<string, unknown>;
+        headers?: Record<string, string>;
+      },
+    ): Promise<{
+      data: T | null;
+      error: unknown | null;
     }>;
   };
 }
@@ -68,10 +83,107 @@ function errorMessage(payload: unknown): string | null {
   return typeof error === "string" && error.length <= 240 ? error : null;
 }
 
+function responseFromFunctionError(error: unknown): Response | null {
+  const context = record(error)?.context;
+  return context instanceof Response ? context : null;
+}
+
+function assertPayloadSize(payload: unknown): void {
+  let serialised: string | undefined;
+  try {
+    serialised = JSON.stringify(payload);
+  } catch {
+    throw new Error("ICA-katalogen svarade i ett oväntat format.");
+  }
+  if (serialised === undefined) {
+    throw new Error("ICA-katalogen svarade i ett oväntat format.");
+  }
+  if (serialised.length > RESPONSE_BODY_LIMIT) {
+    throw new Error("ICA-katalogen gav ett för stort svar.");
+  }
+}
+
+async function publicCataloguePayload(
+  client: IcaCatalogueSessionClient,
+  accessToken: string,
+  body: {
+    organizationId: string;
+    storeId: string;
+    queries: readonly string[];
+  },
+): Promise<unknown> {
+  let result: Awaited<ReturnType<IcaCatalogueSessionClient["functions"]["invoke"]>>;
+  try {
+    result = await client.functions.invoke(ICA_CATALOGUE_FUNCTION, {
+      body,
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+      },
+    });
+  } catch {
+    throw new Error("ICA-katalogen kunde inte nås just nu.");
+  }
+
+  if (result.error) {
+    const response = responseFromFunctionError(result.error);
+    if (!response) {
+      throw new Error("ICA-katalogen kunde inte nås just nu.");
+    }
+    let payload: unknown = null;
+    try {
+      payload = await responsePayload(response);
+    } catch {
+      // Keep malformed, oversized and non-JSON Edge errors away from the UI.
+    }
+    throw new Error(
+      errorMessage(payload) ?? "ICA-katalogen kunde inte hämtas just nu.",
+    );
+  }
+
+  assertPayloadSize(result.data);
+  return result.data;
+}
+
+async function localCataloguePayload(
+  accessToken: string,
+  body: {
+    organizationId: string;
+    storeId: string;
+    queries: readonly string[];
+  },
+  fetcher: FetchLike,
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetcher(ICA_CATALOGUE_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+  } catch {
+    throw new Error("ICA-katalogen kunde inte nås just nu.");
+  }
+
+  const payload = await responsePayload(response);
+  if (!response.ok) {
+    throw new Error(
+      errorMessage(payload) ?? "ICA-katalogen kunde inte hämtas just nu.",
+    );
+  }
+  return payload;
+}
+
 function catalogueResponse(
   payload: unknown,
   expectedStoreId: string,
   expectedQueries: readonly string[],
+  expectedRuntimeSource: IcaCatalogueRuntimeSource,
 ): IcaCatalogueResponse | null {
   const body = record(payload);
   const source = record(body?.source);
@@ -113,6 +225,8 @@ function catalogueResponse(
   if (
     source?.provider !== "ica"
     || (!publicWebshop && !localFixture)
+    || (expectedRuntimeSource === "public" && !publicWebshop)
+    || (expectedRuntimeSource === "fixture" && !localFixture)
     || typeof source.complete !== "boolean"
     || store?.id !== expectedStoreId
     || !Array.isArray(body?.products)
@@ -142,6 +256,7 @@ export async function fetchIcaCatalogueBatch(
   organizationId: string,
   storeId: string,
   queries: readonly string[],
+  runtimeSource: IcaCatalogueRuntimeSource,
   fetcher: FetchLike = globalThis.fetch,
 ): Promise<IcaCatalogueResponse> {
   const { data, error } = await client.auth.getSession();
@@ -157,34 +272,16 @@ export async function fetchIcaCatalogueBatch(
     throw new Error("Logga in igen för att hämta ICA:s sortiment.");
   }
 
-  let response: Response;
-  try {
-    response = await fetcher(ICA_CATALOGUE_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        organizationId,
-        storeId,
-        queries,
-      }),
-      cache: "no-store",
-      credentials: "same-origin",
-    });
-  } catch {
-    throw new Error("ICA-katalogen kunde inte nås just nu.");
-  }
-
-  const payload = await responsePayload(response);
-  if (!response.ok) {
-    throw new Error(
-      errorMessage(payload) ?? "ICA-katalogen kunde inte hämtas just nu.",
-    );
-  }
-  const catalogue = catalogueResponse(payload, storeId, queries);
+  const body = { organizationId, storeId, queries };
+  const payload = runtimeSource === "fixture"
+    ? await localCataloguePayload(accessToken, body, fetcher)
+    : await publicCataloguePayload(client, accessToken, body);
+  const catalogue = catalogueResponse(
+    payload,
+    storeId,
+    queries,
+    runtimeSource,
+  );
   if (!catalogue) {
     throw new Error("ICA-katalogen svarade i ett oväntat format.");
   }

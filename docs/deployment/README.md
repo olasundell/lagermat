@@ -5,7 +5,7 @@ Lägermat is deployed from one verified Git revision into two fixed, isolated ho
 | Tier | Netlify | Supabase | Data |
 | --- | --- | --- | --- |
 | Local | Vite on loopback | Local CLI/Docker | Development seeds |
-| Staging | One stable Netlify site | Separate Free project | Synthetic data only |
+| Staging | One stable Netlify site | Separate Free project | Synthetic camp data plus temporary public ICA catalogue rows |
 | Production | One custom-domain Netlify site | Pro project in North EU (Stockholm) | Approved pilot data |
 
 No deploy preview is allowed to use either hosted database. Netlify receives only a Supabase publishable key. Supabase server credentials, database passwords, SMTP credentials and the Netlify token stay in protected GitHub environments.
@@ -21,7 +21,8 @@ No deploy preview is allowed to use either hosted database. Netlify receives onl
 Provider setup is intentionally not automated from an untrusted workstation.
 Follow [provisioning.md](provisioning.md), then use [release.md](release.md) for
 each release and [operations.md](operations.md) for routine monitoring.
-The synthetic public-demo data and its exact 24-hour lifecycle are described in
+The synthetic public-demo data, temporary tenant-scoped ICA catalogue rows and
+their exact 24-hour lifecycle are described in
 [demo-fixture.md](demo-fixture.md). The strict staging/production mode,
 Turnstile, email and static-Netlify boundary is specified in
 [demo-environments.md](demo-environments.md). Production remains blocked until
@@ -38,6 +39,8 @@ a release.
 - Never add a service-role/secret key to `VITE_*`, Netlify, browser storage or a generated bundle.
 - Never deploy `supabase/seed.sql` or `supabase/seed/**` to production.
 - Never put real participant, dietary, supplier, price or stock data in the canonical demo fixture.
+- Never persist real staging data beyond temporary public ICA catalogue rows
+  isolated to an expiring demo organisation.
 - Never point staging, branch builds or local tests at production Supabase.
 - Never give production `DEMO_MODE=true`, a Turnstile key or anonymous Auth.
 - Never deploy the public demo without the explicit empty Netlify Functions

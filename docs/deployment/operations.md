@@ -9,7 +9,9 @@ Route alerts to at least two named operators and test the route quarterly.
 - GitHub: failed `Verify` or `Deploy hosted` runs and production environment approvals that remain pending unexpectedly.
 - Netlify: failed deploys, certificate/domain failures and unusual bandwidth or request-volume changes.
 - Supabase Auth: repeated failed sign-ins, invitation abuse, unexpected new identities and administrator MFA/AAL2 failures.
-- Supabase Edge Functions: elevated error/latency rates for invitations and any authentication failures caused by origin/CORS validation.
+- Supabase Edge Functions: elevated error/latency rates for invitations and
+  staging ICA catalogue searches, plus authentication failures caused by
+  origin/CORS validation.
 - Supabase database: storage, CPU, memory, connection and backup thresholds. Review Security and Performance Advisor findings after schema releases.
 
 Alerts must identify the tier, release SHA and technical correlation identifier. Do not include participant names, email addresses, invitation values, dietary notes or access tokens.

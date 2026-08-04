@@ -11,6 +11,8 @@ const demoHandler = await readFile("supabase/functions/start-demo/handler.ts", "
 const scoutnetFunction = await readFile("supabase/functions/scoutnet-connection/index.ts", "utf8");
 const scoutnetHandler = await readFile("supabase/functions/scoutnet-connection/handler.ts", "utf8");
 const scoutnetAdapter = await readFile("supabase/functions/scoutnet-connection/adapter.ts", "utf8");
+const icaCatalogueFunction = await readFile("supabase/functions/ica-catalogue/index.ts", "utf8");
+const icaCatalogueEnvironment = await readFile("supabase/functions/ica-catalogue/environment.ts", "utf8");
 const supabaseConfig = await readFile("supabase/config.toml", "utf8");
 const environmentExample = await readFile(".env.example", "utf8");
 const loginPage = await readFile("src/features/auth/LoginPage.tsx", "utf8");
@@ -53,6 +55,12 @@ const assertions = [
       && hostedSupabaseStaging.includes('const targetFunctionsPath = resolve(targetSupabase, "functions");')
       && hostedSupabaseStaging.includes("await cp(sourceFunctionsPath, targetFunctionsPath, { recursive: true });"),
     "Den skyddade temporära Supabase-katalogen måste innehålla hela det versionsbundna Functions-trädet."
+  ],
+  [
+    hostedSupabaseStaging.includes('const sourceSharedPath = resolve("shared");')
+      && hostedSupabaseStaging.includes('const targetSharedPath = resolve(targetRoot, "shared");')
+      && hostedSupabaseStaging.includes("await cp(sourceSharedPath, targetSharedPath, { recursive: true });"),
+    "Båda hostade byggkatalogerna måste kunna lösa ICA-funktionens delade källkod; produktion stänger av själva funktionen i config."
   ],
   [
     configPushStep.includes("working-directory: .tmp/hosted-supabase")
@@ -108,6 +116,9 @@ const assertions = [
   [demoHandler.includes('environment.demoMode !== "true"') && demoHandler.includes('"demo_disabled"'), "Demofunktionen måste neka alla miljöer där serverns DEMO_MODE inte är true."],
   [scoutnetFunction.includes("context.supabaseAdmin.auth.getUser") && scoutnetFunction.includes('"connect_scoutnet_project"'), "Scoutnet-funktionen måste verifiera Auth-användaren före service-RPC:n."],
   [scoutnetHandler.includes('request.headers.get("Origin") !== appOrigin') && !scoutnetHandler.includes('"Access-Control-Allow-Origin": "*"'), "Scoutnet-funktionen måste använda exakt CORS-origin utan wildcard."],
+  [icaCatalogueFunction.includes('from "../../../shared/icaCatalogueHandler.ts"') && icaCatalogueFunction.includes("allowedOrigin: appOrigin"), "ICA-funktionen måste använda den delade handlern med exakt hosted origin."],
+  [icaCatalogueEnvironment.includes('environment.get("DEMO_MODE") === "true"') && icaCatalogueFunction.includes("appOrigin && demoModeEnabled"), "ICA-funktionen måste neka en saknad, falsk eller felskriven server-side demo-gate."],
+  [icaCatalogueFunction.includes('defaultHostedKey("SUPABASE_SECRET_KEYS")') && !icaCatalogueFunction.includes("VITE_"), "ICA-funktionen måste använda Supabases server-side Edge-nycklar utan Vite-exponering."],
   [scoutnetAdapter.includes("createAuthorizationHeader") && scoutnetAdapter.includes('redirect: "error"'), "Scoutnet-funktionen måste använda den låsta Basic Auth-hjälparen utan redirect."],
   [scoutnetHandler.includes('"question-catalogue"') && scoutnetHandler.includes('"participant-snapshot"') && scoutnetHandler.includes("validateScoutnetQuestionMappingAgainstCatalogue"), "Scoutnet-funktionen måste exponera avgränsad katalog/snapshot och omvalidera mappningen."],
   [scoutnetAdapter.includes("crypto.subtle") && scoutnetAdapter.includes('"HMAC"') && scoutnetAdapter.includes('"SHA-256"') && scoutnetAdapter.includes("scoutnet:v1:"), "Scoutnet-adaptern måste pseudonymisera källreferenser med HMAC."],
@@ -120,7 +131,8 @@ const assertions = [
   [hostedBoundary.includes("DEMO_MODE och VITE_DEMO_MODE måste vara identiska") && hostedBoundary.includes("Produktion får inte få TURNSTILE_SECRET_KEY"), "Den hostade miljövalidatorn måste binda klient-/serverläge och neka demohemligheter i produktion."],
   [hostedBoundaryVerification.includes("staging är demo-only och produktion privat"), "Den säkra CI-matrisen för miljögränser saknas."],
   [hostedBuild.includes("TURNSTILE_ORIGIN") && hostedBuild.includes("frame-src 'none'"), "CSP måste vara Turnstile-avgränsad i staging och frame-nekande i produktion."],
-  [hostedSmoke.includes('Origin: "https://cors-check.invalid"') && hostedSmoke.includes("access-control-allow-origin"), "Hosted smoke måste prova både tillåten och nekad CORS-origin."]
+  [hostedSmoke.includes('Origin: "https://cors-check.invalid"') && hostedSmoke.includes("access-control-allow-origin"), "Hosted smoke måste prova både tillåten och nekad CORS-origin."],
+  [hostedSmoke.includes("/functions/v1/ica-catalogue"), "Hosted staging-smoke måste kontrollera ICA-funktionens exakta CORS-gräns."]
 ];
 
 if (process.argv.includes("--hosted")) {
@@ -135,6 +147,8 @@ if (process.argv.includes("--hosted")) {
     [supabase.includes('TURNSTILE_SECRET_KEY = "env(TURNSTILE_SECRET_KEY)"'), "Turnstile-hemligheten måste komma från servermiljön."],
     [supabase.includes('DEMO_MODE = "env(DEMO_MODE)"'), "Edge Functions måste få ett separat server-side DEMO_MODE."],
     [/\[functions\.start-demo\][\s\S]*?verify_jwt = true/.test(supabase), "Demofunktionen måste verifiera användar-JWT."],
+    [/\[functions\.ica-catalogue\][\s\S]*?verify_jwt = true/.test(supabase), "ICA-funktionen måste verifiera användar-JWT."],
+    [/"functions\.ica-catalogue",\n {4}"enabled",\n {4}demoEnabled \? "true" : "false"/.test(hostedBoundary), "ICA-funktionen måste renderas på i staging och av i produktion."],
     [/\[functions\.scoutnet-connection\][\s\S]*?verify_jwt = true/.test(supabase), "Scoutnet-funktionen måste verifiera användar-JWT."],
     [supabase.includes('SCOUTNET_SOURCE_REFERENCE_SECRET = "env(SCOUTNET_SOURCE_REFERENCE_SECRET)"'), "Scoutnet-HMAC-hemligheten måste komma från servermiljön."],
     [!supabase.includes("./seed/demo_recipes.sql"), "Genererad utvecklingsseed får inte ingå i databasåterställning."]

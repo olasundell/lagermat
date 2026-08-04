@@ -1,7 +1,5 @@
 import type { SupplierAccount, SupplierProduct } from "./supplierModel";
-
-export const ICA_CATALOGUE_NORMALISATION_VERSION =
-  "ica-public-catalogue-v2";
+export { ICA_CATALOGUE_NORMALISATION_VERSION } from "../../../shared/icaCatalogueNormalisation";
 export const LOCAL_ICA_FIXTURE_WARNING =
   "LOKAL SYNTETISK TESTARTIKEL – INTE BUTIKSDATA";
 

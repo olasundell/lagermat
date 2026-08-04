@@ -18,7 +18,9 @@ an anonymous public application.
 | SMTP/Resend | Must be absent | Required |
 | `invite-member` | Disabled by config and server gate | Enabled |
 | `start-demo` | Enabled and server-gated | Disabled by config and server gate |
-| Data | Canonical synthetic fixture only | No demo seed |
+| `ica-catalogue` | Enabled, authenticated and exact-origin gated | Disabled by config and server gate |
+| Camp and participant data | Canonical synthetic fixture only | No demo seed |
+| Supplier data | Temporary real ICA public-catalogue results, isolated to the demo organisation | Approved production data only |
 | Netlify domain | Fixed `netlify.app` staging URL | Separately approved private origin |
 
 `scripts/hosted-environment.mjs` is the single renderer and validator for this
@@ -31,8 +33,19 @@ The generated staging Supabase configuration disables both the email provider
 and custom SMTP. It enables anonymous sign-in behind Turnstile and uses the
 server secret only through `env(TURNSTILE_SECRET_KEY)`. The production
 configuration does the inverse and removes the Turnstile secret reference.
-Both Edge Functions also check server-side `DEMO_MODE`, so stale function
-deployments fail closed.
+The demo and ICA Edge Functions also check server-side `DEMO_MODE`, so stale
+function deployments fail closed. `ica-catalogue` is enabled only in the
+rendered staging configuration. Its platform-neutral shared code is included
+in both self-contained Supabase build workdirs so older CLI bundlers can
+resolve the complete source graph, but the production renderer sets the
+function itself to `enabled = false`.
+
+The demo's camps, participants, attendance and dietary data remain synthetic.
+An authenticated planner action may fetch real product names, package data and
+prices from ICA's public catalogue. Those rows are stored only inside the
+caller's isolated demo organisation, become inaccessible when the instance
+expires after 24 hours and are physically removed by the next hourly cleanup.
+They are runtime supplier data, not part of the canonical fixture.
 
 The demo login page contains no email form or invitation path. Production
 contains no demo action. This is a build-time boundary backed by a separate
@@ -40,12 +53,14 @@ server-side boundary; neither trusts the other.
 
 ## Static Netlify boundary
 
-The demo backend is the authenticated Supabase Edge Function `start-demo`.
-It adds no Netlify Function.
+The demo backend consists of the authenticated Supabase Edge Functions
+`start-demo` and, in staging only, `ica-catalogue`. Neither adds a Netlify
+Function or gives Netlify a Supabase server secret.
 
 The repository also contains two supplier-only Netlify Functions added after
-the demo architecture was approved. They remain useful for local ICA catalogue
-and semantic-matching work, but they must not hitchhike into the public demo.
+the demo architecture was approved. They remain useful for local supplier
+development, but they must not hitchhike into the public demo. Hosted ICA
+search uses the separate Supabase Edge Function instead.
 Netlify CLI resolves the configured function directory even when `--dir=dist`
 is provided. `scripts/build-netlify.mjs` therefore creates an explicitly empty
 `.tmp/netlify-static-functions` directory. A future approved demo deployment
@@ -109,8 +124,10 @@ publication, re-read both sites and verify:
 3. a Turnstile widget restricted to the exact staging hostname, with site key
    and secret stored in their correct public/protected locations;
 4. anonymous Auth and email-provider state after config push;
-5. zero Netlify Functions in the resulting deploy;
-6. no production, custom-domain, analytics or real-data changes; and
+5. zero Netlify Functions in the resulting deploy and a healthy authenticated
+   `ica-catalogue` preflight through Supabase;
+6. no real participant or dietary data, production, custom-domain or analytics
+   changes; and
 7. fresh explicit user approval for the external staging deployment.
 
 The Supabase staging project restore is the only provider mutation recorded in

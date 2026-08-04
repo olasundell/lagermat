@@ -345,6 +345,12 @@ export function renderHostedSupabaseConfig(source, configuration) {
     "enabled",
     demoEnabled ? "false" : "true"
   );
+  rendered = replaceSectionSetting(
+    rendered,
+    "functions.ica-catalogue",
+    "enabled",
+    demoEnabled ? "true" : "false"
+  );
 
   const captchaTemplate = [
     "# Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.",

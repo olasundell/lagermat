@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "strict": true
+  },
+  "imports": {
+    "decimal.js": "npm:decimal.js@10.6.0"
+  }
+}

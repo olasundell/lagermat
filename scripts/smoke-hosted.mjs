@@ -105,44 +105,49 @@ const authHealth = await fetchOk(`${supabaseOrigin}/auth/v1/health`, {
 });
 await authHealth.body?.cancel();
 
-const corsProtectedFunction = hostedMode.demoEnabled
-  ? `${supabaseOrigin}/functions/v1/start-demo`
-  : `${supabaseOrigin}/functions/v1/invite-member`;
+const corsProtectedFunctions = hostedMode.demoEnabled
+  ? [
+    `${supabaseOrigin}/functions/v1/start-demo`,
+    `${supabaseOrigin}/functions/v1/ica-catalogue`
+  ]
+  : [`${supabaseOrigin}/functions/v1/invite-member`];
 const corsRequestHeaders = {
   Origin: appOrigin,
   "Access-Control-Request-Method": "POST",
   "Access-Control-Request-Headers": "authorization, apikey, content-type"
 };
-const allowedPreflight = await fetchStatus(corsProtectedFunction, {
-  method: "OPTIONS",
-  headers: corsRequestHeaders
-}, 204);
-if (allowedPreflight.headers.get("access-control-allow-origin") !== appOrigin) {
-  fail("Edge Function returnerar inte den exakta app-originen för tillåtna CORS-anrop.");
-}
-const varyHeaders = (allowedPreflight.headers.get("vary") ?? "")
-  .toLowerCase()
-  .split(",")
-  .map((value) => value.trim());
-if (!varyHeaders.includes("origin")) {
-  fail("Edge Function varierar inte CORS-svaret på Origin.");
-}
-if (!(allowedPreflight.headers.get("access-control-allow-methods") ?? "").includes("POST")) {
-  fail("Edge Function tillåter inte det avsedda POST-anropet.");
-}
-await allowedPreflight.body?.cancel();
-
-const rejectedPreflight = await fetchStatus(corsProtectedFunction, {
-  method: "OPTIONS",
-  headers: {
-    ...corsRequestHeaders,
-    Origin: "https://cors-check.invalid"
+for (const corsProtectedFunction of corsProtectedFunctions) {
+  const allowedPreflight = await fetchStatus(corsProtectedFunction, {
+    method: "OPTIONS",
+    headers: corsRequestHeaders
+  }, 204);
+  if (allowedPreflight.headers.get("access-control-allow-origin") !== appOrigin) {
+    fail(`${corsProtectedFunction} returnerar inte den exakta app-originen för tillåtna CORS-anrop.`);
   }
-}, 403);
-if (rejectedPreflight.headers.has("access-control-allow-origin")) {
-  fail("Edge Function exponerar en CORS-origin för en otillåten webbplats.");
+  const varyHeaders = (allowedPreflight.headers.get("vary") ?? "")
+    .toLowerCase()
+    .split(",")
+    .map((value) => value.trim());
+  if (!varyHeaders.includes("origin")) {
+    fail(`${corsProtectedFunction} varierar inte CORS-svaret på Origin.`);
+  }
+  if (!(allowedPreflight.headers.get("access-control-allow-methods") ?? "").includes("POST")) {
+    fail(`${corsProtectedFunction} tillåter inte det avsedda POST-anropet.`);
+  }
+  await allowedPreflight.body?.cancel();
+
+  const rejectedPreflight = await fetchStatus(corsProtectedFunction, {
+    method: "OPTIONS",
+    headers: {
+      ...corsRequestHeaders,
+      Origin: "https://cors-check.invalid"
+    }
+  }, 403);
+  if (rejectedPreflight.headers.has("access-control-allow-origin")) {
+    fail(`${corsProtectedFunction} exponerar en CORS-origin för en otillåten webbplats.`);
+  }
+  await rejectedPreflight.body?.cancel();
 }
-await rejectedPreflight.body?.cancel();
 
 console.log(
   `Hosted smoke test godkänd för ${appOrigin} `

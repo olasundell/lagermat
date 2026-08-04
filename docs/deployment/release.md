@@ -4,22 +4,31 @@
 
 - Confirm migrations are expand/contract compatible with the previously cached PWA and do not require a destructive rollback.
 - Confirm the generated database types are committed with their migration and all `Verify` jobs pass freshly.
-- Confirm staging contains synthetic data only and production configuration contains no development seed.
+- Confirm staging contains no real participant or dietary data. Real staging
+  data must be limited to temporary ICA public-catalogue rows inside expiring
+  synthetic demo organisations. Confirm production contains no development
+  seed.
 - For the first real-data release, attach the approved [privacy gate](privacy-gate.md) and [recipe-catalogue approvals](recipe-catalogue.md).
 
 ## Automated sequence
 
 1. Merge the reviewed revision to protected `main`.
 2. `Verify` rebuilds and tests the exact commit.
-3. `Deploy hosted` dry-runs and applies Supabase staging migrations, pushes Auth/SMTP configuration, sets the exact Edge Function origin and deploys all versioned functions.
+3. `Deploy hosted` dry-runs and applies Supabase staging migrations, pushes
+   Auth/SMTP configuration, sets the exact Edge Function origin and deploys
+   all versioned functions enabled for that tier. The authenticated
+   `ica-catalogue` function is enabled only for the demo environment. Its
+   shared source remains present in both self-contained build workdirs so the
+   pinned CLI can resolve imports without making the function live in
+   production.
 4. For staging, the generated configuration enables anonymous
    Turnstile-protected Auth, disables email/SMTP and gates invitations. The
    same commit is built and inspected in demo mode.
 5. The fixed Netlify staging site is uploaded only as a static artefact with
    `--dir=dist --functions=.tmp/netlify-static-functions --no-build`.
    Non-destructive smoke tests check the SPA fallback, mode-specific CSP,
-   security/cache headers, hashed assets, Auth provider state and zero
-   functions.
+   security/cache headers, hashed assets, Auth provider state, the staging ICA
+   Edge Function's exact-origin CORS contract and zero Netlify Functions.
 6. The production job waits for the `production` environment reviewer. The reviewer confirms a visible recent backup, provider status, approved privacy state and the staging result.
 7. Production is built with both demo switches false, no Turnstile values,
    anonymous Auth off and private email/SMTP on.

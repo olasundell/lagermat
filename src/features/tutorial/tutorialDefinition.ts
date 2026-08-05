@@ -223,7 +223,7 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "/matsedel",
         "Så läser du matsedeln",
         "Kolumnerna är lägerdagar och raderna är måltidstyper. Varje ruta visar tid, recept och om mängden är uträknad.",
-        "schedule-heading",
+        "schedule-grid-heading",
         "schedule-page",
         "bottom"
       ),

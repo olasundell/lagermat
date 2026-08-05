@@ -512,7 +512,7 @@ export function ProcurementPage() {
       ) : null}
 
       {!listsQuery.isLoading && !purchaseList ? (
-        <div className="empty-state" data-tutorial-id="procurement-review"><PackageCheck aria-hidden="true" size={34} /><h2>{hasCurrentCalculation ? "Skapa listor från matsedeln" : calculationStatusUnavailable ? "Inköpslistor saknas" : "Inköpslistorna skapas efter beräkningen"}</h2><p>{hasCurrentCalculation ? "Mängderna är aktuella och redo att bli inköpslistor." : calculationStatusUnavailable ? "Anslut till databasen för att kontrollera beräkningen." : "När mängderna är uträknade kan du skapa listorna här."}</p></div>
+        <div className="empty-state"><PackageCheck aria-hidden="true" size={34} /><h2 data-tutorial-id="procurement-review">{hasCurrentCalculation ? "Skapa listor från matsedeln" : calculationStatusUnavailable ? "Inköpslistor saknas" : "Inköpslistorna skapas efter beräkningen"}</h2><p>{hasCurrentCalculation ? "Mängderna är aktuella och redo att bli inköpslistor." : calculationStatusUnavailable ? "Anslut till databasen för att kontrollera beräkningen." : "När mängderna är uträknade kan du skapa listorna här."}</p></div>
       ) : null}
 
       {perspective === "purchase" && purchaseList ? (
@@ -626,9 +626,8 @@ export function ProcurementPage() {
           <div
             className="procurement-filters"
             aria-label="Filtrera inköpslistan"
-            data-tutorial-id="procurement-review"
           >
-            <label className="procurement-search">
+            <label className="procurement-search" data-tutorial-id="procurement-review">
               <span className="sr-only">Sök råvara, kommentar eller ICA-artikel</span>
               <Search aria-hidden="true" size={20} />
               <input

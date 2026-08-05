@@ -130,7 +130,8 @@ async function expectTutorialTargetUnobscured(
 
   await expect.poll(async () => {
     const viewport = page.viewportSize();
-    const targetBox = await target.boundingBox();
+    const targetBox = await page.locator("[data-tutorial-active='true']")
+      .boundingBox();
     const dialogBox = await page.getByRole("dialog").boundingBox();
     if (!viewport || !targetBox || !dialogBox) return false;
 
@@ -149,7 +150,10 @@ async function expectTutorialTargetUnobscured(
         - Math.max(targetBox.y, dialogBox.y)
     );
 
-    return insideViewport && horizontalOverlap * verticalOverlap === 0;
+    const meaningfulTargetArea = targetBox.width >= 24 && targetBox.height >= 16;
+    return insideViewport
+      && meaningfulTargetArea
+      && horizontalOverlap * verticalOverlap === 0;
   }, {
     message: `Guidens mål ${tutorialId} ska vara synligt och inte täckas av dialogen`
   }).toBe(true);
@@ -221,7 +225,7 @@ test("guiden fungerar på den kanoniska demoläger-fixturen", async ({ page }, t
 
   const finishingRequests = stateChangingRequests(page);
   for (const [title, step, tutorialId] of [
-    ["Så läser du matsedeln", "Steg 1 av 4", "schedule-heading"],
+    ["Så läser du matsedeln", "Steg 1 av 4", "schedule-grid-heading"],
     ["Öppna och ändra en servering", "Steg 2 av 4", "schedule-meal-example"],
     ["Följ vad som återstår", "Steg 3 av 4", "schedule-status"],
     ["Räkna ut mängderna", "Steg 4 av 4", "schedule-calculate"]
@@ -241,7 +245,8 @@ test("guiden fungerar på den kanoniska demoläger-fixturen", async ({ page }, t
   }
   const mealExample = page.locator("[data-tutorial-id='schedule-meal-example']");
   await expect(mealExample).toBeVisible();
-  await expect(mealExample.getByRole("button")).toContainText("Ändra måltid");
+  await expect(mealExample.locator("..")).toHaveRole("button");
+  await expect(mealExample.locator("..")).toContainText("Ändra måltid");
   await expect(page.locator("[data-tutorial-id='schedule-calculate']"))
     .toHaveRole("button");
   await expect(page.locator("[data-tutorial-id='schedule-calculate']"))

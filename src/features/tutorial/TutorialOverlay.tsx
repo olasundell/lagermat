@@ -24,6 +24,7 @@ interface TargetRect {
 
 const TUTORIAL_EDGE_GAP = 4;
 const TUTORIAL_TARGET_PADDING = 5;
+const MOBILE_TARGET_OFFSET = 16;
 const MIN_VERTICAL_POPOVER_SPACE = 320;
 const MIN_HORIZONTAL_POPOVER_SPACE = 452;
 
@@ -58,23 +59,32 @@ function useMobileTutorial(): boolean {
   return mobile;
 }
 
-function useTargetRect(target: HTMLElement | null): TargetRect | null {
+function useTargetRect(
+  target: HTMLElement | null,
+  mobile: boolean
+): TargetRect | null {
   const [rect, setRect] = useState<TargetRect | null>(null);
 
   useLayoutEffect(() => {
     if (!target) return;
 
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches;
-    const scrollTargetIntoView = (behavior: ScrollBehavior) => {
+    const scrollTargetIntoView = () => {
       target.scrollIntoView({
         block: "center",
         inline: "nearest",
-        behavior
+        behavior: "auto"
       });
+      if (mobile) {
+        const next = target.getBoundingClientRect();
+        const targetInLowerHalf = next.top + next.height / 2
+          > window.innerHeight / 2;
+        window.scrollBy({
+          top: targetInLowerHalf ? -MOBILE_TARGET_OFFSET : MOBILE_TARGET_OFFSET,
+          behavior: "auto"
+        });
+      }
     };
-    scrollTargetIntoView(reducedMotion ? "auto" : "smooth");
+    scrollTargetIntoView();
 
     const update = () => {
       const next = target.getBoundingClientRect();
@@ -116,7 +126,7 @@ function useTargetRect(target: HTMLElement | null): TargetRect | null {
       // Route scroll restoration and modal autofocus can run after the first
       // layout effect. Re-apply the target scroll once the overlay has settled
       // so off-screen anchors remain visible, especially in the mobile sheet.
-      scrollTargetIntoView(reducedMotion ? "auto" : "smooth");
+      scrollTargetIntoView();
       update();
     });
     const resizeObserver = typeof ResizeObserver === "undefined"
@@ -131,7 +141,7 @@ function useTargetRect(target: HTMLElement | null): TargetRect | null {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [target]);
+  }, [mobile, target]);
 
   return target ? rect : null;
 }
@@ -265,7 +275,7 @@ function TutorialCard({
 
 export function TutorialOverlay(props: TutorialOverlayProps) {
   const mobile = useMobileTutorial();
-  const targetRect = useTargetRect(props.target);
+  const targetRect = useTargetRect(props.target, mobile);
   const { onClose } = props;
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {

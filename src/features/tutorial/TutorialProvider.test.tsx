@@ -284,7 +284,7 @@ describe("TutorialProvider", () => {
     const { rerender } = render(
       <TutorialProvider activeDemo>
           <div data-tutorial-id="schedule-page">
-            <div data-tutorial-id="schedule-heading">Matsedel</div>
+            <div data-tutorial-id="schedule-grid-heading">Lägerdag</div>
           <div data-tutorial-id="schedule-meal-example">Måltidsruta</div>
           <div data-tutorial-id="schedule-status">Status</div>
           <div data-tutorial-id="schedule-calculate">Beräkning</div>

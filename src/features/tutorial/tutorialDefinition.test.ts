@@ -79,7 +79,7 @@ describe("tutorialDefinition", () => {
       "diets-decision-card",
       "recipes-library",
       "recipes-copy-heading",
-      "schedule-heading",
+      "schedule-grid-heading",
       "schedule-meal-example",
       "schedule-status",
       "schedule-calculate",

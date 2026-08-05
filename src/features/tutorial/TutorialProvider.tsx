@@ -14,6 +14,7 @@ import {
 import {
   INTRO_TUTORIAL_STEPS,
   PAGE_TUTORIALS,
+  PROCUREMENT_MATCHING_TUTORIAL,
   type TutorialStep
 } from "./tutorialDefinition";
 import { TutorialOverlay } from "./TutorialOverlay";
@@ -30,11 +31,19 @@ interface OverviewTutorialRegistration {
   ready: boolean;
 }
 
+interface ProcurementTutorialRegistration {
+  ready: boolean;
+  matchingAvailable: boolean;
+}
+
 interface TutorialContextValue {
   canReplay: boolean;
   replay: () => void;
   registerOverview: (
     registration: OverviewTutorialRegistration | null
+  ) => void;
+  registerProcurement: (
+    registration: ProcurementTutorialRegistration | null
   ) => void;
 }
 
@@ -46,7 +55,8 @@ interface TutorialTargetState {
 const TutorialContext = createContext<TutorialContextValue>({
   canReplay: false,
   replay: () => undefined,
-  registerOverview: () => undefined
+  registerOverview: () => undefined,
+  registerProcurement: () => undefined
 });
 
 export function useTutorial(): TutorialContextValue {
@@ -85,16 +95,18 @@ export function TutorialProvider({
   );
   const [overview, setOverview] =
     useState<OverviewTutorialRegistration | null>(null);
+  const [procurement, setProcurement] =
+    useState<ProcurementTutorialRegistration | null>(null);
   const [targetState, setTargetState] =
     useState<TutorialTargetState | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const hadActiveStep = useRef(false);
 
-  const pageTutorial = PAGE_TUTORIALS.find(
+  const routeTutorial = PAGE_TUTORIALS.find(
     (tutorial) => tutorial.route === pathname
   );
-  const pageStepIndex = pageTutorial
-    ? progress.pageSteps[pageTutorial.id] ?? 0
+  const routeStepIndex = routeTutorial
+    ? progress.pageSteps[routeTutorial.id] ?? 0
     : 0;
   const introVisible = activeDemo
     && pathname === "/"
@@ -103,13 +115,35 @@ export function TutorialProvider({
       progress.introStatus === "not-started"
       || progress.introStatus === "in-progress"
     );
-  const pageVisible = activeDemo
+  const routeTutorialVisible = activeDemo
     && (
       progress.introStatus === "completed"
       || progress.introStatus === "skipped"
     )
-    && Boolean(pageTutorial)
-    && Boolean(pageTutorial && pageStepIndex < pageTutorial.steps.length);
+    && Boolean(routeTutorial)
+    && Boolean(routeTutorial && routeStepIndex < routeTutorial.steps.length);
+  const matchingStepIndex =
+    progress.pageSteps[PROCUREMENT_MATCHING_TUTORIAL.id] ?? 0;
+  const matchingTutorialVisible = activeDemo
+    && (
+      progress.introStatus === "completed"
+      || progress.introStatus === "skipped"
+    )
+    && pathname === PROCUREMENT_MATCHING_TUTORIAL.route
+    && routeTutorial?.id === "procurement"
+    && routeStepIndex >= routeTutorial.steps.length
+    && procurement?.ready === true
+    && procurement.matchingAvailable
+    && matchingStepIndex < PROCUREMENT_MATCHING_TUTORIAL.steps.length;
+  const pageTutorial = routeTutorialVisible
+    ? routeTutorial ?? null
+    : matchingTutorialVisible
+      ? PROCUREMENT_MATCHING_TUTORIAL
+      : null;
+  const pageStepIndex = pageTutorial
+    ? progress.pageSteps[pageTutorial.id] ?? 0
+    : 0;
+  const pageVisible = pageTutorial !== null;
   const introIndex = Math.min(
     progress.introStep,
     INTRO_TUTORIAL_STEPS.length - 1
@@ -141,6 +175,13 @@ export function TutorialProvider({
   const registerOverview = useCallback(
     (registration: OverviewTutorialRegistration | null) => {
       setOverview(registration);
+    },
+    []
+  );
+
+  const registerProcurement = useCallback(
+    (registration: ProcurementTutorialRegistration | null) => {
+      setProcurement(registration);
     },
     []
   );
@@ -288,8 +329,9 @@ export function TutorialProvider({
   const value = useMemo<TutorialContextValue>(() => ({
     canReplay: activeDemo,
     replay,
-    registerOverview
-  }), [activeDemo, registerOverview, replay]);
+    registerOverview,
+    registerProcurement
+  }), [activeDemo, registerOverview, registerProcurement, replay]);
 
   return (
     <TutorialContext.Provider value={value}>

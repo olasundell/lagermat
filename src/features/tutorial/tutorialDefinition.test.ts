@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_PAGE_TUTORIALS,
   INTRO_TUTORIAL_STEPS,
-  PAGE_TUTORIALS
+  PAGE_TUTORIALS,
+  PROCUREMENT_MATCHING_TUTORIAL
 } from "./tutorialDefinition";
 
 describe("tutorialDefinition", () => {
@@ -97,12 +99,33 @@ describe("tutorialDefinition", () => {
     }
   });
 
+  it("visar den fördjupade ICA-guiden först som ett eget tillståndsstyrt flöde", () => {
+    expect(PROCUREMENT_MATCHING_TUTORIAL).toMatchObject({
+      id: "procurement-matching",
+      route: "/inkop"
+    });
+    expect(PROCUREMENT_MATCHING_TUTORIAL.steps.map(({ title }) => title)).toEqual([
+      "Från råvara till ICA-artikel",
+      "Granska förslagen",
+      "Kontrollera förpackning och köpantal"
+    ]);
+    expect(PROCUREMENT_MATCHING_TUTORIAL.steps.map(({ primaryAnchor }) =>
+      primaryAnchor
+    )).toEqual([
+      "procurement-matching-overview",
+      "procurement-matching-decisions",
+      "procurement-order-details"
+    ]);
+    expect(ALL_PAGE_TUTORIALS).toContain(PROCUREMENT_MATCHING_TUTORIAL);
+  });
+
   it("innehåller den godkända tipstexten utan förbjudna användarord", () => {
-    const copy = JSON.stringify({ INTRO_TUTORIAL_STEPS, PAGE_TUTORIALS });
+    const copy = JSON.stringify({ INTRO_TUTORIAL_STEPS, ALL_PAGE_TUTORIALS });
     expect(copy).toContain("Här samlas specialkost som behöver bedömas innan mängderna räknas ut.");
     expect(copy).toContain("Välj en måltidsruta för att byta recept");
     expect(copy).toContain("Gå vidare till leveranser");
-    expect(copy).toContain("Lägermat hjälper till, men du godkänner underlaget.");
+    expect(copy).toContain("Ingen order skickas automatiskt");
+    expect(copy).toContain("När det finns faktiska matchningsresultat visas en separat genomgång");
     expect(copy).not.toMatch(/\b(?:demot|demoidentitet|demosession|demokopia)\b/i);
     expect(copy).not.toMatch(/\bett demo\b|syntetisk fixture|Nästa att lösa/i);
   });

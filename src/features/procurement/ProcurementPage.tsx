@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Calculator, Check, ListRestart, PackageCheck, Save, Search, ShoppingCart } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 import { userFacingError } from "../../lib/userFacingError";
 import { useAuth } from "../auth/AuthContext";
@@ -19,6 +19,7 @@ import {
   type SupplyListRow,
 } from "../supplies/supplyModel";
 import { useOfflineSupplyState } from "../supplies/useOfflineSupplyState";
+import { useTutorial } from "../tutorial/TutorialProvider";
 import { SupplierAccountsPanel, SupplierMatchEditor } from "../suppliers/SupplierFoundationPanel";
 import {
   SupplierCataloguePanel,
@@ -70,6 +71,7 @@ function OrderEditor({
   supplierAccounts,
   supplierDetails,
   supplierWritable,
+  tutorialTarget = false,
   hidden = false,
   onSaved,
   onSupplierSaved,
@@ -81,6 +83,7 @@ function OrderEditor({
   supplierAccounts: SupplierAccount[];
   supplierDetails: SupplierMatchDetail[];
   supplierWritable: boolean;
+  tutorialTarget?: boolean;
   hidden?: boolean;
   onSaved: () => Promise<void>;
   onSupplierSaved: () => Promise<void>;
@@ -134,7 +137,11 @@ function OrderEditor({
   }
 
   return (
-    <div hidden={hidden} className={`order-editor${item.source_present ? "" : " order-editor--missing"}`}>
+    <div
+      hidden={hidden}
+      className={`order-editor${item.source_present ? "" : " order-editor--missing"}`}
+      data-tutorial-id={tutorialTarget ? "procurement-order-details" : undefined}
+    >
       <div className="order-editor__identity">
         <strong>{item.item_name}</strong>
         <span className={practicalRequirement.issue ? "operational-amount--warning" : undefined}>
@@ -205,6 +212,7 @@ export function ProcurementPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { activeCamp, activeMembership } = useWorkspace();
+  const { registerProcurement } = useTutorial();
   const [perspective, setPerspective] = useState<Perspective>("purchase");
   const [selectedDistributionId, setSelectedDistributionId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -334,6 +342,41 @@ export function ProcurementPage() {
   );
   const checkingCurrentCalculation = offlineState.online && (currentCalculationQuery.isPending || currentCalculationQuery.isFetching);
   const calculationStatusUnavailable = !hasCurrentCalculation && (Boolean(currentCalculationQuery.error) || !offlineState.online);
+  const icaSupplierAccountIds = new Set(
+    supplierAccounts
+      .filter(isIcaSicklaAccount)
+      .map((account) => account.id)
+  );
+  const matchedIcaCanonicalKeys = new Set(
+    supplierDetails
+      .filter((detail) =>
+        icaSupplierAccountIds.has(detail.product.supplier_account_id)
+      )
+      .map((detail) => detail.match.canonical_key)
+  );
+  const tutorialOrderItemId = purchaseItems.find((item) =>
+    item.source_present && matchedIcaCanonicalKeys.has(item.canonical_key)
+  )?.id ?? null;
+  const procurementTutorialReady = !listsQuery.isLoading
+    && !currentCalculationQuery.isPending
+    && !supplierQuery.isPending;
+  const procurementMatchingAvailable = Boolean(
+    purchaseList
+    && listUsesCurrentCalculation
+    && tutorialOrderItemId
+  );
+
+  useEffect(() => {
+    registerProcurement({
+      ready: procurementTutorialReady,
+      matchingAvailable: procurementMatchingAvailable
+    });
+    return () => registerProcurement(null);
+  }, [
+    procurementMatchingAvailable,
+    procurementTutorialReady,
+    registerProcurement
+  ]);
 
   async function refresh() {
     await Promise.all([
@@ -619,7 +662,7 @@ export function ProcurementPage() {
             </label>
           </div>
           {visiblePurchaseItemIds.size === 0 ? <p className="procurement-filter-empty">Inga varor matchar filtret.</p> : null}
-          <div className="order-grid" data-tutorial-id="procurement-review">
+          <div className="order-grid">
             {purchaseItems.map((item) => (
               <OrderEditor
                 key={`${item.id}:${item.row_version}`}
@@ -631,6 +674,7 @@ export function ProcurementPage() {
                 supplierAccounts={supplierAccounts}
                 supplierDetails={supplierDetails.filter((detail) => detail.match.canonical_key === item.canonical_key)}
                 supplierWritable={networkWritable}
+                tutorialTarget={item.id === tutorialOrderItemId}
                 hidden={!visiblePurchaseItemIds.has(item.id)}
                 onSaved={refresh}
                 onSupplierSaved={refreshSuppliers}

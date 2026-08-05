@@ -260,6 +260,8 @@ test("guiden fungerar på den kanoniska demoläger-fixturen", async ({ page }, t
     testInfo.project.name,
     "Granska underlaget"
   );
+  await expect(page.getByRole("dialog", { name: "Granska underlaget" }))
+    .toContainText("När det finns faktiska matchningsresultat visas en separat genomgång");
   await expectTutorialTargetUnobscured(page, "procurement-review");
   await page.getByRole("button", {
     name: "Gå vidare till leveranser"

@@ -55,6 +55,29 @@ function OverviewFixture({
   );
 }
 
+function ProcurementMatchingFixture({
+  ready = true,
+  matchingAvailable
+}: {
+  ready?: boolean;
+  matchingAvailable: boolean;
+}) {
+  const { registerProcurement } = useTutorial();
+  useEffect(() => {
+    registerProcurement({ ready, matchingAvailable });
+    return () => registerProcurement(null);
+  }, [matchingAvailable, ready, registerProcurement]);
+
+  return (
+    <div data-tutorial-id="procurement-page">
+      <div data-tutorial-id="procurement-review">Inköpsunderlag</div>
+      <div data-tutorial-id="procurement-matching-overview">Matchningsöversikt</div>
+      <div data-tutorial-id="procurement-matching-decisions">Förslag</div>
+      <div data-tutorial-id="procurement-order-details">Beställningsrad</div>
+    </div>
+  );
+}
+
 function ReplayControl() {
   const { canReplay, replay } = useTutorial();
   return canReplay ? <button onClick={replay}>Visa guiden igen</button> : null;
@@ -323,5 +346,45 @@ describe("TutorialProvider", () => {
     expect(await screen.findByRole("dialog", {
       name: "Skapa eller fördela leveransen"
     })).toBeVisible();
+  });
+
+  it("startar ICA-fördjupningen först när faktiska matchningsresultat finns", async () => {
+    const user = userEvent.setup();
+    router.pathname = "/inkop";
+    window.localStorage.setItem(TUTORIAL_PROGRESS_KEY, JSON.stringify({
+      version: TUTORIAL_PROGRESS_VERSION,
+      introStatus: "completed",
+      introStep: 5,
+      pageSteps: { procurement: 2 }
+    }));
+    const { rerender } = render(
+      <TutorialProvider activeDemo>
+        <ProcurementMatchingFixture matchingAvailable={false} />
+      </TutorialProvider>
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    rerender(
+      <TutorialProvider activeDemo>
+        <ProcurementMatchingFixture matchingAvailable />
+      </TutorialProvider>
+    );
+
+    for (const title of [
+      "Från råvara till ICA-artikel",
+      "Granska förslagen"
+    ]) {
+      expect(await screen.findByRole("dialog", { name: title })).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Nästa" }));
+    }
+    expect(await screen.findByRole("dialog", {
+      name: "Kontrollera förpackning och köpantal"
+    })).toBeVisible();
+    expect(screen.getByText("Steg 3 av 3")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Avsluta" }));
+
+    expect(JSON.parse(window.localStorage.getItem(TUTORIAL_PROGRESS_KEY) ?? "{}"))
+      .toMatchObject({ pageSteps: { "procurement-matching": 3 } });
   });
 });

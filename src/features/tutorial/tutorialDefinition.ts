@@ -276,7 +276,7 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "procurement-review",
         "/inkop",
         "Granska underlaget",
-        "När mängderna är uträknade visas råvaror, ICA-förslag, förpackningar och köpantal här. Kontrollera allt innan du beställer. Lägermat hjälper till, men du godkänner underlaget.",
+        "Efter en lyckad mängdberäkning skapar du inköpslistorna här. Då försöker Lägermat koppla varje råvara till en ICA-artikel och räknar om behovet till hela köpbara förpackningar. När det finns faktiska matchningsresultat visas en separat genomgång av förslagen, granskningen och köpantalet. Ingen order skickas automatiskt – du godkänner alltid underlaget.",
         "procurement-review",
         "procurement-page",
         "top"
@@ -312,4 +312,44 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
   }
 ];
 
+export const PROCUREMENT_MATCHING_TUTORIAL: PageTutorial = {
+  id: "procurement-matching",
+  route: "/inkop",
+  steps: [
+    pageStep(
+      "procurement-matching-overview",
+      "/inkop",
+      "Från råvara till ICA-artikel",
+      "Lägermat jämför råvarans namn och enhet med ICA-sortimentet. Tydliga träffar kan föreslås direkt, medan osäkra träffar alltid lämnas till dig att granska.",
+      "procurement-matching-overview",
+      "procurement-review",
+      "bottom"
+    ),
+    pageStep(
+      "procurement-matching-decisions",
+      "/inkop",
+      "Granska förslagen",
+      "Här ser du säkra förslag, träffar som behöver granskas och råvaror utan träff. Godkänn bara rätt artikel eller sök efter ett bättre alternativ. Ingen beställning skickas härifrån.",
+      "procurement-matching-decisions",
+      "procurement-matching-overview",
+      "top"
+    ),
+    pageStep(
+      "procurement-order-details",
+      "/inkop",
+      "Kontrollera förpackning och köpantal",
+      "När en artikel är vald räknar Lägermat om behovet till hela köpbara förpackningar. Kontrollera artikel, förpackningsstorlek och antal innan du sparar eller exporterar beställningen.",
+      "procurement-order-details",
+      "procurement-review",
+      "top"
+    )
+  ]
+};
+
+export const ALL_PAGE_TUTORIALS: readonly PageTutorial[] = [
+  ...PAGE_TUTORIALS,
+  PROCUREMENT_MATCHING_TUTORIAL
+];
+
 export const PAGE_TUTORIAL_IDS = PAGE_TUTORIALS.map(({ id }) => id);
+export const ALL_PAGE_TUTORIAL_IDS = ALL_PAGE_TUTORIALS.map(({ id }) => id);

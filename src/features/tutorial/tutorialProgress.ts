@@ -1,6 +1,6 @@
 import {
-  PAGE_TUTORIALS,
-  PAGE_TUTORIAL_IDS
+  ALL_PAGE_TUTORIALS,
+  ALL_PAGE_TUTORIAL_IDS
 } from "./tutorialDefinition";
 
 export const TUTORIAL_PROGRESS_VERSION = 2;
@@ -60,13 +60,13 @@ export function parseTutorialProgress(value: string | null): TutorialProgress {
     }
 
     const pageStepCounts = new Map(
-      PAGE_TUTORIALS.map(({ id, steps }) => [id, steps.length])
+      ALL_PAGE_TUTORIALS.map(({ id, steps }) => [id, steps.length])
     );
     const pageSteps = Object.fromEntries(
       Object.entries(parsed.pageSteps as Record<string, unknown>)
         .filter(([id, step]) => {
           const stepCount = pageStepCounts.get(id);
-          return PAGE_TUTORIAL_IDS.includes(id)
+          return ALL_PAGE_TUTORIAL_IDS.includes(id)
             && stepCount !== undefined
             && Number.isInteger(step)
             && Number(step) >= 0

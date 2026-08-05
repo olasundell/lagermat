@@ -453,7 +453,10 @@ export function SupplierCataloguePanel({
 
   return (
     <section className="supplier-catalogue" aria-labelledby="supplier-catalogue-heading">
-      <div className="supplier-catalogue__heading">
+      <div
+        className="supplier-catalogue__heading"
+        data-tutorial-id="procurement-matching-overview"
+      >
         <div>
           <span className="eyebrow"><Sparkles aria-hidden="true" size={17} /> Automatisk artikelmatchning</span>
           <h2 id="supplier-catalogue-heading">
@@ -688,7 +691,10 @@ export function SupplierCataloguePanel({
       {message ? <p className={`inline-message inline-message--${message.kind}`} role={message.kind === "error" ? "alert" : "status"}>{message.text}</p> : null}
 
       {selectedAccountId ? (
-        <div className="supplier-review-board">
+        <div
+          className="supplier-review-board"
+          data-tutorial-id="procurement-matching-decisions"
+        >
           <section aria-labelledby="safe-suggestions-heading">
             <div className="supplier-review-section__heading">
               <div><Check aria-hidden="true" size={20} /><span><h3 id="safe-suggestions-heading">Säkra förslag</h3><small>{safeCandidates.length} unika träffar utan varningar</small></span></div>

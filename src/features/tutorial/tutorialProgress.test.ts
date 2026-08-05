@@ -56,14 +56,24 @@ describe("tutorialProgress", () => {
       version: TUTORIAL_PROGRESS_VERSION,
       introStatus: "in-progress",
       introStep: 3,
-      pageSteps: { participants: 1, schedule: 3, unknown: 2, recipes: 9 }
+      pageSteps: {
+        participants: 1,
+        schedule: 3,
+        "procurement-matching": 2,
+        unknown: 2,
+        recipes: 9
+      }
     });
 
     expect(readTutorialProgress(storage)).toEqual({
       version: TUTORIAL_PROGRESS_VERSION,
       introStatus: "in-progress",
       introStep: 3,
-      pageSteps: { participants: 1, schedule: 3 }
+      pageSteps: {
+        participants: 1,
+        schedule: 3,
+        "procurement-matching": 2
+      }
     });
   });
 

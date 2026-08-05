@@ -618,6 +618,9 @@ export function SchedulePage() {
   }
 
   const nextAction = scheduleNextAction(readiness);
+  const tutorialMealId = meals.find((meal) =>
+    slotsById.get(meal.meal_slot_id)?.service_status === "required"
+  )?.id ?? null;
   const nextActionPath = nextAction?.kind === "review_dietary_needs"
     ? "/specialkost"
     : nextAction?.kind === "choose_meal_recipe" && versionOptions.length === 0
@@ -667,8 +670,13 @@ export function SchedulePage() {
             scheduleCalculationLabel(Boolean(revision), meals.length)
           ].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="page-actions" data-tutorial-id="schedule-calculate">
-          <Button className="secondary-button" onPress={calculate} isDisabled={calculating || (readiness?.planned_slots ?? meals.length) === 0}>
+        <div className="page-actions">
+          <Button
+            className="secondary-button"
+            data-tutorial-id="schedule-calculate"
+            onPress={calculate}
+            isDisabled={calculating || (readiness?.planned_slots ?? meals.length) === 0}
+          >
             {calculating ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Calculator aria-hidden="true" size={18} />} Räkna ut mängder
           </Button>
           <Button className="primary-button" onPress={() => openNewMeal()} isDisabled={versionOptions.length === 0}><CalendarPlus aria-hidden="true" size={19} /> Lägg till extra måltid</Button>
@@ -692,19 +700,20 @@ export function SchedulePage() {
         <div className="schedule-layout">
           <div className="schedule-workspace">
             {nextAction && nextActionContent ? nextActionPath ? (
-              <Link to={nextActionPath} className="warning-banner">
+              <Link to={nextActionPath} className="warning-banner" data-tutorial-id="schedule-status">
                 {nextActionContent}
               </Link>
             ) : (
               <Button
                 className="warning-banner"
+                data-tutorial-id="schedule-status"
                 onPress={() => handleScheduleNextAction(nextAction.kind)}
                 isDisabled={nextAction.kind === "calculate" && calculating}
               >
                 {nextActionContent}
               </Button>
             ) : readiness ? (
-              <div className="schedule-ready-banner">
+              <div className="schedule-ready-banner" data-tutorial-id="schedule-status">
                 <Check aria-hidden="true" size={23} />
                 <span className="warning-banner__copy">
                   <strong>Matsedeln är klar</strong>
@@ -796,6 +805,9 @@ export function SchedulePage() {
                               <div
                                 key={slot.id}
                                 className={`meal-cell${isSelected ? " meal-cell--selected" : ""}`}
+                                data-tutorial-id={meal.id === tutorialMealId
+                                  ? "schedule-meal-example"
+                                  : undefined}
                               >
                                 <Button
                                   ref={(element) => rememberMealActionTrigger(slot.id, element)}

@@ -28,7 +28,6 @@ import {
 
 interface OverviewTutorialRegistration {
   ready: boolean;
-  nextPath: string;
 }
 
 interface TutorialContextValue {
@@ -110,7 +109,7 @@ export function TutorialProvider({
       || progress.introStatus === "skipped"
     )
     && Boolean(pageTutorial)
-    && pageStepIndex < 2;
+    && Boolean(pageTutorial && pageStepIndex < pageTutorial.steps.length);
   const introIndex = Math.min(
     progress.introStep,
     INTRO_TUTORIAL_STEPS.length - 1
@@ -205,7 +204,10 @@ export function TutorialProvider({
     if (!pageTutorial) return;
     persist({
       ...progress,
-      pageSteps: { ...progress.pageSteps, [pageTutorial.id]: 2 }
+      pageSteps: {
+        ...progress.pageSteps,
+        [pageTutorial.id]: pageTutorial.steps.length
+      }
     });
   }, [pageTutorial, persist, progress]);
 
@@ -231,10 +233,29 @@ export function TutorialProvider({
       ...progress,
       pageSteps: {
         ...progress.pageSteps,
-        [pageTutorial.id]: Math.min(pageStepIndex + 1, 2)
+        [pageTutorial.id]: Math.min(
+          pageStepIndex + 1,
+          pageTutorial.steps.length
+        )
       }
     });
   }, [introIndex, introVisible, pageStepIndex, pageTutorial, persist, progress]);
+
+  const continuePage = useCallback(() => {
+    if (!pageTutorial?.continuation) return;
+    const nextTutorial = PAGE_TUTORIALS.find(
+      ({ route }) => route === pageTutorial.continuation?.route
+    );
+    persist({
+      ...progress,
+      pageSteps: {
+        ...progress.pageSteps,
+        [pageTutorial.id]: pageTutorial.steps.length,
+        ...(nextTutorial ? { [nextTutorial.id]: 0 } : {})
+      }
+    });
+    void navigate({ to: pageTutorial.continuation.route });
+  }, [navigate, pageTutorial, persist, progress]);
 
   const back = useCallback(() => {
     if (introVisible) {
@@ -259,11 +280,10 @@ export function TutorialProvider({
     persist(skippedTutorialProgress());
   }, [persist]);
 
-  const dynamicHandoff = useCallback(() => {
-    const nextPath = overview?.nextPath;
+  const startPageGuide = useCallback(() => {
     finishIntro();
-    if (nextPath) void navigate({ to: nextPath });
-  }, [finishIntro, navigate, overview?.nextPath]);
+    void navigate({ to: "/deltagare" });
+  }, [finishIntro, navigate]);
 
   const value = useMemo<TutorialContextValue>(() => ({
     canReplay: activeDemo,
@@ -279,14 +299,18 @@ export function TutorialProvider({
           key={`${activeStep.id}:${introVisible ? introIndex : pageStepIndex}`}
           step={activeStep}
           stepIndex={introVisible ? introIndex : pageStepIndex}
-          stepCount={introVisible ? INTRO_TUTORIAL_STEPS.length : 2}
+          stepCount={introVisible
+            ? INTRO_TUTORIAL_STEPS.length
+            : pageTutorial?.steps.length ?? 0}
+          continuationLabel={pageTutorial?.continuation?.label}
           target={target}
           kind={introVisible ? "intro" : "page"}
           onBack={back}
           onNext={next}
           onClose={close}
           onSkip={skip}
-          onDynamicHandoff={dynamicHandoff}
+          onStartPageGuide={startPageGuide}
+          onContinuePage={continuePage}
         />
       ) : null}
     </TutorialContext.Provider>

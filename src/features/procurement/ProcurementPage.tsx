@@ -469,7 +469,7 @@ export function ProcurementPage() {
       ) : null}
 
       {!listsQuery.isLoading && !purchaseList ? (
-        <div className="empty-state"><PackageCheck aria-hidden="true" size={34} /><h2>{hasCurrentCalculation ? "Skapa listor från matsedeln" : calculationStatusUnavailable ? "Inköpslistor saknas" : "Inköpslistorna skapas efter beräkningen"}</h2><p>{hasCurrentCalculation ? "Mängderna är aktuella och redo att bli inköpslistor." : calculationStatusUnavailable ? "Anslut till databasen för att kontrollera beräkningen." : "När mängderna är uträknade kan du skapa listorna här."}</p></div>
+        <div className="empty-state" data-tutorial-id="procurement-review"><PackageCheck aria-hidden="true" size={34} /><h2>{hasCurrentCalculation ? "Skapa listor från matsedeln" : calculationStatusUnavailable ? "Inköpslistor saknas" : "Inköpslistorna skapas efter beräkningen"}</h2><p>{hasCurrentCalculation ? "Mängderna är aktuella och redo att bli inköpslistor." : calculationStatusUnavailable ? "Anslut till databasen för att kontrollera beräkningen." : "När mängderna är uträknade kan du skapa listorna här."}</p></div>
       ) : null}
 
       {perspective === "purchase" && purchaseList ? (
@@ -619,7 +619,7 @@ export function ProcurementPage() {
             </label>
           </div>
           {visiblePurchaseItemIds.size === 0 ? <p className="procurement-filter-empty">Inga varor matchar filtret.</p> : null}
-          <div className="order-grid" data-tutorial-id="procurement-list">
+          <div className="order-grid" data-tutorial-id="procurement-review">
             {purchaseItems.map((item) => (
               <OrderEditor
                 key={`${item.id}:${item.row_version}`}

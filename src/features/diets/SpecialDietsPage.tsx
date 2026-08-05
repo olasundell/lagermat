@@ -36,13 +36,14 @@ interface NeedTagRow {
 interface ReviewCardProps {
   need: DietaryNeedRow;
   participantName: string;
+  tutorialTarget: boolean;
   availableTags: string[];
   currentTags: string[];
   saving: boolean;
   onReview: (needId: string, tags: string[]) => Promise<void>;
 }
 
-function ReviewCard({ need, participantName, availableTags, currentTags, saving, onReview }: ReviewCardProps) {
+function ReviewCard({ need, participantName, tutorialTarget, availableTags, currentTags, saving, onReview }: ReviewCardProps) {
   const suggested = useMemo(() => suggestDietaryTags(need.raw_food_note), [need.raw_food_note]);
   const [selected, setSelected] = useState<string[]>(() => normalizeSelectedTags([...currentTags, ...suggested]));
   const [customTag, setCustomTag] = useState("");
@@ -60,7 +61,10 @@ function ReviewCard({ need, participantName, availableTags, currentTags, saving,
   }
 
   return (
-    <article className="diet-card">
+    <article
+      className="diet-card"
+      data-tutorial-id={tutorialTarget ? "diets-decision-card" : undefined}
+    >
       <header className="diet-card__heading">
         <div><strong>{participantName}</strong><span>{need.review_status === "resolved" ? "Granskad" : "Behöver granskas"}</span></div>
         {need.review_status === "resolved" ? <Check aria-label="Granskad" size={22} /> : <CircleAlert aria-label="Behöver granskas" size={22} />}
@@ -186,7 +190,7 @@ export function SpecialDietsPage() {
             data-tutorial-id="diets-review"
           >
             <div className="section-heading" data-tutorial-id="diets-review-heading"><CircleAlert aria-hidden="true" size={24} /><div><h2 id="diet-review-heading">Att granska</h2><p>Förslag är stöd, aldrig automatiska medicinska beslut.</p></div></div>
-            {unresolved.length === 0 ? <div className={`diet-empty${summary.kind === "empty" ? " diet-empty--neutral" : ""}`}>{summary.kind === "empty" ? <Tags aria-hidden="true" size={28} /> : <Check aria-hidden="true" size={28} />}<p>{summary.reviewMessage}</p>{summary.nextStep ? <Link className="primary-button" to={summary.nextStep.to}>{summary.nextStep.label}</Link> : null}</div> : <div className="diet-card-list">{unresolved.map((need) => <ReviewCard key={need.id} need={need} participantName={participantNames.get(need.participant_id) ?? "Okänd deltagare"} availableTags={availableTags} currentTags={currentTags(need.id)} saving={savingId === need.id} onReview={reviewNeed} />)}</div>}
+            {unresolved.length === 0 ? <div className={`diet-empty${summary.kind === "empty" ? " diet-empty--neutral" : ""}`}>{summary.kind === "empty" ? <Tags aria-hidden="true" size={28} /> : <Check aria-hidden="true" size={28} />}<p>{summary.reviewMessage}</p>{summary.nextStep ? <Link className="primary-button" to={summary.nextStep.to}>{summary.nextStep.label}</Link> : null}</div> : <div className="diet-card-list">{unresolved.map((need, index) => <ReviewCard key={need.id} need={need} participantName={participantNames.get(need.participant_id) ?? "Okänd deltagare"} tutorialTarget={index === 0} availableTags={availableTags} currentTags={currentTags(need.id)} saving={savingId === need.id} onReview={reviewNeed} />)}</div>}
           </section>
           <aside
             aria-labelledby="reviewed-diets-heading"

@@ -3,8 +3,14 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { loginWithLocalMagicLink } from "./localAuth";
 
-const appUrl = "http://127.0.0.1:4173";
-const apiUrl = "http://127.0.0.1:54321";
+const appUrl = process.env.PLAYWRIGHT_PREVIEW_URL
+  ?? "http://127.0.0.1:4173";
+const previewUrl = new URL(appUrl);
+if (previewUrl.hostname !== "127.0.0.1" || !previewUrl.port) {
+  throw new Error("PLAYWRIGHT_PREVIEW_URL must use an explicit loopback port");
+}
+const apiUrl = process.env.PLAYWRIGHT_SUPABASE_URL
+  ?? "http://127.0.0.1:54321";
 const anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
 const organizationId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1";
 const campId = "caaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1";
@@ -46,7 +52,14 @@ async function waitForServer(expectedRunning: boolean): Promise<void> {
 async function startPreview(): Promise<ChildProcess> {
   const child = spawn(
     "./node_modules/.bin/vite",
-    ["preview", "--host", "127.0.0.1", "--port", "4173", "--strictPort"],
+    [
+      "preview",
+      "--host",
+      previewUrl.hostname,
+      "--port",
+      previewUrl.port,
+      "--strictPort"
+    ],
     { cwd: process.cwd(), env: process.env, stdio: "ignore" },
   );
   await waitForServer(true);

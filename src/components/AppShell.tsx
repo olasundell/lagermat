@@ -35,6 +35,7 @@ import { DemoBanner } from "../features/demo/DemoBanner";
 import { demoConfiguration } from "../features/demo/demoConfiguration";
 import { DemoRecoveryPage } from "../features/demo/DemoRecoveryPage";
 import { IcaCatalogueSyncAgent } from "../features/suppliers/IcaCatalogueSyncAgent";
+import { TutorialProvider } from "../features/tutorial/TutorialProvider";
 import { WorkspaceProvider, useWorkspace } from "../features/workspace/WorkspaceContext";
 import { BrandMark } from "./BrandMark";
 import { ContextSelect } from "./ContextSelect";
@@ -77,7 +78,7 @@ export function AppShell() {
         <main className="auth-page">
           <LoaderCircle
             className="spin"
-            aria-label="Förbereder demosessionen"
+            aria-label="Förbereder demolägret"
             size={38}
           />
         </main>
@@ -91,7 +92,16 @@ export function AppShell() {
     }
   }
 
-  return <WorkspaceProvider><AuthenticatedAppShell /></WorkspaceProvider>;
+  const activeDemo = session.user.is_anonymous === true
+    && (demoState.status === "active" || demoState.status === "resetting");
+
+  return (
+    <WorkspaceProvider>
+      <TutorialProvider activeDemo={activeDemo}>
+        <AuthenticatedAppShell />
+      </TutorialProvider>
+    </WorkspaceProvider>
+  );
 }
 
 function AuthenticatedAppShell() {
@@ -141,7 +151,11 @@ function AuthenticatedAppShell() {
         <Link to="/" className="topbar__brand" aria-label="Gå till översikten">
           <BrandMark />
         </Link>
-        <div className="topbar__contexts" aria-label="Aktiv organisation och aktivt läger">
+        <div
+          className="topbar__contexts"
+          aria-label="Aktiv organisation och aktivt läger"
+          data-tutorial-id="workspace-context"
+        >
           <ContextSelect
             ariaLabel="Organisation"
             name="active-organization"
@@ -179,7 +193,11 @@ function AuthenticatedAppShell() {
           </Popover>
         </MenuTrigger>
         <DialogTrigger>
-          <Button className="mobile-header-button mobile-header-button--menu" aria-label="Öppna huvudmenyn">
+          <Button
+            className="mobile-header-button mobile-header-button--menu"
+            aria-label="Öppna huvudmenyn"
+            data-tutorial-id="mobile-menu-trigger"
+          >
             <MoreVertical aria-hidden="true" size={28} />
           </Button>
           <ModalOverlay className="mobile-menu-overlay" isDismissable>
@@ -197,7 +215,11 @@ function AuthenticatedAppShell() {
                       </Button>
                     </div>
 
-                    <div className="mobile-menu__contexts" aria-label="Aktiv organisation och aktivt läger">
+                    <div
+                      className="mobile-menu__contexts"
+                      aria-label="Aktiv organisation och aktivt läger"
+                      data-tutorial-id="workspace-context"
+                    >
                       <ContextSelect
                         ariaLabel="Organisation"
                         name="active-organization"
@@ -216,7 +238,11 @@ function AuthenticatedAppShell() {
                       />
                     </div>
 
-                    <nav className="mobile-menu__nav" aria-label="Huvudnavigation i mobilmenyn">
+                    <nav
+                      className="mobile-menu__nav"
+                      aria-label="Huvudnavigation i mobilmenyn"
+                      data-tutorial-id="primary-navigation"
+                    >
                       {navigation.map(({ label, to, icon: Icon }) => (
                         <Link key={to} to={to} className="nav-link" activeProps={{ className: "nav-link nav-link--active" }} onClick={close}>
                           <Icon aria-hidden={true} size={22} strokeWidth={1.9} />
@@ -253,7 +279,11 @@ function AuthenticatedAppShell() {
         />
       ) : null}
 
-      <aside className="sidebar" aria-label="Huvudnavigation">
+      <aside
+        className="sidebar"
+        aria-label="Huvudnavigation"
+        data-tutorial-id="primary-navigation"
+      >
         <nav className="sidebar__nav">
           {navigation.map(({ label, to, icon: Icon }) => (
             <Link key={to} to={to} className="nav-link" activeProps={{ className: "nav-link nav-link--active" }}>
@@ -264,7 +294,11 @@ function AuthenticatedAppShell() {
         </nav>
       </aside>
 
-      <main className="main-content" id="main-content">
+      <main
+        className="main-content"
+        id="main-content"
+        data-tutorial-id="main-content"
+      >
         <Outlet />
       </main>
     </div>

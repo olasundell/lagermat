@@ -31,7 +31,7 @@ export async function recoverExpiredDemoSession<TInstance>(
   const identity = await dependencies.signInAnonymously();
   if (!identity.userId || identity.userId === expiredUserId) {
     await dependencies.abandonNewSession();
-    throw new Error("En ny anonym demoidentitet kunde inte skapas.");
+    throw new Error("Ett nytt demoläger kunde inte öppnas med en anonym användare.");
   }
 
   try {

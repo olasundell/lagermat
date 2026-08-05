@@ -149,3 +149,53 @@ jobs:
       - name: Stop the local Supabase stack
         if: always()
         run: pnpm exec supabase stop --no-backup
+
+  demo-guide-integration:
+    name: Demo guide browser integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      APP_ORIGIN: http://127.0.0.1:5173
+      AUTH_CALLBACK_URL: http://127.0.0.1:5173/auth/callback
+      AUTH_EMAIL_MAX_FREQUENCY: 1s
+      DEMO_MODE: "true"
+      PLAYWRIGHT_DEMO_MODE: "true"
+      VITE_DEMO_MODE: "true"
+      VITE_SUPABASE_URL: http://127.0.0.1:55321
+      VITE_SUPABASE_PUBLISHABLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+      TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b1 # v6.0.9
+        with:
+          version: 11.9.0
+          run_install: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Start the isolated canonical demo profile
+        run: pnpm demo:e2e:start
+      - name: Run the guide on desktop and mobile
+        run: pnpm test:e2e:demo
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: demo-guide-playwright-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop the isolated canonical demo profile
+        if: always()
+        run: pnpm demo:e2e:stop

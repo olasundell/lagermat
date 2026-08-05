@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:demo": "playwright test e2e/demo-guided-introduction.spec.ts",
     "recipes:seed": "node scripts/extract-demo-recipes.mjs",
     "recipes:seed:check": "node scripts/extract-demo-recipes.mjs --check",
     "demo:fixture:check": "node scripts/export-demo-fixture.mjs --check",
@@ -34,7 +35,9 @@
     "supabase:reset": "bash scripts/supabase-local.sh db reset",
     "supabase:test": "bash scripts/supabase-local.sh test db",
     "supabase:lint": "bash scripts/supabase-local.sh db lint --level warning --schema public --schema app_private --local",
-    "supabase:types": "bash scripts/supabase-local.sh gen types typescript --local"
+    "supabase:types": "bash scripts/supabase-local.sh gen types typescript --local",
+    "demo:e2e:start": "bash scripts/start-local-demo-stack.sh",
+    "demo:e2e:stop": "bash scripts/stop-local-demo-stack.sh"
   },
   "dependencies": {
     "@fontsource/eb-garamond": "^5.2.7",

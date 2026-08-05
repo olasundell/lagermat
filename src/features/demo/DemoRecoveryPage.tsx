@@ -11,7 +11,7 @@ export function DemoRecoveryPage() {
     return (
       <main className="auth-page">
         <section className="auth-card auth-card--compact">
-          <h1>Demot är inte tillgängligt</h1>
+          <h1>Demoläget är inte tillgängligt</h1>
           <p className="auth-card__intro" role="alert">
             {demoConfiguration.error ?? "Robotkontrollen saknar konfiguration."}
           </p>
@@ -25,7 +25,7 @@ export function DemoRecoveryPage() {
       <main className="auth-page">
         <LoaderCircle
           className="spin"
-          aria-label="Kontrollerar demosessionen"
+          aria-label="Kontrollerar demoläget"
           size={38}
         />
       </main>
@@ -37,18 +37,18 @@ export function DemoRecoveryPage() {
     <main className="auth-page">
       <section className="auth-card auth-card--demo-recovery">
         <div className="auth-card__brand"><BrandMark /></div>
-        <p className="auth-card__eyebrow">Din privata demo</p>
-        <h1>{expired ? "Demot har gått ut" : "Demot behöver förberedas"}</h1>
+        <p className="auth-card__eyebrow">Prova utan konto</p>
+        <h1>{expired ? "Demolägret har gått ut" : "Demolägret kunde inte öppnas"}</h1>
         <p className="auth-card__intro">
           {expired
-            ? "Den gamla kopian går inte längre att öppna. När du fortsätter rensas bara den här demoidentitetens lokala data och en ny kopia skapas."
-            : "Sessionen finns kvar, men saknar en färdig demokopia. Försök igen för att slutföra den."}
+            ? "Det gamla demolägret går inte längre att öppna. Öppna ett nytt för att fortsätta utforska Lägermat."
+            : "Förberedelsen blev inte klar. Försök igen för att öppna demolägret."}
         </p>
         <DemoStartPanel
           siteKey={demoConfiguration.siteKey}
           busy={false}
           error={demoState.error}
-          buttonLabel="Starta ett nytt demo"
+          buttonLabel={expired ? "Öppna ett nytt demoläger" : "Försök igen"}
           onStart={startDemo}
         />
       </section>

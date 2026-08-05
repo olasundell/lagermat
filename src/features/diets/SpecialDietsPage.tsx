@@ -167,8 +167,11 @@ export function SpecialDietsPage() {
   if (!scope || !activeCamp) return <section className="page page--narrow"><p className="form-error">Välj organisation och läger först.</p></section>;
 
   return (
-    <section className="page diets-page">
-      <header className="page-heading page-heading--split">
+    <section className="page diets-page" data-tutorial-id="diets-page">
+      <header
+        className="page-heading page-heading--split"
+        data-tutorial-id="diets-heading"
+      >
         <div><p className="page-heading__eyebrow">Kontroll före inköp</p><h1>Specialkost</h1><p>{activeCamp.name} · kontrollera uppgifterna från anmälan innan du räknar ut mängderna.</p></div>
         <div className={`diet-gate-status${summary.kind === "clear" ? " diet-gate-status--clear" : summary.kind === "empty" ? " diet-gate-status--neutral" : ""}`}>
           {summary.kind === "clear" ? <Check aria-hidden="true" size={22} /> : summary.kind === "empty" ? <Tags aria-hidden="true" size={22} /> : <ShieldAlert aria-hidden="true" size={22} />}
@@ -178,12 +181,18 @@ export function SpecialDietsPage() {
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {dietQuery.isLoading ? <LoaderCircle className="spin" aria-label="Läser specialkost" size={30} /> : dietQuery.error ? <p className="form-error">{userFacingError(dietQuery.error, "Specialkosten kunde inte läsas.")}</p> : (
         <div className="diet-layout">
-          <section aria-labelledby="diet-review-heading">
-            <div className="section-heading"><CircleAlert aria-hidden="true" size={24} /><div><h2 id="diet-review-heading">Att granska</h2><p>Förslag är stöd, aldrig automatiska medicinska beslut.</p></div></div>
+          <section
+            aria-labelledby="diet-review-heading"
+            data-tutorial-id="diets-review"
+          >
+            <div className="section-heading" data-tutorial-id="diets-review-heading"><CircleAlert aria-hidden="true" size={24} /><div><h2 id="diet-review-heading">Att granska</h2><p>Förslag är stöd, aldrig automatiska medicinska beslut.</p></div></div>
             {unresolved.length === 0 ? <div className={`diet-empty${summary.kind === "empty" ? " diet-empty--neutral" : ""}`}>{summary.kind === "empty" ? <Tags aria-hidden="true" size={28} /> : <Check aria-hidden="true" size={28} />}<p>{summary.reviewMessage}</p>{summary.nextStep ? <Link className="primary-button" to={summary.nextStep.to}>{summary.nextStep.label}</Link> : null}</div> : <div className="diet-card-list">{unresolved.map((need) => <ReviewCard key={need.id} need={need} participantName={participantNames.get(need.participant_id) ?? "Okänd deltagare"} availableTags={availableTags} currentTags={currentTags(need.id)} saving={savingId === need.id} onReview={reviewNeed} />)}</div>}
           </section>
-          <aside aria-labelledby="reviewed-diets-heading">
-            <div className="section-heading"><Tags aria-hidden="true" size={24} /><div><h2 id="reviewed-diets-heading">Granskade</h2><p>{resolved.length} {resolved.length === 1 ? "klar uppgift" : "klara uppgifter"}</p></div></div>
+          <aside
+            aria-labelledby="reviewed-diets-heading"
+            data-tutorial-id="diets-decision"
+          >
+            <div className="section-heading" data-tutorial-id="diets-decision-heading"><Tags aria-hidden="true" size={24} /><div><h2 id="reviewed-diets-heading">Granskade</h2><p>{resolved.length} {resolved.length === 1 ? "klar uppgift" : "klara uppgifter"}</p></div></div>
             {resolved.length === 0 ? <p className="muted-copy">{totalNeeds === 0 ? "Inga specialkostuppgifter finns." : "Inga uppgifter är granskade ännu."}</p> : <div className="resolved-diet-list">{resolved.map((need) => <div key={need.id}><strong>{participantNames.get(need.participant_id)}</strong><span>{currentTags(need.id).map(dietaryTagDisplayLabel).join(", ") || "Påverkar inte maten"}</span></div>)}</div>}
           </aside>
         </div>

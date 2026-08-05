@@ -61,7 +61,7 @@ describe("demoApi", () => {
       expiresAt,
       templateVersion: 0,
       reused: false
-    })).toThrow("Demot gav ett ogiltigt svar.");
+    })).toThrow("Demolägret gav ett ogiltigt svar.");
   });
 
   it("tolkar aktiva, utgångna och tomma statussvar", () => {
@@ -93,7 +93,7 @@ describe("demoApi", () => {
       state: "not_demo"
     });
     expect(() => parseDemoRemoteStatus({ state: "surprise" }))
-      .toThrow("Demosessionens status är okänd.");
+      .toThrow("Demolägrets status är okänd.");
   });
 
   it("läser status genom den avgränsade RPC:n", async () => {
@@ -141,6 +141,6 @@ describe("demoApi", () => {
 
     await expect(
       provisionDemoInstance(testClient.client, "start", "single-use-token")
-    ).rejects.toThrow("Demot kunde inte förberedas just nu.");
+    ).rejects.toThrow("Demolägret kunde inte förberedas. Försök igen.");
   });
 });

@@ -1,7 +1,10 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
-const mailpitUrl = "http://127.0.0.1:54324";
+const supabaseUrl = process.env.PLAYWRIGHT_SUPABASE_URL
+  ?? "http://127.0.0.1:54321";
+const mailpitUrl = process.env.PLAYWRIGHT_MAILPIT_URL
+  ?? "http://127.0.0.1:54324";
 
 interface MailpitList {
   messages: Array<{
@@ -73,7 +76,11 @@ export async function waitForLocalAuthLink(
   const messageResponse = await request.get(`${mailpitUrl}/api/v1/message/${messageId}`);
   expect(messageResponse.ok()).toBe(true);
   const message = await messageResponse.json() as MailpitMessage;
-  const link = message.Text.match(/\(\s*(http:\/\/127\.0\.0\.1:54321\/auth\/v1\/verify\?[^\s)]+)\s*\)/)?.[1];
+  const link = [...message.Text.matchAll(/\(\s*(https?:\/\/[^\s)]+)\s*\)/g)]
+    .map((match) => match[1])
+    .find((candidate) =>
+      candidate.startsWith(`${supabaseUrl}/auth/v1/verify?`)
+    );
   expect(link, "Mailpit message should contain a local auth link").toBeTruthy();
   return link!;
 }

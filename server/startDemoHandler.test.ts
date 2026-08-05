@@ -27,6 +27,7 @@ const validTurnstile: TurnstileVerification = {
   action: START_DEMO_TURNSTILE_ACTION,
   hostname: "127.0.0.1",
   errorCodes: [],
+  testingKey: false,
 };
 const validProvision: DemoProvisionResult = {
   organizationId,
@@ -347,6 +348,53 @@ describe("start-demo identity and Turnstile checks", () => {
     expect(startDemo.provision).not.toHaveBeenCalled();
   });
 
+  it("accepts Cloudflare's published always-pass response only on loopback", async () => {
+    const startDemo = subject({
+      environment: {
+        appOrigin,
+        demoMode: "true",
+        turnstileSecretKey: "1x0000000000000000000000000000000AA",
+      },
+      verifyTurnstile: vi.fn(async () => ({
+        success: true,
+        action: null,
+        hostname: "example.com",
+        errorCodes: [],
+        testingKey: true,
+      })),
+    });
+
+    const response = await startDemo.handler(demoRequest());
+
+    expect(response.status).toBe(200);
+    expect(startDemo.provision).toHaveBeenCalledOnce();
+  });
+
+  it("does not accept the testing-key response for a hosted origin", async () => {
+    const hostedOrigin = "https://demo.example.se";
+    const startDemo = subject({
+      environment: {
+        appOrigin: hostedOrigin,
+        demoMode: "true",
+        turnstileSecretKey: "1x0000000000000000000000000000000AA",
+      },
+      verifyTurnstile: vi.fn(async () => ({
+        success: true,
+        action: null,
+        hostname: "example.com",
+        errorCodes: [],
+        testingKey: true,
+      })),
+    });
+
+    const response = await startDemo.handler(demoRequest({
+      origin: hostedOrigin,
+    }));
+
+    expect(response.status).toBe(403);
+    expect(startDemo.provision).not.toHaveBeenCalled();
+  });
+
   it("reports Turnstile transport failure as retryable", async () => {
     const startDemo = subject({
       verifyTurnstile: vi.fn(async () => {
@@ -493,8 +541,31 @@ describe("Cloudflare Turnstile adapter", () => {
       action: START_DEMO_TURNSTILE_ACTION,
       hostname: "demo.example",
       errorCodes: [],
+      testingKey: false,
     });
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("preserves Cloudflare's testing-key marker", async () => {
+    const verify = createTurnstileValidator({
+      secretKey: "server-secret",
+      fetch: vi.fn(async () => Response.json({
+        success: true,
+        hostname: "example.com",
+        metadata: { result_with_testing_key: true },
+      })),
+      timeoutMs: 100,
+    });
+
+    await expect(verify({
+      token: "XXXX.DUMMY.TOKEN.XXXX",
+      idempotencyKey,
+    })).resolves.toMatchObject({
+      success: true,
+      action: null,
+      hostname: "example.com",
+      testingKey: true,
+    });
   });
 
   it("uses the same idempotency key across bounded transport retries", async () => {

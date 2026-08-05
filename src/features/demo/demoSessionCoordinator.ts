@@ -2,6 +2,7 @@ import {
   recoverExpiredDemoSession,
   type AnonymousSessionIdentity
 } from "./demoSessionLifecycle";
+import { acceptsRepeatedTurnstileTestToken } from "./demoTurnstileTestMode";
 
 export interface DemoInstance {
   organizationId: string;
@@ -45,18 +46,37 @@ export interface EnteredDemoSession {
   instance: DemoInstance;
 }
 
+export interface DemoTurnstilePolicy {
+  siteKey: string | null;
+  appHostname: string;
+}
+
 function validToken(value: string): boolean {
   return value.length > 0 && value.length <= 2_048 && value.trim() === value;
 }
 
-function validateTokens(tokens: DemoStartTokens): void {
+function validateTokens(
+  tokens: DemoStartTokens,
+  turnstilePolicy?: DemoTurnstilePolicy
+): void {
   if (
     !validToken(tokens.authCaptchaToken)
     || !validToken(tokens.provisionCaptchaToken)
   ) {
     throw new Error("Robotkontrollen behöver göras om.");
   }
-  if (tokens.authCaptchaToken === tokens.provisionCaptchaToken) {
+  if (
+    tokens.authCaptchaToken === tokens.provisionCaptchaToken
+    && !(
+      turnstilePolicy
+      && acceptsRepeatedTurnstileTestToken(
+        tokens.authCaptchaToken,
+        tokens.provisionCaptchaToken,
+        turnstilePolicy.siteKey,
+        turnstilePolicy.appHostname
+      )
+    )
+  ) {
     throw new Error("Robotkontrollerna måste använda två olika engångstoken.");
   }
 }
@@ -68,7 +88,7 @@ async function createAndProvision(
   const identity = await dependencies.signInAnonymously(tokens.authCaptchaToken);
   if (!identity.userId || !identity.isAnonymous) {
     if (identity.userId) await dependencies.abandonSession(identity.userId);
-    throw new Error("En anonym demoidentitet kunde inte skapas.");
+    throw new Error("Demoläget kunde inte öppnas med en anonym användare.");
   }
 
   try {
@@ -90,14 +110,15 @@ async function createAndProvision(
 
 export async function enterDemoSession(
   tokens: DemoStartTokens,
-  dependencies: DemoSessionDependencies
+  dependencies: DemoSessionDependencies,
+  turnstilePolicy?: DemoTurnstilePolicy
 ): Promise<EnteredDemoSession> {
-  validateTokens(tokens);
+  validateTokens(tokens, turnstilePolicy);
   const identity = await dependencies.currentIdentity();
 
   if (!identity) return createAndProvision(tokens, dependencies);
   if (!identity.isAnonymous) {
-    throw new Error("Logga ut från det vanliga kontot innan du startar demot.");
+    throw new Error("Logga ut från det vanliga kontot innan du öppnar demoläget.");
   }
 
   const status = await dependencies.readSessionStatus();
@@ -105,7 +126,7 @@ export async function enterDemoSession(
     return { userId: identity.userId, instance: status.instance };
   }
   if (status.state === "not_demo") {
-    throw new Error("Den aktiva sessionen är inte en demosession.");
+    throw new Error("Den aktiva sessionen tillhör inte demoläget.");
   }
   if (status.state === "missing") {
     const instance = await dependencies.provisionCurrentSession(
@@ -128,7 +149,7 @@ export async function enterDemoSession(
         if (nextIdentity.userId) {
           await dependencies.abandonSession(nextIdentity.userId);
         }
-        throw new Error("En anonym demoidentitet kunde inte skapas.");
+        throw new Error("Demoläget kunde inte öppnas med en anonym användare.");
       }
       return nextIdentity;
     },
@@ -151,7 +172,7 @@ export async function resetDemoSession(
   dependencies: DemoSessionDependencies
 ): Promise<EnteredDemoSession> {
   if (!identity.isAnonymous) {
-    throw new Error("Endast den egna demosessionen kan återställas.");
+    throw new Error("Bara det egna demolägret kan återställas.");
   }
   if (!validToken(captchaToken)) {
     throw new Error("Robotkontrollen behöver göras om.");

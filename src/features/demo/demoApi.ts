@@ -19,7 +19,7 @@ function isIsoTimestamp(value: unknown): value is string {
 
 export function parseDemoInstance(value: unknown): DemoInstance {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Demot gav ett ogiltigt svar.");
+    throw new Error("Demolägret gav ett ogiltigt svar.");
   }
   const row = value as Record<string, unknown>;
   if (
@@ -30,7 +30,7 @@ export function parseDemoInstance(value: unknown): DemoInstance {
     || Number(row.templateVersion) <= 0
     || typeof row.reused !== "boolean"
   ) {
-    throw new Error("Demot gav ett ogiltigt svar.");
+    throw new Error("Demolägret gav ett ogiltigt svar.");
   }
 
   return {
@@ -51,7 +51,7 @@ interface DemoStatusRow {
 
 export function parseDemoRemoteStatus(value: unknown): DemoRemoteStatus {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Demosessionens status kunde inte läsas.");
+    throw new Error("Demolägrets status kunde inte läsas.");
   }
   const row = value as DemoStatusRow;
 
@@ -61,7 +61,7 @@ export function parseDemoRemoteStatus(value: unknown): DemoRemoteStatus {
       || !isUuid(row.camp_id)
       || !isIsoTimestamp(row.expires_at)
     ) {
-      throw new Error("Demosessionens aktiva status är ofullständig.");
+      throw new Error("Demolägrets aktiva status är ofullständig.");
     }
     return {
       state: "active",
@@ -76,14 +76,14 @@ export function parseDemoRemoteStatus(value: unknown): DemoRemoteStatus {
   }
   if (row.state === "expired") {
     if (!isIsoTimestamp(row.expires_at)) {
-      throw new Error("Demosessionens utgångstid saknas.");
+      throw new Error("Demolägrets utgångstid saknas.");
     }
     return { state: "expired", expiresAt: row.expires_at };
   }
   if (row.state === "missing" || row.state === "not_demo") {
     return { state: row.state };
   }
-  throw new Error("Demosessionens status är okänd.");
+  throw new Error("Demolägrets status är okänd.");
 }
 
 export async function readDemoSessionStatus(
@@ -92,7 +92,7 @@ export async function readDemoSessionStatus(
   const { data, error } = await client
     .rpc("get_demo_session_status")
     .maybeSingle();
-  if (error) throw new Error("Demosessionens status kunde inte läsas.");
+  if (error) throw new Error("Demolägrets status kunde inte läsas.");
   return parseDemoRemoteStatus(data);
 }
 
@@ -107,8 +107,8 @@ export async function provisionDemoInstance(
   if (error) {
     throw new Error(
       action === "reset"
-        ? "Demot kunde inte återställas just nu."
-        : "Demot kunde inte förberedas just nu."
+        ? "Demolägret kunde inte återställas. Försök igen."
+        : "Demolägret kunde inte förberedas. Försök igen."
     );
   }
   return parseDemoInstance(data);

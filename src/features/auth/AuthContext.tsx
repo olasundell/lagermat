@@ -297,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             instance: null,
             error: caught instanceof Error
               ? caught.message
-              : "Demosessionen kunde inte kontrolleras."
+              : "Demoläget kunde inte kontrolleras."
           });
         }
       });
@@ -334,17 +334,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const startDemo = useCallback(async (tokens: DemoStartTokens) => {
     if (!demoConfiguration.enabled || !demoDependencies) {
       throw new Error(
-        demoConfiguration.error ?? "Demot är inte tillgängligt."
+        demoConfiguration.error ?? "Demoläget är inte tillgängligt."
       );
     }
     if (demoOperation.current) {
-      throw new Error("Demot håller redan på att förberedas.");
+      throw new Error("Demolägret håller redan på att förberedas.");
     }
 
     demoOperation.current = true;
     setDemoState({ status: "starting", instance: null, error: null });
     try {
-      const entered = await enterDemoSession(tokens, demoDependencies);
+      const entered = await enterDemoSession(tokens, demoDependencies, {
+        siteKey: demoConfiguration.siteKey,
+        appHostname: window.location.hostname
+      });
       await activateDemoInstance(entered.userId, entered.instance);
       inspectedDemoUser.current = entered.userId;
       setDemoState({
@@ -355,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (caught) {
       const message = caught instanceof Error
         ? caught.message
-        : "Demot kunde inte startas just nu.";
+        : "Demolägret kunde inte öppnas. Försök igen.";
       setDemoState({ status: "error", instance: null, error: message });
       throw caught;
     } finally {
@@ -364,13 +367,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [activateDemoInstance, demoDependencies]);
 
   const resetDemo = useCallback(async (captchaToken: string) => {
-    if (!demoDependencies) throw new Error("Demot är inte tillgängligt.");
+    if (!demoDependencies) throw new Error("Demoläget är inte tillgängligt.");
     if (demoOperation.current) {
-      throw new Error("Demot håller redan på att ändras.");
+      throw new Error("Demolägret håller redan på att ändras.");
     }
 
     const current = await demoDependencies.currentIdentity();
-    if (!current) throw new Error("Demosessionen saknas.");
+    if (!current) throw new Error("Demolägret saknas.");
     const previousInstance = demoState.instance;
     demoOperation.current = true;
     setDemoState({
@@ -394,7 +397,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (caught) {
       const message = caught instanceof Error
         ? caught.message
-        : "Demot kunde inte återställas just nu.";
+        : "Demolägret kunde inte återställas. Försök igen.";
       try {
         const remoteStatus = await demoDependencies.readSessionStatus();
         if (remoteStatus.state === "active") {

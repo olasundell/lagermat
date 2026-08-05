@@ -653,8 +653,11 @@ export function SchedulePage() {
   const recurringHasConflict = recurringPreview.some((item) => item.state === "conflict");
 
   return (
-    <section className="page schedule-page">
-      <div className="page-heading page-heading--split schedule-heading">
+    <section className="page schedule-page" data-tutorial-id="schedule-page">
+      <div
+        className="page-heading page-heading--split schedule-heading"
+        data-tutorial-id="schedule-heading"
+      >
         <div>
           <p className="page-heading__eyebrow">Planera måltider</p>
           <h1>Matsedel</h1>
@@ -664,7 +667,7 @@ export function SchedulePage() {
             scheduleCalculationLabel(Boolean(revision), meals.length)
           ].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" data-tutorial-id="schedule-calculate">
           <Button className="secondary-button" onPress={calculate} isDisabled={calculating || (readiness?.planned_slots ?? meals.length) === 0}>
             {calculating ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Calculator aria-hidden="true" size={18} />} Räkna ut mängder
           </Button>
@@ -727,10 +730,10 @@ export function SchedulePage() {
               <div className="empty-panel"><h2>Välj recept innan du planerar rätterna</h2><p>Måltidstillfällena kan konfigureras nu, men varje planerad måltid behöver ett publicerat recept.</p><Link to="/recept" className="primary-button">Öppna recepten</Link></div>
             ) : null}
 
-            <div className="schedule-table-wrap">
+            <div className="schedule-table-wrap" data-tutorial-id="schedule-grid">
               <table className="schedule-table">
                 <caption className="sr-only">Alla lägerdagar och konfigurerade måltidstillfällen</caption>
-                <thead><tr><th scope="col"><span className="sr-only">Måltidstyp</span></th>{dateKeys.map((date) => {
+                <thead data-tutorial-id="schedule-grid-heading"><tr><th scope="col"><span className="sr-only">Måltidstyp</span></th>{dateKeys.map((date) => {
                   const heading = dayHeading(`${date}T12:00:00`, activeCamp.timezone);
                   return <th scope="col" key={date}>{heading.weekday}<span>{heading.date}</span></th>;
                 })}</tr></thead>

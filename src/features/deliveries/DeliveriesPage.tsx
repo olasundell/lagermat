@@ -378,9 +378,12 @@ export function DeliveriesPage() {
 
   if (!selectedDelivery) {
     return (
-      <section className="workspace-page delivery-empty-page">
+      <section
+        className="workspace-page delivery-empty-page"
+        data-tutorial-id="deliveries-page"
+      >
         {scope ? <SupplySyncStatus scope={scope} state={offlineState} cached={cached} cachedAt={listsQuery.data?.cachedAt ?? null} onRefresh={refresh} /> : null}
-        <div className="empty-state">
+        <div className="empty-state" data-tutorial-id="deliveries-distribute">
           <Truck aria-hidden="true" size={38} />
           <h1>Inga leveranser ännu</h1>
           <p>Appen föreslår leveransdagar utifrån matsedeln.</p>
@@ -407,7 +410,7 @@ export function DeliveriesPage() {
   }
 
   return (
-    <section className="delivery-page">
+    <section className="delivery-page" data-tutorial-id="deliveries-page">
       <div className="delivery-content">
         <div className="delivery-breadcrumb">{activeMembership?.organizationName} <span>·</span> {activeCamp?.name}</div>
         <div className="page-heading delivery-heading">
@@ -476,7 +479,11 @@ export function DeliveriesPage() {
           </label>
         ) : null}
 
-        <div className="delivery-filters" aria-label="Filtrera leveranslistan">
+        <div
+          className="delivery-filters"
+          aria-label="Filtrera leveranslistan"
+          data-tutorial-id="deliveries-distribute"
+        >
           <Button aria-pressed={filter === "all"} className={filter === "all" ? "is-selected" : ""} onPress={() => setFilter("all")}>Alla {currentItems.length}</Button>
           <Button aria-pressed={filter === "remaining"} className={filter === "remaining" ? "is-selected" : ""} onPress={() => setFilter("remaining")}>Kvar {remaining}</Button>
           <Button aria-pressed={filter === "done"} className={filter === "done" ? "is-selected" : ""} onPress={() => setFilter("done")}>Klara {done}</Button>
@@ -504,7 +511,7 @@ export function DeliveriesPage() {
           </div>
         ) : null}
 
-        <div className="delivery-groups">
+        <div className="delivery-groups" data-tutorial-id="deliveries-list">
           {[...grouped.entries()].map(([category, categoryItems]) => (
             <section key={category} className="delivery-group" aria-labelledby={`category-${category}`}>
               <h2 id={`category-${category}`}>{category}</h2>
@@ -573,7 +580,7 @@ export function DeliveriesPage() {
         </div>
       </div>
 
-      <footer className="delivery-footer">
+      <footer className="delivery-footer" data-tutorial-id="deliveries-complete">
         <div className="delivery-footer__summary">
           <strong>{done} av {currentItems.length} klara</strong>
           {readinessQuery.data?.problems.length ? (

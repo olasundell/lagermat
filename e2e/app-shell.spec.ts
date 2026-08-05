@@ -5,7 +5,8 @@ import { enrolLocalAdminMfa, localMessageIds, loginWithLocalMagicLink, waitForLo
 
 test.describe.configure({ mode: "serial" });
 
-const localSupabaseUrl = "http://127.0.0.1:54321";
+const localSupabaseUrl = process.env.PLAYWRIGHT_SUPABASE_URL
+  ?? "http://127.0.0.1:54321";
 const localAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYXNlLWRlbW8iLCJyb2xlIjoiYW5vbiIsImV4cCI6MTk4MzgxMjk5Nn0.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
 
 const currentUserOfflineRecords = [
@@ -154,6 +155,8 @@ test("desktop app shell exposes all seven main areas", async ({ page, request },
   await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
   await expect(page.getByRole("heading", { name: "Sommarläger 2026" })).toBeVisible();
   await expect(page.getByText(/55 deltagare/)).toBeVisible();
+  await expect(page.locator("[data-tutorial-ui]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Visa guiden igen" })).toHaveCount(0);
 
   for (const label of ["Översikt", "Deltagare", "Specialkost", "Recept", "Matsedel", "Inköp", "Leveranser"]) {
     await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
@@ -171,6 +174,8 @@ test("desktop app shell exposes all seven main areas", async ({ page, request },
 test("mobile app shell exposes navigation, workspace and user actions from the menu", async ({ page, request }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "Mobile-only shell assertion");
   await loginWithLocalMagicLink(page, request, "oskar@bjorkstad.test");
+  await expect(page.locator("[data-tutorial-ui]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Visa guiden igen" })).toHaveCount(0);
 
   const menuButton = page.getByRole("button", { name: "Öppna huvudmenyn" });
   await menuButton.focus();

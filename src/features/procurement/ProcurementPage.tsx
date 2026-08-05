@@ -394,7 +394,10 @@ export function ProcurementPage() {
   }
 
   return (
-    <section className="workspace-page procurement-page">
+    <section
+      className="workspace-page procurement-page"
+      data-tutorial-id="procurement-page"
+    >
       <div className="page-heading procurement-heading">
         <div>
           <span className="eyebrow"><ShoppingCart aria-hidden="true" size={18} /> Inköpslistor</span>
@@ -402,19 +405,19 @@ export function ProcurementPage() {
           <p>Behovet visar den beräknade mängden. Fyll i det du faktiskt beställer separat.</p>
         </div>
         {checkingCurrentCalculation ? (
-          <Button className="primary-button" isDisabled>
+          <Button className="primary-button" data-tutorial-id="procurement-create" isDisabled>
             <Calculator aria-hidden="true" size={19} /> Kontrollerar beräkning…
           </Button>
         ) : calculationStatusUnavailable ? (
-          <Button className="primary-button" isDisabled>
+          <Button className="primary-button" data-tutorial-id="procurement-create" isDisabled>
             <AlertTriangle aria-hidden="true" size={19} /> {offlineState.online ? "Kan inte kontrollera beräkning" : "Offline"}
           </Button>
         ) : hasCurrentCalculation ? (
-          <Button className="primary-button" onPress={generate} isDisabled={generating || !scope || !networkWritable}>
+          <Button className="primary-button" data-tutorial-id="procurement-create" onPress={generate} isDisabled={generating || !scope || !networkWritable}>
             <ListRestart aria-hidden="true" size={19} /> {generating ? "Uppdaterar…" : purchaseList ? "Uppdatera från beräkning" : "Skapa listor"}
           </Button>
         ) : (
-          <Link to="/matsedel" className="primary-button">
+          <Link to="/matsedel" className="primary-button" data-tutorial-id="procurement-create">
             <Calculator aria-hidden="true" size={19} /> Räkna ut mängder
           </Link>
         )}
@@ -577,7 +580,11 @@ export function ProcurementPage() {
             ligger kvar oförändrad och används när en faktisk artikel räknas
             om till hela förpackningar.
           </p>
-          <div className="procurement-filters" aria-label="Filtrera inköpslistan">
+          <div
+            className="procurement-filters"
+            aria-label="Filtrera inköpslistan"
+            data-tutorial-id="procurement-review"
+          >
             <label className="procurement-search">
               <span className="sr-only">Sök råvara, kommentar eller ICA-artikel</span>
               <Search aria-hidden="true" size={20} />
@@ -612,7 +619,7 @@ export function ProcurementPage() {
             </label>
           </div>
           {visiblePurchaseItemIds.size === 0 ? <p className="procurement-filter-empty">Inga varor matchar filtret.</p> : null}
-          <div className="order-grid">
+          <div className="order-grid" data-tutorial-id="procurement-list">
             {purchaseItems.map((item) => (
               <OrderEditor
                 key={`${item.id}:${item.row_version}`}

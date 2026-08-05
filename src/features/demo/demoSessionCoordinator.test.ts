@@ -7,6 +7,10 @@ import {
   type DemoRemoteStatus,
   type DemoSessionDependencies
 } from "./demoSessionCoordinator";
+import {
+  TURNSTILE_ALWAYS_PASS_SITE_KEY,
+  TURNSTILE_DUMMY_TOKEN
+} from "./demoTurnstileTestMode";
 
 const tokens = {
   authCaptchaToken: "auth-token",
@@ -151,7 +155,7 @@ describe("enterDemoSession", () => {
     await expect(
       enterDemoSession(tokens, normalAccount)
     ).rejects.toThrow(
-      "Logga ut från det vanliga kontot innan du startar demot."
+      "Logga ut från det vanliga kontot innan du öppnar demoläget."
     );
 
     await expect(
@@ -160,6 +164,33 @@ describe("enterDemoSession", () => {
         provisionCaptchaToken: "same-token"
       }, dependencies())
     ).rejects.toThrow(
+      "Robotkontrollerna måste använda två olika engångstoken."
+    );
+  });
+
+  it("tillåter Cloudflares fasta testtoken bara med testnyckeln på loopback", async () => {
+    const repeatedTokens = {
+      authCaptchaToken: TURNSTILE_DUMMY_TOKEN,
+      provisionCaptchaToken: TURNSTILE_DUMMY_TOKEN
+    };
+
+    await expect(enterDemoSession(
+      repeatedTokens,
+      dependencies(),
+      {
+        siteKey: TURNSTILE_ALWAYS_PASS_SITE_KEY,
+        appHostname: "127.0.0.1"
+      }
+    )).resolves.toMatchObject({ userId: "new-demo-user" });
+
+    await expect(enterDemoSession(
+      repeatedTokens,
+      dependencies(),
+      {
+        siteKey: TURNSTILE_ALWAYS_PASS_SITE_KEY,
+        appHostname: "demo.example.se"
+      }
+    )).rejects.toThrow(
       "Robotkontrollerna måste använda två olika engångstoken."
     );
   });
@@ -195,7 +226,7 @@ describe("resetDemoSession", () => {
         "reset-token",
         testDependencies
       )
-    ).rejects.toThrow("Endast den egna demosessionen kan återställas.");
+    ).rejects.toThrow("Bara det egna demolägret kan återställas.");
     expect(testDependencies.clearOfflineDataForUser).not.toHaveBeenCalled();
   });
 });

@@ -20,6 +20,9 @@ jobs:
     name: ${{ inputs.environment_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: hosted-release-${{ inputs.environment_name }}
+      cancel-in-progress: false
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ vars.APP_ORIGIN }}

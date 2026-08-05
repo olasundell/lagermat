@@ -1,6 +1,9 @@
-import { PAGE_TUTORIAL_IDS } from "./tutorialDefinition";
+import {
+  ALL_PAGE_TUTORIALS,
+  ALL_PAGE_TUTORIAL_IDS
+} from "./tutorialDefinition";
 
-export const TUTORIAL_PROGRESS_VERSION = 1;
+export const TUTORIAL_PROGRESS_VERSION = 2;
 export const TUTORIAL_PROGRESS_KEY =
   `lagermat:tutorial-progress:v${TUTORIAL_PROGRESS_VERSION}`;
 
@@ -56,14 +59,19 @@ export function parseTutorialProgress(value: string | null): TutorialProgress {
       return initialTutorialProgress();
     }
 
+    const pageStepCounts = new Map(
+      ALL_PAGE_TUTORIALS.map(({ id, steps }) => [id, steps.length])
+    );
     const pageSteps = Object.fromEntries(
       Object.entries(parsed.pageSteps as Record<string, unknown>)
-        .filter(([id, step]) =>
-          PAGE_TUTORIAL_IDS.includes(id)
-          && Number.isInteger(step)
-          && Number(step) >= 0
-          && Number(step) <= 2
-        )
+        .filter(([id, step]) => {
+          const stepCount = pageStepCounts.get(id);
+          return ALL_PAGE_TUTORIAL_IDS.includes(id)
+            && stepCount !== undefined
+            && Number.isInteger(step)
+            && Number(step) >= 0
+            && Number(step) <= stepCount;
+        })
         .map(([id, step]) => [id, Number(step)])
     );
 

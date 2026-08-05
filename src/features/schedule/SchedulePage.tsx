@@ -618,6 +618,9 @@ export function SchedulePage() {
   }
 
   const nextAction = scheduleNextAction(readiness);
+  const tutorialMealId = meals.find((meal) =>
+    slotsById.get(meal.meal_slot_id)?.service_status === "required"
+  )?.id ?? null;
   const nextActionPath = nextAction?.kind === "review_dietary_needs"
     ? "/specialkost"
     : nextAction?.kind === "choose_meal_recipe" && versionOptions.length === 0
@@ -631,7 +634,7 @@ export function SchedulePage() {
   const nextActionContent = nextAction ? (
     <>
       <CircleAlert aria-hidden="true" size={24} fill="currentColor" />
-      <span className="warning-banner__copy">
+      <span className="warning-banner__copy" data-tutorial-id="schedule-status">
         <strong>{nextAction.title}</strong>
         <small>{nextAction.description}</small>
       </span>
@@ -667,8 +670,13 @@ export function SchedulePage() {
             scheduleCalculationLabel(Boolean(revision), meals.length)
           ].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="page-actions" data-tutorial-id="schedule-calculate">
-          <Button className="secondary-button" onPress={calculate} isDisabled={calculating || (readiness?.planned_slots ?? meals.length) === 0}>
+        <div className="page-actions">
+          <Button
+            className="secondary-button"
+            data-tutorial-id="schedule-calculate"
+            onPress={calculate}
+            isDisabled={calculating || (readiness?.planned_slots ?? meals.length) === 0}
+          >
             {calculating ? <LoaderCircle className="spin" aria-hidden="true" size={18} /> : <Calculator aria-hidden="true" size={18} />} Räkna ut mängder
           </Button>
           <Button className="primary-button" onPress={() => openNewMeal()} isDisabled={versionOptions.length === 0}><CalendarPlus aria-hidden="true" size={19} /> Lägg till extra måltid</Button>
@@ -706,7 +714,7 @@ export function SchedulePage() {
             ) : readiness ? (
               <div className="schedule-ready-banner">
                 <Check aria-hidden="true" size={23} />
-                <span className="warning-banner__copy">
+                <span className="warning-banner__copy" data-tutorial-id="schedule-status">
                   <strong>Matsedeln är klar</strong>
                   <small>{revision ? "Alla måltider är planerade och mängderna är aktuella." : "Alla måltider är planerade och granskade."}</small>
                 </span>
@@ -733,9 +741,16 @@ export function SchedulePage() {
             <div className="schedule-table-wrap" data-tutorial-id="schedule-grid">
               <table className="schedule-table">
                 <caption className="sr-only">Alla lägerdagar och konfigurerade måltidstillfällen</caption>
-                <thead data-tutorial-id="schedule-grid-heading"><tr><th scope="col"><span className="sr-only">Måltidstyp</span></th>{dateKeys.map((date) => {
+                <thead><tr><th scope="col"><span className="sr-only">Måltidstyp</span></th>{dateKeys.map((date, index) => {
                   const heading = dayHeading(`${date}T12:00:00`, activeCamp.timezone);
-                  return <th scope="col" key={date}>{heading.weekday}<span>{heading.date}</span></th>;
+                  return (
+                    <th scope="col" key={date}>
+                      <strong data-tutorial-id={index === 0 ? "schedule-grid-heading" : undefined}>
+                        {heading.weekday}
+                      </strong>
+                      <span>{heading.date}</span>
+                    </th>
+                  );
                 })}</tr></thead>
                 <tbody>{mealTypes.map((type) => <tr key={type}><th scope="row">{mealTypeLabels[type]}</th>{dateKeys.map((date) => {
                   const cellSlots = slots.filter((slot) => slot.meal_type === type && slot.service_date === date);
@@ -805,7 +820,10 @@ export function SchedulePage() {
                                   aria-expanded={isExpanded}
                                   aria-controls={actionRegionId}
                                 >
-                                  <strong>{meal.title}</strong>
+                                  <strong data-tutorial-id={meal.id === tutorialMealId
+                                    ? "schedule-meal-example"
+                                    : undefined}
+                                  >{meal.title}</strong>
                                   <span className="meal-cell__meta"><span>{timeLabel(meal.starts_at, activeCamp.timezone)} · {linesByMeal.has(meal.id) ? "beräknad" : "ej beräknad"}</span><MealStatusIcon status={statusForMeal(meal)} /></span>
                                   <span className="meal-cell__hint">Ändra måltid <ChevronRight className="meal-card__chevron" aria-hidden="true" size={14} /></span>
                                 </Button>

@@ -125,14 +125,12 @@ export function OverviewPage() {
 
   useEffect(() => {
     registerOverview({
-      ready: Boolean(activeMembership && activeCamp && overviewQuery.isSuccess),
-      nextPath: nextAction.to
+      ready: Boolean(activeMembership && activeCamp && overviewQuery.isSuccess)
     });
     return () => registerOverview(null);
   }, [
     activeCamp,
     activeMembership,
-    nextAction.to,
     overviewQuery.isSuccess,
     registerOverview
   ]);
@@ -259,7 +257,23 @@ export function OverviewPage() {
                   {step.to ? <ArrowRight aria-hidden="true" size={19} /> : null}
                 </>
               );
-              return <li key={step.number}>{step.to ? <Link to={step.to} className="step-row">{content}</Link> : <div className="step-row">{content}</div>}</li>;
+              return (
+                <li key={step.number}>
+                  {step.to ? (
+                    <Link
+                      to={step.to}
+                      className="step-row"
+                      data-tutorial-id={step.title === "Deltagare"
+                        ? "overview-participants-step"
+                        : undefined}
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div className="step-row">{content}</div>
+                  )}
+                </li>
+              );
             })}
           </ol>
         </div>

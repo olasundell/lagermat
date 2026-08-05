@@ -8,12 +8,27 @@ test.skip(
 );
 
 const pageTips = [
-  ["/deltagare", "Deltagarna är grunden", "Spara bara det köket behöver"],
-  ["/specialkost", "Granska uppgifterna", "Du fattar beslutet"],
-  ["/recept", "Välj recept", "Lägg till i lägret"],
-  ["/matsedel", "Planera varje servering", "Räkna ut mängderna"],
-  ["/inkop", "Skapa inköpsunderlaget", "Kontrollera innan du beställer"],
-  ["/leveranser", "Fördela inköpen", "Gör klart leveransen"]
+  [
+    "/deltagare",
+    "Deltagarna är grunden",
+    "Spara bara det köket behöver",
+    "Gå vidare till specialkost",
+    "/specialkost"
+  ],
+  [
+    "/specialkost",
+    "Granska uppgifterna",
+    "Du fattar beslutet",
+    "Gå vidare till recept",
+    "/recept"
+  ],
+  [
+    "/recept",
+    "Välj recept",
+    "Lägg till i lägret",
+    "Gå vidare till matsedel",
+    "/matsedel"
+  ]
 ] as const;
 
 async function provisionCanonicalDemo(page: Page) {
@@ -37,10 +52,22 @@ async function provisionCanonicalDemo(page: Page) {
   })).toBeVisible();
 }
 
-function nonReadRequests(page: Page) {
+const readOnlyPostRpcPaths = new Set([
+  "/rest/v1/rpc/get_camp_readiness",
+  "/rest/v1/rpc/get_demo_session_status",
+  "/rest/v1/rpc/get_zero_attendance_meals"
+]);
+
+function stateChangingRequests(page: Page) {
   const requests: string[] = [];
   const listener = (request: Request) => {
-    if (!["GET", "HEAD", "OPTIONS"].includes(request.method())) {
+    const url = new URL(request.url());
+    const readOnlyPost = request.method() === "POST"
+      && readOnlyPostRpcPaths.has(url.pathname);
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(request.method())
+      && !readOnlyPost
+    ) {
       requests.push(`${request.method()} ${request.url()}`);
     }
   };
@@ -59,14 +86,17 @@ async function expectTutorialLayout(
   const dialog = page.getByRole("dialog", { name: title });
   await expect(dialog).toBeVisible();
   const overlay = page.locator("[data-tutorial-layout]");
-  const layout = await overlay.getAttribute("data-tutorial-layout");
 
   if (projectName.includes("mobile")) {
-    expect(layout).toBe("sheet");
+    await expect(overlay).toHaveAttribute("data-tutorial-layout", "sheet");
   } else {
-    expect(layout).toMatch(/^(?:popover|dialog)$/);
+    await expect(overlay).toHaveAttribute(
+      "data-tutorial-layout",
+      /^(?:popover|dialog)$/
+    );
   }
 
+  const layout = await overlay.getAttribute("data-tutorial-layout");
   if (layout === "popover") {
     await expect(page.locator("[data-tutorial-active='true']")).toBeVisible();
   }
@@ -79,6 +109,54 @@ async function expectTutorialLayout(
   expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
   expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(viewport!.width);
   expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(viewport!.height);
+}
+
+async function expectTutorialTargetUnobscured(
+  page: Page,
+  tutorialIds: string | readonly string[]
+) {
+  const candidates = typeof tutorialIds === "string"
+    ? [tutorialIds]
+    : tutorialIds;
+  let tutorialId = candidates[0];
+  for (const candidate of candidates) {
+    if (await page.locator(`[data-tutorial-id='${candidate}']`).count()) {
+      tutorialId = candidate;
+      break;
+    }
+  }
+  const target = page.locator(`[data-tutorial-id='${tutorialId}']`);
+  await expect(target).toBeVisible();
+
+  await expect.poll(async () => {
+    const viewport = page.viewportSize();
+    const targetBox = await page.locator("[data-tutorial-active='true']")
+      .boundingBox();
+    const dialogBox = await page.getByRole("dialog").boundingBox();
+    if (!viewport || !targetBox || !dialogBox) return false;
+
+    const insideViewport = targetBox.x >= 0
+      && targetBox.y >= 0
+      && targetBox.x + targetBox.width <= viewport.width
+      && targetBox.y + targetBox.height <= viewport.height;
+    const horizontalOverlap = Math.max(
+      0,
+      Math.min(targetBox.x + targetBox.width, dialogBox.x + dialogBox.width)
+        - Math.max(targetBox.x, dialogBox.x)
+    );
+    const verticalOverlap = Math.max(
+      0,
+      Math.min(targetBox.y + targetBox.height, dialogBox.y + dialogBox.height)
+        - Math.max(targetBox.y, dialogBox.y)
+    );
+
+    const meaningfulTargetArea = targetBox.width >= 24 && targetBox.height >= 16;
+    return insideViewport
+      && meaningfulTargetArea
+      && horizontalOverlap * verticalOverlap === 0;
+  }, {
+    message: `Guidens mål ${tutorialId} ska vara synligt och inte täckas av dialogen`
+  }).toBe(true);
 }
 
 async function browserStorageWithoutTutorial(page: Page) {
@@ -105,8 +183,12 @@ test("guiden fungerar på den kanoniska demoläger-fixturen", async ({ page }, t
     .toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Steg 3 av 6")).toBeVisible();
 
-  const introRequests = nonReadRequests(page);
-  for (const title of ["Appens delar", "Planera i rätt ordning", "Nästa steg"] ) {
+  const introRequests = stateChangingRequests(page);
+  for (const title of [
+    "Appens delar",
+    "Planera i rätt ordning",
+    "Börja med deltagarna"
+  ]) {
     await page.getByRole("button", { name: "Nästa" }).click();
     await expectTutorialLayout(page, testInfo.project.name, title);
   }
@@ -118,24 +200,106 @@ test("guiden fungerar på den kanoniska demoläger-fixturen", async ({ page }, t
     "Ta ett steg i taget. Vi visar vad som återstår innan inköpsunderlaget är klart."
   )).toBeVisible();
   await expect(page.getByText("Nästa steg", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Börja med deltagarna" }))
+    .not.toContainText("Granska specialkost");
+  await expect(page.locator("[data-tutorial-id='overview-participants-step']"))
+    .toBeVisible();
   const nextPath = await page.locator("[data-tutorial-id='overview-next-action']")
     .getAttribute("data-tutorial-next-path");
   expect(nextPath).toMatch(/^\/(?:deltagare|specialkost|recept|matsedel|inkop|leveranser)$/);
-  await page.getByRole("button", { name: "Gå till nästa steg" }).click();
-  await expect(page).toHaveURL(new RegExp(`${nextPath}$`));
+  await page.getByRole("button", { name: "Gå vidare till deltagare" }).click();
+  await expect(page).toHaveURL(/\/deltagare$/);
 
-  for (const [route, firstTitle, secondTitle] of pageTips) {
-    await page.goto(route);
+  for (const [route, firstTitle, secondTitle, continuation, nextRoute] of pageTips) {
+    await expect(page).toHaveURL(new RegExp(`${route}$`));
     await expectTutorialLayout(page, testInfo.project.name, firstTitle);
-    const tipRequests = nonReadRequests(page);
+    const tipRequests = stateChangingRequests(page);
     await page.getByRole("button", { name: "Nästa" }).click();
     await expectTutorialLayout(page, testInfo.project.name, secondTitle);
-    await page.getByRole("button", { name: "Avsluta" }).click();
+    await page.getByRole("button", { name: continuation }).click();
+    await expect(page).toHaveURL(new RegExp(`${nextRoute}$`));
     tipRequests.stop();
     expect(tipRequests.requests, `Tipsen på ${route} får inte skriva till servern`)
       .toEqual([]);
+  }
 
-    await page.reload();
+  const finishingRequests = stateChangingRequests(page);
+  for (const [title, step, tutorialId] of [
+    ["Så läser du matsedeln", "Steg 1 av 4", "schedule-grid-heading"],
+    ["Öppna och ändra en servering", "Steg 2 av 4", "schedule-meal-example"],
+    ["Följ vad som återstår", "Steg 3 av 4", "schedule-status"],
+    ["Räkna ut mängderna", "Steg 4 av 4", "schedule-calculate"]
+  ] as const) {
+    await expectTutorialLayout(page, testInfo.project.name, title);
+    await expect(page.getByText(step)).toBeVisible();
+    await expectTutorialTargetUnobscured(page, tutorialId);
+    if (title === "Öppna och ändra en servering") {
+      await expect(page.locator("[data-tutorial-layout]")).toHaveAttribute(
+        "data-tutorial-layout",
+        testInfo.project.name.includes("mobile") ? "sheet" : "popover"
+      );
+    }
+    if (title !== "Räkna ut mängderna") {
+      await page.getByRole("button", { name: "Nästa" }).click();
+    }
+  }
+  const mealExample = page.locator("[data-tutorial-id='schedule-meal-example']");
+  await expect(mealExample).toBeVisible();
+  await expect(mealExample.locator("..")).toHaveRole("button");
+  await expect(mealExample.locator("..")).toContainText("Ändra måltid");
+  await expect(page.locator("[data-tutorial-id='schedule-calculate']"))
+    .toHaveRole("button");
+  await expect(page.locator("[data-tutorial-id='schedule-calculate']"))
+    .toHaveAccessibleName("Räkna ut mängder");
+  await page.getByRole("button", { name: "Gå vidare till inköp" }).click();
+  await expect(page).toHaveURL(/\/inkop$/);
+  await expectTutorialLayout(
+    page,
+    testInfo.project.name,
+    "Skapa inköpsunderlaget"
+  );
+  await expectTutorialTargetUnobscured(page, "procurement-create");
+  await page.getByRole("button", { name: "Nästa" }).click();
+  await expectTutorialLayout(
+    page,
+    testInfo.project.name,
+    "Granska underlaget"
+  );
+  await expect(page.getByRole("dialog", { name: "Granska underlaget" }))
+    .toContainText("När det finns faktiska matchningsresultat visas en separat genomgång");
+  await expectTutorialTargetUnobscured(page, "procurement-review");
+  await page.getByRole("button", {
+    name: "Gå vidare till leveranser"
+  }).click();
+  await expect(page).toHaveURL(/\/leveranser$/);
+  await expectTutorialLayout(
+    page,
+    testInfo.project.name,
+    "Skapa eller fördela leveransen"
+  );
+  await expectTutorialTargetUnobscured(
+    page,
+    ["deliveries-list", "deliveries-distribute"]
+  );
+  await page.getByRole("button", { name: "Nästa" }).click();
+  await expectTutorialLayout(
+    page,
+    testInfo.project.name,
+    "Följ leveransen till klar"
+  );
+  await expectTutorialTargetUnobscured(
+    page,
+    ["deliveries-complete", "deliveries-distribute"]
+  );
+  await page.getByRole("button", { name: "Avsluta" }).click();
+  finishingRequests.stop();
+  expect(
+    finishingRequests.requests,
+    "Matsedel–inköp–leveranser-guiden får inte skriva till servern"
+  ).toEqual([]);
+
+  for (const route of ["/matsedel", "/inkop", "/leveranser"] as const) {
+    await page.goto(route);
     await expect(page.locator("[data-tutorial-ui]")).toHaveCount(0);
   }
 

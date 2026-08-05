@@ -24,6 +24,7 @@ interface TargetRect {
 
 const TUTORIAL_EDGE_GAP = 4;
 const TUTORIAL_TARGET_PADDING = 5;
+const MOBILE_TARGET_OFFSET = 16;
 const MIN_VERTICAL_POPOVER_SPACE = 320;
 const MIN_HORIZONTAL_POPOVER_SPACE = 452;
 
@@ -33,11 +34,13 @@ export interface TutorialOverlayProps {
   stepCount: number;
   target: HTMLElement | null;
   kind: "intro" | "page";
+  continuationLabel?: string;
   onBack: () => void;
   onNext: () => void;
   onClose: () => void;
   onSkip: () => void;
-  onDynamicHandoff: () => void;
+  onStartPageGuide: () => void;
+  onContinuePage: () => void;
 }
 
 function useMobileTutorial(): boolean {
@@ -56,20 +59,32 @@ function useMobileTutorial(): boolean {
   return mobile;
 }
 
-function useTargetRect(target: HTMLElement | null): TargetRect | null {
+function useTargetRect(
+  target: HTMLElement | null,
+  mobile: boolean
+): TargetRect | null {
   const [rect, setRect] = useState<TargetRect | null>(null);
 
   useLayoutEffect(() => {
     if (!target) return;
 
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches;
-    target.scrollIntoView({
-      block: "center",
-      inline: "nearest",
-      behavior: reducedMotion ? "auto" : "smooth"
-    });
+    const scrollTargetIntoView = () => {
+      target.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+        behavior: "auto"
+      });
+      if (mobile) {
+        const next = target.getBoundingClientRect();
+        const targetInLowerHalf = next.top + next.height / 2
+          > window.innerHeight / 2;
+        window.scrollBy({
+          top: targetInLowerHalf ? -MOBILE_TARGET_OFFSET : MOBILE_TARGET_OFFSET,
+          behavior: "auto"
+        });
+      }
+    };
+    scrollTargetIntoView();
 
     const update = () => {
       const next = target.getBoundingClientRect();
@@ -107,7 +122,13 @@ function useTargetRect(target: HTMLElement | null): TargetRect | null {
       });
     };
     update();
-    const animationFrame = window.requestAnimationFrame(update);
+    const animationFrame = window.requestAnimationFrame(() => {
+      // Route scroll restoration and modal autofocus can run after the first
+      // layout effect. Re-apply the target scroll once the overlay has settled
+      // so off-screen anchors remain visible, especially in the mobile sheet.
+      scrollTargetIntoView();
+      update();
+    });
     const resizeObserver = typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(update);
@@ -120,7 +141,7 @@ function useTargetRect(target: HTMLElement | null): TargetRect | null {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [target]);
+  }, [mobile, target]);
 
   return target ? rect : null;
 }
@@ -177,7 +198,9 @@ function TutorialCard({
   onNext,
   onClose,
   onSkip,
-  onDynamicHandoff
+  onStartPageGuide,
+  onContinuePage,
+  continuationLabel
 }: Omit<TutorialOverlayProps, "target">) {
   const welcome = kind === "intro" && stepIndex === 0;
   const finalIntro = kind === "intro" && stepIndex === stepCount - 1;
@@ -218,8 +241,18 @@ function TutorialCard({
             <Button className="secondary-button" onPress={onClose}>
               Stanna här
             </Button>
-            <Button autoFocus className="primary-button" onPress={onDynamicHandoff}>
-              Gå till nästa steg
+            <Button autoFocus className="primary-button" onPress={onStartPageGuide}>
+              Gå vidare till deltagare
+            </Button>
+          </>
+        ) : finalPageTip && continuationLabel ? (
+          <>
+            <Button className="button-link" onPress={onBack}>Tillbaka</Button>
+            <Button className="secondary-button" onPress={onClose}>
+              Avsluta
+            </Button>
+            <Button autoFocus className="primary-button" onPress={onContinuePage}>
+              {continuationLabel}
             </Button>
           </>
         ) : (
@@ -242,7 +275,7 @@ function TutorialCard({
 
 export function TutorialOverlay(props: TutorialOverlayProps) {
   const mobile = useMobileTutorial();
-  const targetRect = useTargetRect(props.target);
+  const targetRect = useTargetRect(props.target, mobile);
   const { onClose } = props;
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -271,7 +304,7 @@ export function TutorialOverlay(props: TutorialOverlayProps) {
     && hasPopoverRoom(targetRect, props.step.placement);
   const mobileSheetEdge = mobile
     && targetRect
-    && targetRect.top > window.innerHeight / 2
+    && targetRect.top + targetRect.height / 2 > window.innerHeight / 2
     ? "top"
     : "bottom";
   const card = <TutorialCard {...props} />;

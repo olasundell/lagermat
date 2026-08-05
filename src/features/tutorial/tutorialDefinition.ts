@@ -27,7 +27,11 @@ export interface TutorialStep {
 export interface PageTutorial {
   id: string;
   route: Exclude<TutorialRoute, "/">;
-  steps: readonly [TutorialStep, TutorialStep];
+  steps: readonly [TutorialStep, TutorialStep, ...TutorialStep[]];
+  continuation?: {
+    route: Exclude<TutorialRoute, "/">;
+    label: string;
+  };
 }
 
 export const INTRO_TUTORIAL_STEPS: readonly TutorialStep[] = [
@@ -93,15 +97,15 @@ export const INTRO_TUTORIAL_STEPS: readonly TutorialStep[] = [
     eligibility: "active-demo"
   },
   {
-    id: "next-action",
-    title: "Nästa steg",
+    id: "participants-handoff",
+    title: "Börja med deltagarna",
     body: [
-      "Här visar Lägermat vad som är viktigast att göra nu, utifrån hur långt planeringen har kommit."
+      "Guiden fortsätter med deltagarna, eftersom närvaro och specialkost påverkar resten av planeringen."
     ],
     route: "/",
-    primaryAnchor: "overview-next-action",
-    fallbackAnchor: "overview-page",
-    placement: "left",
+    primaryAnchor: "overview-participants-step",
+    fallbackAnchor: "overview-flow",
+    placement: "right",
     eligibility: "active-demo"
   }
 ];
@@ -136,7 +140,7 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "participants-foundation",
         "/deltagare",
         "Deltagarna är grunden",
-        "I demolägret finns redan exempel. I ett riktigt läger kan du lägga till deltagare en i taget eller läsa in en fil.",
+        "I demolägret finns redan exempel. I ett riktigt läger kan du lägga till deltagare en i taget eller läsa in en fil. På sikt kommer här även finnas integration mot Scoutnet, både för scouter och för arrangemang.",
         "participants-heading",
         "participants-page"
       ),
@@ -149,7 +153,11 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "participants-page",
         "top"
       )
-    ]
+    ],
+    continuation: {
+      route: "/specialkost",
+      label: "Gå vidare till specialkost"
+    }
   },
   {
     id: "special-diets",
@@ -159,8 +167,8 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "diets-review",
         "/specialkost",
         "Granska uppgifterna",
-        "Här samlas specialkost som behöver bedömas innan mängderna räknas ut.",
-        "diets-heading",
+        "Här samlas specialkost som behöver bedömas innan mängderna räknas ut. Som vi kan se, så återstår en scout som ännu inte är granskad.",
+        "diets-review",
         "diets-page"
       ),
       pageStep(
@@ -168,11 +176,15 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "/specialkost",
         "Du fattar beslutet",
         "Text från anmälan är bara ett underlag. Välj den specialkost som köket faktiskt ska planera för.",
-        "diets-decision-heading",
-        "diets-page",
+        "diets-decision-card",
+        "diets-review",
         "left"
       )
-    ]
+    ],
+    continuation: {
+      route: "/recept",
+      label: "Gå vidare till recept"
+    }
   },
   {
     id: "recipes",
@@ -182,8 +194,8 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "recipes-library",
         "/recept",
         "Välj recept",
-        "Sök i biblioteket och öppna ett recept för att se ingredienser och portionsmängder.",
-        "recipes-heading",
+        "Sök i biblioteket och öppna ett recept för att se ingredienser och portionsmängder. Portionsmängderna skiljer sig beroende på deltagares ålder – spårare äter sällan lika mycket som utmanare.",
+        "recipes-library",
         "recipes-page",
         "right"
       ),
@@ -196,18 +208,40 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "recipes-page",
         "left"
       )
-    ]
+    ],
+    continuation: {
+      route: "/matsedel",
+      label: "Gå vidare till matsedel"
+    }
   },
   {
     id: "schedule",
     route: "/matsedel",
     steps: [
       pageStep(
-        "schedule-grid",
+        "schedule-overview",
         "/matsedel",
-        "Planera varje servering",
-        "Här ser du alla måltidstillfällen och vad som fortfarande behöver planeras.",
-        "schedule-heading",
+        "Så läser du matsedeln",
+        "Kolumnerna är lägerdagar och raderna är måltidstyper. Varje ruta visar tid, recept och om mängden är uträknad.",
+        "schedule-grid-heading",
+        "schedule-page",
+        "bottom"
+      ),
+      pageStep(
+        "schedule-edit-meal",
+        "/matsedel",
+        "Öppna och ändra en servering",
+        "Välj en måltidsruta för att byta recept, ändra tid, lägga till extra portioner eller markera att ingen servering ska ske.",
+        "schedule-meal-example",
+        "schedule-grid",
+        "right"
+      ),
+      pageStep(
+        "schedule-status",
+        "/matsedel",
+        "Följ vad som återstår",
+        "Statusraden visar nästa åtgärd. När alla serveringar är planerade ser du om mängderna behöver räknas om.",
+        "schedule-status",
         "schedule-page",
         "bottom"
       ),
@@ -215,12 +249,16 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "schedule-calculate",
         "/matsedel",
         "Räkna ut mängderna",
-        "När matsedeln är klar räknar Lägermat med deltagare, närvaro, recept och extra portioner.",
+        "När matsedeln är klar räknar Lägermat med deltagare, närvaro, recept och extra portioner. Därefter kan du skapa inköpsunderlaget.",
         "schedule-calculate",
         "schedule-page",
         "top"
       )
-    ]
+    ],
+    continuation: {
+      route: "/inkop",
+      label: "Gå vidare till inköp"
+    }
   },
   {
     id: "procurement",
@@ -230,20 +268,24 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
         "procurement-list",
         "/inkop",
         "Skapa inköpsunderlaget",
-        "När mängderna är uträknade samlas lägrets råvaror här.",
+        "Inköpsunderlaget bygger på den senaste mängdberäkningen. Om den saknas eller är inaktuell går du tillbaka till Matsedel här.",
         "procurement-create",
         "procurement-page"
       ),
       pageStep(
         "procurement-review",
         "/inkop",
-        "Kontrollera innan du beställer",
-        "Granska ICA-förslag, förpackningar och köpantal. Lägermat hjälper till, men du godkänner underlaget.",
+        "Granska underlaget",
+        "Efter en lyckad mängdberäkning skapar du inköpslistorna här. Då försöker Lägermat koppla varje råvara till en ICA-artikel och räknar om behovet till hela köpbara förpackningar. När det finns faktiska matchningsresultat visas en separat genomgång av förslagen, granskningen och köpantalet. Ingen order skickas automatiskt – du godkänner alltid underlaget.",
         "procurement-review",
         "procurement-page",
         "top"
       )
-    ]
+    ],
+    continuation: {
+      route: "/leveranser",
+      label: "Gå vidare till leveranser"
+    }
   },
   {
     id: "deliveries",
@@ -252,22 +294,62 @@ export const PAGE_TUTORIALS: readonly PageTutorial[] = [
       pageStep(
         "deliveries-list",
         "/leveranser",
-        "Fördela inköpen",
-        "Här ser du vad som behövs i varje leverans och när det ska finnas på plats.",
-        "deliveries-distribute",
-        "deliveries-page"
+        "Skapa eller fördela leveransen",
+        "Här ser du leveransens varor när underlaget finns. Om mängderna behöver räknas ut först visar sidan nästa åtgärd.",
+        "deliveries-list",
+        "deliveries-distribute"
       ),
       pageStep(
         "deliveries-complete",
         "/leveranser",
-        "Gör klart leveransen",
-        "Markera varor efter hand och åtgärda det som återstår innan du markerar leveransen som klar.",
+        "Följ leveransen till klar",
+        "När en leverans finns markerar du varor efter hand och åtgärdar det som återstår innan leveransen kan markeras som klar.",
         "deliveries-complete",
-        "deliveries-page",
+        "deliveries-distribute",
         "top"
       )
     ]
   }
 ];
 
+export const PROCUREMENT_MATCHING_TUTORIAL: PageTutorial = {
+  id: "procurement-matching",
+  route: "/inkop",
+  steps: [
+    pageStep(
+      "procurement-matching-overview",
+      "/inkop",
+      "Från råvara till ICA-artikel",
+      "Lägermat jämför råvarans namn och enhet med ICA-sortimentet. Tydliga träffar kan föreslås direkt, medan osäkra träffar alltid lämnas till dig att granska.",
+      "procurement-matching-overview",
+      "procurement-review",
+      "bottom"
+    ),
+    pageStep(
+      "procurement-matching-decisions",
+      "/inkop",
+      "Granska förslagen",
+      "Här ser du säkra förslag, träffar som behöver granskas och råvaror utan träff. Godkänn bara rätt artikel eller sök efter ett bättre alternativ. Ingen beställning skickas härifrån.",
+      "procurement-matching-decisions",
+      "procurement-matching-overview",
+      "top"
+    ),
+    pageStep(
+      "procurement-order-details",
+      "/inkop",
+      "Kontrollera förpackning och köpantal",
+      "När en artikel är vald räknar Lägermat om behovet till hela köpbara förpackningar. Kontrollera artikel, förpackningsstorlek och antal innan du sparar eller exporterar beställningen.",
+      "procurement-order-details",
+      "procurement-review",
+      "top"
+    )
+  ]
+};
+
+export const ALL_PAGE_TUTORIALS: readonly PageTutorial[] = [
+  ...PAGE_TUTORIALS,
+  PROCUREMENT_MATCHING_TUTORIAL
+];
+
 export const PAGE_TUTORIAL_IDS = PAGE_TUTORIALS.map(({ id }) => id);
+export const ALL_PAGE_TUTORIAL_IDS = ALL_PAGE_TUTORIALS.map(({ id }) => id);

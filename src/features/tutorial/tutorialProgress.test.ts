@@ -33,7 +33,7 @@ describe("tutorialProgress", () => {
     expect(TUTORIAL_PROGRESS_KEY).toContain(`v${TUTORIAL_PROGRESS_VERSION}`);
     expect(TUTORIAL_PROGRESS_KEY).not.toMatch(/user|camp|organisation|session/i);
     expect(initialTutorialProgress()).toEqual({
-      version: 1,
+      version: TUTORIAL_PROGRESS_VERSION,
       introStatus: "not-started",
       introStep: 0,
       pageSteps: {}
@@ -53,17 +53,27 @@ describe("tutorialProgress", () => {
   it("bevarar ett pågående steg över omladdning och rensar okända sidvärden", () => {
     const storage = new MemoryStorage();
     writeTutorialProgress(storage, {
-      version: 1,
+      version: TUTORIAL_PROGRESS_VERSION,
       introStatus: "in-progress",
       introStep: 3,
-      pageSteps: { participants: 1, unknown: 2, recipes: 9 }
+      pageSteps: {
+        participants: 1,
+        schedule: 3,
+        "procurement-matching": 2,
+        unknown: 2,
+        recipes: 9
+      }
     });
 
     expect(readTutorialProgress(storage)).toEqual({
-      version: 1,
+      version: TUTORIAL_PROGRESS_VERSION,
       introStatus: "in-progress",
       introStep: 3,
-      pageSteps: { participants: 1 }
+      pageSteps: {
+        participants: 1,
+        schedule: 3,
+        "procurement-matching": 2
+      }
     });
   });
 

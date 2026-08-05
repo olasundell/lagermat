@@ -8,10 +8,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: hosted-release
-  cancel-in-progress: false
-
 jobs:
   staging:
     name: Deploy and verify staging

@@ -7,6 +7,7 @@ import {
   type DemoTurnstileChallengesHandle
 } from "./DemoTurnstileChallenges";
 import type { DemoStartTokens } from "./demoSessionCoordinator";
+import { acceptsRepeatedTurnstileTestToken } from "./demoTurnstileTestMode";
 
 interface DemoStartPanelProps {
   siteKey: string;
@@ -20,7 +21,7 @@ export function DemoStartPanel({
   siteKey,
   busy,
   error,
-  buttonLabel = "Prova demot",
+  buttonLabel = "Öppna demolägret",
   onStart
 }: DemoStartPanelProps) {
   const challenges = useRef<DemoTurnstileChallengesHandle | null>(null);
@@ -30,10 +31,23 @@ export function DemoStartPanel({
   });
   const [captchaError, setCaptchaError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const repeatedLocalTestToken = Boolean(
+    tokens.authCaptchaToken
+    && tokens.provisionCaptchaToken
+    && acceptsRepeatedTurnstileTestToken(
+      tokens.authCaptchaToken,
+      tokens.provisionCaptchaToken,
+      siteKey,
+      window.location.hostname
+    )
+  );
   const ready = Boolean(
     tokens.authCaptchaToken
     && tokens.provisionCaptchaToken
-    && tokens.authCaptchaToken !== tokens.provisionCaptchaToken
+    && (
+      tokens.authCaptchaToken !== tokens.provisionCaptchaToken
+      || repeatedLocalTestToken
+    )
   );
 
   async function start() {
@@ -54,7 +68,7 @@ export function DemoStartPanel({
       setLocalError(
         caught instanceof Error
           ? caught.message
-          : "Demot kunde inte startas just nu."
+          : "Demolägret kunde inte öppnas. Försök igen."
       );
     } finally {
       challenges.current?.reset();
@@ -65,11 +79,11 @@ export function DemoStartPanel({
 
   return (
     <section className="demo-start" aria-labelledby="demo-start-title">
-      <p className="demo-start__eyebrow">Ingen registrering</p>
-      <h2 id="demo-start-title">Planera i ett eget demoläger</h2>
+      <p className="demo-start__eyebrow">Kräver inget konto</p>
+      <h2 id="demo-start-title">Öppna ett färdigt demoläger</h2>
       <p>
-        Du får en privat kopia med syntetiska deltagare, recept och måltider.
-        Kopian sparas i högst 24 timmar och påverkar ingen annan.
+        Du får ett eget demoläger som raderas automatiskt inom 24 timmar.
+        Det du gör påverkar ingen annan.
       </p>
       <DemoTurnstileChallenges
         ref={challenges}
@@ -79,8 +93,8 @@ export function DemoStartPanel({
       />
       <p className="demo-start__captcha-status" role="status" aria-live="polite">
         {ready
-          ? "Robotkontrollen är klar."
-          : "Robotkontrollen förbereds…"}
+          ? "Kontrollen är klar."
+          : "Kontrollerar att du inte är en robot…"}
       </p>
       {visibleError ? (
         <p className="form-error" role="alert">{visibleError}</p>
@@ -95,10 +109,10 @@ export function DemoStartPanel({
         ) : (
           <Sparkles aria-hidden="true" size={19} />
         )}
-        {busy ? "Förbereder ditt demoläger…" : buttonLabel}
+        {busy ? "Förbereder demolägret…" : buttonLabel}
       </Button>
       <p className="demo-start__privacy">
-        Endast testuppgifter används. Ingen e-postadress behövs.
+        Ingen e-postadress behövs.
       </p>
     </section>
   );

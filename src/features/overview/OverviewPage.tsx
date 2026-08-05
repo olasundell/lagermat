@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Check, CircleAlert, Import, Sparkles } from "lucide-react";
+import { useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { CreateCampDialog } from "../camps/CreateCampDialog";
+import { useTutorial } from "../tutorial/TutorialProvider";
 import { useWorkspace } from "../workspace/WorkspaceContext";
 import {
   overviewDeliveryProgress,
@@ -62,6 +64,7 @@ function formatDeliveryDate(value: string, timeZone: string): string {
 
 export function OverviewPage() {
   const { activeMembership, activeCamp } = useWorkspace();
+  const { registerOverview } = useTutorial();
   const overviewQuery = useQuery({
     queryKey: ["camp-overview", activeMembership?.organizationId, activeCamp?.id],
     enabled: Boolean(supabase && activeMembership && activeCamp),
@@ -117,6 +120,23 @@ export function OverviewPage() {
     }
   });
 
+  const counts: OverviewCounts = overviewQuery.data ?? emptyCounts;
+  const nextAction = overviewNextAction(counts);
+
+  useEffect(() => {
+    registerOverview({
+      ready: Boolean(activeMembership && activeCamp && overviewQuery.isSuccess),
+      nextPath: nextAction.to
+    });
+    return () => registerOverview(null);
+  }, [
+    activeCamp,
+    activeMembership,
+    nextAction.to,
+    overviewQuery.isSuccess,
+    registerOverview
+  ]);
+
   if (!activeMembership || !activeCamp) {
     return (
       <section className="page">
@@ -129,7 +149,6 @@ export function OverviewPage() {
     );
   }
 
-  const counts: OverviewCounts = overviewQuery.data ?? emptyCounts;
   const deliveryProgress = overviewDeliveryProgress(
     overviewQuery.data?.deliveryRows ?? [],
     counts,
@@ -197,10 +216,12 @@ export function OverviewPage() {
       warning: deliveryProgress.blockers.length > 0,
     }
   ];
-  const nextAction = overviewNextAction(counts);
-
   return (
-    <section className="page overview-page">
+    <section
+      className="page overview-page"
+      data-tutorial-id="overview-page"
+      data-tutorial-ready={overviewQuery.isSuccess ? "true" : "false"}
+    >
       <div className="page-heading page-heading--split">
         <div>
           <h1>{activeCamp.name}</h1>
@@ -215,12 +236,12 @@ export function OverviewPage() {
       </div>
 
       <div className="overview-layout">
-        <div className="guided-flow">
-          <div className="section-heading">
+        <div className="guided-flow" data-tutorial-id="overview-flow">
+          <div className="section-heading" data-tutorial-id="overview-flow-heading">
             <Sparkles aria-hidden="true" size={22} />
             <div>
               <h2>Gör lägret redo</h2>
-              <p>Ta ett steg i taget. Vi visar vad som återstår innan inköpslistorna är klara.</p>
+              <p>Ta ett steg i taget. Vi visar vad som återstår innan inköpsunderlaget är klart.</p>
             </div>
           </div>
           <ol className="step-list">
@@ -243,8 +264,13 @@ export function OverviewPage() {
           </ol>
         </div>
 
-        <aside className="next-action" aria-labelledby="next-action-title">
-          <p className="next-action__label">Nästa att lösa</p>
+        <aside
+          className="next-action"
+          aria-labelledby="next-action-title"
+          data-tutorial-id="overview-next-action"
+          data-tutorial-next-path={nextAction.to}
+        >
+          <p className="next-action__label">Nästa steg</p>
           <h2 id="next-action-title">{nextAction.title}</h2>
           <p>{nextAction.description}</p>
           <Link to={nextAction.to} className="primary-button">

@@ -43,14 +43,14 @@ export function LoginPage() {
       <section className="auth-card" aria-labelledby="login-title">
         <div className="auth-card__brand"><BrandMark /></div>
         <p className="auth-card__eyebrow">
-          {demoEnabled ? "Syntetiskt demoläger" : "Säker lägerplanering"}
+          {demoEnabled ? "Prova utan konto" : "Säker lägerplanering"}
         </p>
         <h1 id="login-title">
           {demoEnabled ? "Prova Lägermat" : "Logga in utan lösenord"}
         </h1>
         <p className="auth-card__intro">
           {demoEnabled
-            ? "Planera med helt fingerade deltagare och recept i en egen kopia som raderas automatiskt."
+            ? "Utforska hela planeringsflödet med påhittade deltagare, recept och måltider. Inga verkliga personuppgifter används."
             : "Ange e-postadressen som du har blivit inbjuden med. Du får en personlig engångslänk för inloggning."}
         </p>
 
@@ -111,7 +111,7 @@ export function LoginPage() {
           <ShieldCheck aria-hidden="true" size={21} />
           <span>
             {demoEnabled
-              ? "Ingen e-post, registrering eller verklig persondata används"
+              ? "Inget konto och inga verkliga personuppgifter behövs."
               : "Endast inbjudna användare kan logga in"}
           </span>
         </div>

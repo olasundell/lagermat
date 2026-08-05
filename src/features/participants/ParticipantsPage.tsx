@@ -320,8 +320,14 @@ export function ParticipantsPage() {
   }
 
   return (
-    <section className="page participants-page">
-      <header className="page-heading page-heading--split">
+    <section
+      className="page participants-page"
+      data-tutorial-id="participants-page"
+    >
+      <header
+        className="page-heading page-heading--split"
+        data-tutorial-id="participants-heading"
+      >
         <div>
           <p className="page-heading__eyebrow">Lägerdeltagare</p>
           <h1>Deltagare</h1>
@@ -347,7 +353,11 @@ export function ParticipantsPage() {
       <ScoutnetQuestionMappingCard />
       <ScoutnetReconciliationCard />
 
-      <section className="privacy-banner" aria-label="Dataminimering">
+      <section
+        className="privacy-banner"
+        aria-label="Dataminimering"
+        data-tutorial-id="participants-privacy"
+      >
         <ShieldCheck aria-hidden="true" size={26} />
         <div>
           <strong>Källfilen lämnar inte datorn</strong>
@@ -452,8 +462,15 @@ export function ParticipantsPage() {
         </div>
       ) : (
         <div className="participant-layout">
-          <section className="participant-card" aria-labelledby="participant-list-heading">
-            <div className="participant-card__heading">
+          <section
+            className="participant-card"
+            aria-labelledby="participant-list-heading"
+            data-tutorial-id="participants-list"
+          >
+            <div
+              className="participant-card__heading"
+              data-tutorial-id="participants-list-heading"
+            >
               <UsersRound aria-hidden="true" size={24} />
               <div><h2 id="participant-list-heading">Deltagare i lägret</h2><p>{participantFilterActive ? `${participantCount(visibleParticipants.length)} av ${participantCount(participants.length)}` : participantCount(participants.length)}</p></div>
             </div>

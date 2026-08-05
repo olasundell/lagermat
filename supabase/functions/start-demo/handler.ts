@@ -6,6 +6,9 @@ const TURNSTILE_ENDPOINT =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TURNSTILE_ATTEMPTS = 3;
 const TURNSTILE_TIMEOUT_MS = 4_000;
+const TURNSTILE_ALWAYS_PASS_SECRET_KEY =
+  "1x0000000000000000000000000000000AA";
+const TURNSTILE_TEST_HOSTNAME = "example.com";
 
 export const START_DEMO_TURNSTILE_ACTION = "start-demo";
 
@@ -30,6 +33,7 @@ export interface TurnstileVerification {
   action: string | null;
   hostname: string | null;
   errorCodes: string[];
+  testingKey: boolean;
 }
 
 export interface TurnstileVerificationInput {
@@ -181,6 +185,28 @@ function serverConfiguration(
     appHostname: new URL(appOrigin).hostname,
     turnstileSecretKey,
   };
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost";
+}
+
+function validTurnstileVerification(
+  verification: TurnstileVerification,
+  configuration: ServerConfiguration,
+): boolean {
+  if (!verification.success) return false;
+
+  const localTestingKey = isLoopbackHostname(configuration.appHostname)
+    && configuration.turnstileSecretKey === TURNSTILE_ALWAYS_PASS_SECRET_KEY
+    && verification.testingKey
+    && verification.action === null
+    && verification.hostname === TURNSTILE_TEST_HOSTNAME;
+
+  return localTestingKey || (
+    verification.action === START_DEMO_TURNSTILE_ACTION
+    && verification.hostname === configuration.appHostname
+  );
 }
 
 export function startDemoTransportGuard(
@@ -470,11 +496,7 @@ export function createStartDemoHandler(
       );
     }
 
-    if (
-      !turnstile.success
-      || turnstile.action !== START_DEMO_TURNSTILE_ACTION
-      || turnstile.hostname !== configuration.appHostname
-    ) {
+    if (!validTurnstileVerification(turnstile, configuration)) {
       return errorResponse(
         "turnstile_rejected",
         "Robotkontrollen kunde inte godkännas.",
@@ -524,6 +546,7 @@ function normaliseTurnstileResult(value: unknown): TurnstileVerification | null 
   if (!value || typeof value !== "object") return null;
   const response = value as Record<string, unknown>;
   const errorCodes = response["error-codes"];
+  const metadata = response.metadata;
   if (
     typeof response.success !== "boolean"
     || (response.action !== undefined && typeof response.action !== "string")
@@ -531,6 +554,8 @@ function normaliseTurnstileResult(value: unknown): TurnstileVerification | null 
     || (errorCodes !== undefined
       && (!Array.isArray(errorCodes)
         || errorCodes.some((code) => typeof code !== "string")))
+    || (metadata !== undefined
+      && (!metadata || typeof metadata !== "object" || Array.isArray(metadata)))
   ) {
     return null;
   }
@@ -540,6 +565,10 @@ function normaliseTurnstileResult(value: unknown): TurnstileVerification | null 
     action: typeof response.action === "string" ? response.action : null,
     hostname: typeof response.hostname === "string" ? response.hostname : null,
     errorCodes: Array.isArray(errorCodes) ? errorCodes : [],
+    testingKey: Boolean(
+      metadata
+      && (metadata as Record<string, unknown>).result_with_testing_key === true
+    ),
   };
 }
 

@@ -64,6 +64,10 @@ Två fasta Supabase-projekt och Netlify-sites provisioneras en gång. GitHub Act
 
 Starta med [`docs/deployment/README.md`](docs/deployment/README.md). Där finns provisioning, releaseordning, återställning, miljövariabler och dataskyddsgrinden. Extern provisioning, Git-commit och push utförs först efter uttryckligt godkännande.
 
+## Arbetsflöde för ändringar
+
+Alla ändringar ska göras på en separat branch och levereras genom en pull request (merge request) till `main`. Ändringar får inte pushas direkt till `main`. Staging distribueras först från den verifierade revisionen efter att pull requesten har granskats och slagits ihop.
+
 ## Design
 
 Designregler och officiella källor finns i [`docs/scouterna-designriktlinjer.md`](docs/scouterna-designriktlinjer.md). Desktop- och mobilkoncepten under `docs/design/` är implementationsspecifikation. Lägermat använder ett eget namn och en egen grytmarkör; ingen officiell Scouterna-logotyp eller scoutsymbol används.

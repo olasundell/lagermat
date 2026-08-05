@@ -74,7 +74,7 @@ describe("recoverExpiredDemoSession", () => {
 
     await expect(
       recoverExpiredDemoSession("expired-user", testDependencies)
-    ).rejects.toThrow("En ny anonym demoidentitet kunde inte skapas.");
+    ).rejects.toThrow("Ett nytt demoläger kunde inte öppnas med en anonym användare.");
     expect(events).toContain("abandon-new");
     expect(events).not.toContain("provision-new");
   });

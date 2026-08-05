@@ -5,10 +5,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DemoBanner } from "./DemoBanner";
 import { DemoStartPanel } from "./DemoStartPanel";
 import type { DemoInstance } from "./demoSessionCoordinator";
+import {
+  TURNSTILE_ALWAYS_PASS_SITE_KEY,
+  TURNSTILE_DUMMY_TOKEN
+} from "./demoTurnstileTestMode";
 
 vi.mock("@marsidev/react-turnstile", () => ({
   Turnstile: forwardRef(function MockTurnstile(
     props: {
+      siteKey?: string;
       options?: { action?: string };
       onSuccess?: (token: string) => void;
     },
@@ -19,7 +24,11 @@ vi.mock("@marsidev/react-turnstile", () => ({
     return (
       <button
         type="button"
-        onClick={() => props.onSuccess?.(`token-${action}`)}
+        onClick={() => props.onSuccess?.(
+          props.siteKey === TURNSTILE_ALWAYS_PASS_SITE_KEY
+            ? TURNSTILE_DUMMY_TOKEN
+            : `token-${action}`
+        )}
       >
         Lös {action}
       </button>
@@ -52,7 +61,7 @@ describe("DemoStartPanel", () => {
       />
     );
 
-    const startButton = screen.getByRole("button", { name: "Prova demot" });
+    const startButton = screen.getByRole("button", { name: "Öppna demolägret" });
     expect(startButton).toBeDisabled();
     await user.click(screen.getByRole("button", {
       name: "Lös anonymous-sign-in"
@@ -74,22 +83,50 @@ describe("DemoStartPanel", () => {
       <DemoStartPanel
         siteKey="public-site-key"
         busy
-        error="Demot är tillfälligt upptaget."
+        error="Demolägret är tillfälligt upptaget."
         onStart={vi.fn()}
       />
     );
 
     expect(screen.getByRole("button", {
-      name: "Förbereder ditt demoläger…"
+      name: "Förbereder demolägret…"
     })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Demot är tillfälligt upptaget."
+      "Demolägret är tillfälligt upptaget."
     );
+  });
+
+  it("kan använda Cloudflares fasta testtoken på loopback", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn(async () => undefined);
+    render(
+      <DemoStartPanel
+        siteKey={TURNSTILE_ALWAYS_PASS_SITE_KEY}
+        busy={false}
+        error={null}
+        onStart={onStart}
+      />
+    );
+
+    await user.click(screen.getByRole("button", {
+      name: "Lös anonymous-sign-in"
+    }));
+    await user.click(screen.getByRole("button", { name: "Lös start-demo" }));
+
+    const startButton = screen.getByRole("button", {
+      name: "Öppna demolägret"
+    });
+    expect(startButton).toBeEnabled();
+    await user.click(startButton);
+    expect(onStart).toHaveBeenCalledWith({
+      authCaptchaToken: TURNSTILE_DUMMY_TOKEN,
+      provisionCaptchaToken: TURNSTILE_DUMMY_TOKEN
+    });
   });
 });
 
 describe("DemoBanner", () => {
-  it("förklarar syntetiska data och kräver bekräftelse före återställning", async () => {
+  it("förklarar exempeluppgifter och kräver bekräftelse före återställning", async () => {
     const user = userEvent.setup();
     const onReset = vi.fn(async () => undefined);
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -103,9 +140,9 @@ describe("DemoBanner", () => {
       />
     );
 
-    expect(screen.getByText(/bara syntetiska uppgifter/i)).toBeVisible();
+    expect(screen.getByText(/endast exempeluppgifter/i)).toBeVisible();
     const resetButton = screen.getByRole("button", {
-      name: "Återställ mitt demo"
+      name: "Återställ demolägret"
     });
     expect(resetButton).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Lös start-demo" }));
@@ -133,7 +170,7 @@ describe("DemoBanner", () => {
 
     await user.click(screen.getByRole("button", { name: "Lös start-demo" }));
     await user.click(screen.getByRole("button", {
-      name: "Återställ mitt demo"
+      name: "Återställ demolägret"
     }));
     expect(onReset).not.toHaveBeenCalled();
   });

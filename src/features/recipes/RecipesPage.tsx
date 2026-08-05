@@ -194,8 +194,11 @@ export function RecipesPage() {
   }
 
   return (
-    <section className="page recipes-page">
-      <header className="page-heading page-heading--split">
+    <section className="page recipes-page" data-tutorial-id="recipes-page">
+      <header
+        className="page-heading page-heading--split"
+        data-tutorial-id="recipes-heading"
+      >
         <div>
           <p className="page-heading__eyebrow">Organisationsbibliotek</p>
           <h1>Recept</h1>
@@ -219,8 +222,12 @@ export function RecipesPage() {
         <p className="form-error">{userFacingError(recipeQuery.error, "Recepten kunde inte läsas.")}</p>
       ) : (
         <div className="recipe-layout">
-          <section className="recipe-browser" aria-labelledby="recipe-library-heading">
-            <div className="section-heading">
+          <section
+            className="recipe-browser"
+            aria-labelledby="recipe-library-heading"
+            data-tutorial-id="recipes-library"
+          >
+            <div className="section-heading" data-tutorial-id="recipes-library-heading">
               <BookOpen aria-hidden="true" size={24} />
               <div><h2 id="recipe-library-heading">Bibliotek</h2><p>Granskade receptmallar för lägerplanering</p></div>
             </div>
@@ -254,10 +261,14 @@ export function RecipesPage() {
             </div>
           </section>
 
-          <section className="recipe-detail" aria-live="polite">
+          <section
+            className="recipe-detail"
+            aria-live="polite"
+            data-tutorial-id="recipes-camp-copy"
+          >
             {selectedRecipe && selectedVersion ? (
               <>
-                <div className="recipe-detail__heading">
+                <div className="recipe-detail__heading" data-tutorial-id="recipes-copy-heading">
                   <div>
                     <p>Publicerad version {selectedVersion.version_number}</p>
                     <h2>{selectedRecipe.name}</h2>

@@ -1,4 +1,5 @@
 import {
+  CircleHelp,
   RotateCcw,
   ShieldCheck
 } from "lucide-react";
@@ -10,6 +11,7 @@ import {
 } from "@marsidev/react-turnstile";
 import type { DemoInstance } from "./demoSessionCoordinator";
 import { DEMO_PROVISION_TURNSTILE_ACTION } from "./DemoTurnstileChallenges";
+import { useTutorial } from "../tutorial/TutorialProvider";
 
 interface DemoBannerProps {
   instance: DemoInstance;
@@ -33,6 +35,7 @@ export function DemoBanner({
   error,
   onReset
 }: DemoBannerProps) {
+  const { canReplay, replay } = useTutorial();
   const widget = useRef<TurnstileInstance | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
@@ -41,8 +44,7 @@ export function DemoBanner({
   async function reset() {
     if (!token || resetting) return;
     const confirmed = window.confirm(
-      "Återställningen ersätter hela ditt demoläger med en ny kopia. "
-      + "Ändringar i den nuvarande kopian försvinner. Vill du fortsätta?"
+      "Alla ändringar i demolägret försvinner och startläget återställs. Vill du fortsätta?"
     );
     if (!confirmed) return;
 
@@ -53,7 +55,7 @@ export function DemoBanner({
       setLocalError(
         caught instanceof Error
           ? caught.message
-          : "Demot kunde inte återställas just nu."
+          : "Demolägret kunde inte återställas. Försök igen."
       );
     } finally {
       setToken(null);
@@ -62,15 +64,25 @@ export function DemoBanner({
   }
 
   return (
-    <aside className="demo-banner" aria-label="Information om demoläget">
+    <aside
+      className="demo-banner"
+      aria-label="Information om demoläget"
+      data-tutorial-id="demo-banner"
+    >
       <div className="demo-banner__message">
         <ShieldCheck aria-hidden="true" size={20} />
         <div>
-          <strong>Demoläge · bara syntetiska uppgifter</strong>
-          <span>Din privata kopia raderas senast {expiryLabel(instance.expiresAt)}.</span>
+          <strong>Demoläge · endast exempeluppgifter</strong>
+          <span>Demolägret raderas senast {expiryLabel(instance.expiresAt)}.</span>
         </div>
       </div>
       <div className="demo-banner__reset">
+        {canReplay ? (
+          <Button className="demo-banner__guide-button" onPress={replay}>
+            <CircleHelp aria-hidden="true" size={17} />
+            Visa guiden igen
+          </Button>
+        ) : null}
         <Turnstile
           ref={widget}
           id="demo-reset-turnstile"
@@ -90,7 +102,7 @@ export function DemoBanner({
           onExpire={() => setToken(null)}
           onError={() => {
             setToken(null);
-            setCaptchaError("Robotkontrollen för återställning misslyckades.");
+            setCaptchaError("Kontrollen för återställning misslyckades. Försök igen.");
           }}
         />
         <Button
@@ -99,7 +111,7 @@ export function DemoBanner({
           onPress={() => void reset()}
         >
           <RotateCcw aria-hidden="true" size={17} />
-          {resetting ? "Återställer…" : "Återställ mitt demo"}
+          {resetting ? "Återställer demolägret…" : "Återställ demolägret"}
         </Button>
       </div>
       {localError ?? captchaError ?? error ? (
